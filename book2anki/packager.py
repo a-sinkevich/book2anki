@@ -57,6 +57,25 @@ ARTICLE_MODEL = genanki.Model(
     css=CARD_CSS,
 )
 
+YOUTUBE_MODEL = genanki.Model(
+    model_id=1607392321,
+    name="book2anki YouTube",
+    fields=[
+        {"name": "Question"},
+        {"name": "Answer"},
+        {"name": "Video"},
+        {"name": "Source"},
+    ],
+    templates=[
+        {
+            "name": "Card 1",
+            "qfmt": '<div class="question">{{Question}}</div>',
+            "afmt": '{{FrontSide}}<hr id="answer"><div class="answer">{{Answer}}</div>',
+        },
+    ],
+    css=CARD_CSS,
+)
+
 
 def _group_cards_by_chapter(cards: list[Card]) -> list[tuple[str, list[Card]]]:
     """Group cards by chapter title, preserving order."""
@@ -132,17 +151,20 @@ def package_cards(cards: list[Card], book_title: str, output_path: str) -> None:
     package.write_to_file(output_path)
 
 
-def package_cards_flat(cards: list[Card], deck_name: str, output_path: str) -> None:
-    """Package all cards into a single flat deck (no subdecks) for articles."""
+def package_cards_flat(
+    cards: list[Card], deck_name: str, output_path: str,
+    tag_prefix: str = "article", model: genanki.Model = ARTICLE_MODEL,
+) -> None:
+    """Package all cards into a single flat deck (no subdecks)."""
     deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
-    article_tag = f"article::{_slugify(deck_name)}"
+    tag = f"{tag_prefix}::{_slugify(deck_name)}"
     source_url = cards[0].source_url if cards else ""
 
     for card in cards:
         note = genanki.Note(
-            model=ARTICLE_MODEL,
+            model=model,
             fields=[card.question, card.answer, deck_name, source_url],
-            tags=[article_tag],
+            tags=[tag],
             guid=genanki.guid_for(card.question, deck_name, source_url),
         )
         deck.add_note(note)

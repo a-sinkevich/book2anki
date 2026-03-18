@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "book2anki"
 version = "0.1.0"
-description = "Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks using LLMs"
+description = "Convert nonfiction books (EPUB/PDF), articles (URL), and YouTube videos into Anki flashcard decks using LLMs"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Alexey Sinkevich"}]
@@ -17,6 +17,7 @@ dependencies = [
     "anthropic>=0.40",
     "genanki>=0.13",
     "beautifulsoup4>=4.12",
+    "youtube-transcript-api>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +50,7 @@ module = [
     "genanki.*",
     "langdetect.*",
     "fitz.*",
+    "youtube_transcript_api.*",
 ]
 ignore_missing_imports = true
 

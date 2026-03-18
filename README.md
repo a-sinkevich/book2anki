@@ -1,6 +1,6 @@
 # book2anki
 
-Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks using LLMs.
+Convert nonfiction books (EPUB/PDF), articles (URL), and YouTube videos into Anki flashcard decks using LLMs.
 
 ## Quick start
 
@@ -8,7 +8,7 @@ Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks
    - **macOS (Apple Silicon)**: `book2anki-macos-arm64`
    - **Linux**: `book2anki-linux-amd64`
    - **Windows**: `book2anki-windows-amd64.exe`
-2. Get an API key from [Anthropic](https://console.anthropic.com/settings/keys) and [add credit](https://console.anthropic.com/settings/billing) (the API is prepaid; a typical book costs $0.50–$2.00)
+2. Get an API key from [Anthropic](https://console.anthropic.com/settings/keys) and [add credit](https://console.anthropic.com/settings/billing) (the API is prepaid, see [costs](#costs) below)
 3. Create `~/.book2anki.env` (on Windows: `C:\Users\<YourName>\.book2anki.env`):
    ```
    ANTHROPIC_API_KEY=your-key
@@ -32,6 +32,8 @@ Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks
    .\book2anki-windows-amd64.exe mybook.epub
    ```
 
+   Add ` --depth 2` for more detailed cards or ` --depth 3` for comprehensive coverage (default is 1).
+
 ## Install from source
 
 Requires **Python 3.10+**.
@@ -44,7 +46,16 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
+Then run with:
+```bash
+python -m book2anki mybook.epub
+```
+
 ## Usage
+
+In the examples below, replace `book2anki` with how you run it:
+- **Binary**: `./book2anki-macos-arm64` (or the filename for your platform)
+- **From source**: `python -m book2anki`
 
 ```bash
 # Basic — generates Anki deck with core-level cards
@@ -59,8 +70,10 @@ book2anki mybook.epub --chapters 1,3,5
 book2anki mybook.epub --chapters 3-7
 book2anki mybook.epub --chapters 1,3-5,8
 
-# From a URL (article → single flat deck)
-book2anki https://example.com/article
+# From a URL — use quotes to prevent shell interpretation
+book2anki "https://example.com/article"
+book2anki "https://www.youtube.com/watch?v=VIDEO_ID"
+book2anki VIDEO_ID    # just the YouTube video ID (no quotes needed)
 ```
 
 ## Output
@@ -90,9 +103,18 @@ make clean       # remove build artifacts
 make install-dev # install dev deps
 ```
 
+## Costs
+
+The tool uses the Anthropic API which charges per token. Typical costs:
+
+| Source | Depth 1 (core) | Depth 2 (detailed) | Depth 3 (comprehensive) |
+|--------|:-:|:-:|:-:|
+| YouTube video (1 hour) | ~$0.06 | ~$0.07 | ~$0.13 |
+| Book (full) | $0.50–$2.00 | $1.00–$3.00 | $2.00–$5.00 |
+
 ## Features
 
-- **EPUB, PDF & URL** — books or web articles
+- **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Three depth levels**: core ideas, detailed coverage, or comprehensive
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
 - **Auto language detection** (English, Russian)

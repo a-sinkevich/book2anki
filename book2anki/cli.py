@@ -9,11 +9,12 @@ from book2anki.models import Card, Chapter, TokenUsage
 from book2anki.parser_epub import parse_epub
 from book2anki.parser_pdf import parse_pdf
 from book2anki.parser_web import parse_url
+from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
 from book2anki.generator import LLMProvider, generate_cards_for_chapter, estimate_cost, format_cost
 from book2anki.packager import (
     package_cards, package_cards_flat, package_single_chapter,
-    load_existing_chapters,
+    load_existing_chapters, YOUTUBE_MODEL,
 )
 
 
@@ -58,7 +59,7 @@ def _parse_args() -> argparse.Namespace:
         prog="book2anki",
         description="Convert nonfiction books (EPUB/PDF) into Anki flashcard decks using LLMs.",
     )
-    parser.add_argument("file", help="Path to .epub or .pdf file, or a URL")
+    parser.add_argument("file", help="Path to .epub or .pdf file, or a URL (article/YouTube)")
     parser.add_argument(
         "--depth", type=int, choices=[1, 2, 3], default=1,
         help="Card generation depth: 1=core, 2=detailed, 3=comprehensive (default: 1)",
@@ -127,11 +128,15 @@ def _select_chapters(
 
 def _write_single_output(
     all_cards: list[Card], book_title: str, output: str | None,
+    is_youtube: bool = False,
 ) -> str:
-    """Write a single .apkg file for a URL article. Returns output path."""
+    """Write a single .apkg file for a URL source. Returns output path."""
     base_name = output or book_title.replace(" ", "-")
     path = f"{base_name}.apkg"
-    package_cards_flat(all_cards, book_title, path)
+    if is_youtube:
+        package_cards_flat(all_cards, book_title, path, tag_prefix="youtube", model=YOUTUBE_MODEL)
+    else:
+        package_cards_flat(all_cards, book_title, path)
     return base_name
 
 
@@ -156,9 +161,12 @@ def main() -> None:
     args = _parse_args()
 
     is_url = _is_url(args.file)
+    is_yt = is_youtube_input(args.file)
 
     try:
-        if is_url:
+        if is_yt:
+            book_title, chapters = parse_youtube(args.file)
+        elif is_url:
             book_title, chapters = parse_url(args.file)
         else:
             filepath = Path(args.file)
@@ -201,17 +209,18 @@ def main() -> None:
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
 
-    if is_url:
+    if is_url or is_yt:
+        source_url = args.file if is_url else f"https://www.youtube.com/watch?v={args.file}"
         all_cards, total_usage = _process_sequential(
             provider, chapters_to_generate, book_title, args.depth, lang,
             total=1, all_cards=[], chapters_dir="", is_article=True,
-            source_url=args.file,
+            source_url=source_url,
         )
         if not all_cards:
             print("Error: No cards were generated.", file=sys.stderr)
             sys.exit(1)
 
-        base = _write_single_output(all_cards, book_title, args.output)
+        base = _write_single_output(all_cards, book_title, args.output, is_youtube=is_yt)
         print(f"\nDone! Generated {len(all_cards)} cards. Cost: {format_cost(estimate_cost(total_usage, model))}")
         print(f"Output: {base}.apkg")
     else:
@@ -291,7 +300,11 @@ class _ProgressBar:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._out = sys.stderr
-        self._out.write(self._format() + "\n")
+        try:
+            self._cols = os.get_terminal_size(self._out.fileno()).columns
+        except (OSError, ValueError):
+            self._cols = 120
+        self._out.write(self._format()[:self._cols] + "\n")
         self._out.flush()
         t = threading.Thread(target=self._tick, daemon=True)
         t.start()
@@ -312,19 +325,22 @@ class _ProgressBar:
         else:
             remain_s = "~00:00"
         postfix = f" {self._postfix}" if self._postfix else ""
+        label = "chapters" if self.total > 1 else ""
+        count = f" {self.n}/{self.total} {label}," if self.total > 1 else ""
         return (
-            f"Generating: {bar} {self.n}/{self.total} chapters, "
+            f"Generating: {bar}{count} "
             f"elapsed: {elapsed_s}, remaining: {remain_s}{postfix}"
         )
 
     def _redraw(self) -> None:
         up = self._lines_below + 1
+        line = self._format()[:self._cols]
         self._out.write(
-            f"\033[{up}A"        # move up to bar line
-            f"\r\033[K"          # go to col 0, clear line
-            f"{self._format()}"  # write bar
-            f"\033[{up}B"        # move back down
-            f"\r"                # go to col 0
+            f"\033[{up}A"  # move up to bar line
+            f"\r\033[K"    # go to col 0, clear line
+            f"{line}"      # write bar (truncated to terminal width)
+            f"\033[{up}B"  # move back down
+            f"\r"          # go to col 0
         )
         self._out.flush()
 
@@ -369,9 +385,11 @@ def _process_sequential(
     total_time = 0.0
     model = provider.model_name()
 
+    show_table = not is_article
     pbar = _ProgressBar(total=total, initial=total - len(chapters))
-    pbar.write(_TBL_HEADER)
-    pbar.write(_TBL_SEP)
+    if show_table:
+        pbar.write(_TBL_HEADER)
+        pbar.write(_TBL_SEP)
     for chapter in chapters:
         ch_start = time.monotonic()
         cards, usage = generate_cards_for_chapter(
@@ -393,15 +411,17 @@ def _process_sequential(
         if cards and chapters_dir:
             package_single_chapter(cards, book_title, chapter.index, chapters_dir)
 
-        ch_cost = format_cost(estimate_cost(usage, model))
-        pbar.write(_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
+        if show_table:
+            ch_cost = format_cost(estimate_cost(usage, model))
+            pbar.write(_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
         pbar.update(1)
         pbar.set_postfix_str(f"{session_cards} cards")
 
     pbar.close()
-    total_cost = format_cost(estimate_cost(total_usage, model))
-    print(_TBL_SEP, file=sys.stderr)
-    print(_tbl_row("Total", session_cards, total_time, total_cost), file=sys.stderr)
+    if show_table:
+        total_cost = format_cost(estimate_cost(total_usage, model))
+        print(_TBL_SEP, file=sys.stderr)
+        print(_tbl_row("Total", session_cards, total_time, total_cost), file=sys.stderr)
     return all_cards, total_usage
 
 
