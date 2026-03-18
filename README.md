@@ -5,7 +5,7 @@ Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks
 ## Quick start
 
 1. Download the binary for your platform from [Releases](https://github.com/a-sinkevich/book2anki/releases/latest)
-2. Get an API key from [Anthropic](https://console.anthropic.com/)
+2. Get an API key from [Anthropic](https://console.anthropic.com/settings/keys)
 3. Create `~/.book2anki.env` (on Windows: `C:\Users\<YourName>\.book2anki.env`):
    ```
    ANTHROPIC_API_KEY=your-key
