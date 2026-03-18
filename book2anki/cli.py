@@ -222,7 +222,7 @@ def main() -> None:
 
         base = _write_single_output(all_cards, book_title, args.output, is_youtube=is_yt)
         print(f"\nDone! Generated {len(all_cards)} cards. Cost: {format_cost(estimate_cost(total_usage, model))}")
-        print(f"Output: {base}.apkg")
+        print(f"Output: {base}.apkg\n")
     else:
         base_name = book_title.replace(' ', '-')
         output_dir = args.output or base_name
@@ -263,7 +263,7 @@ def main() -> None:
 
         cost_str = f" Cost: {format_cost(estimate_cost(total_usage, model))}" if total_usage.input_tokens else ""
         print(f"\nDone! Generated {len(all_cards)} cards across {len(chapters_to_generate)} chapter(s).{cost_str}")
-        print(f"Output: {output_dir}/")
+        print(f"Output: {output_dir}/\n")
 
 
 def _fmt_elapsed(seconds: float) -> str:
