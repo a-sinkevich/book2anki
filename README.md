@@ -13,10 +13,18 @@ Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks
    ```
    ANTHROPIC_API_KEY=your-key
    ```
-4. Make the binary executable and run it:
+4. Run:
    ```bash
-   chmod +x book2anki-macos-arm64   # macOS/Linux only
+   # macOS
+   chmod +x book2anki-macos-arm64
    ./book2anki-macos-arm64 mybook.epub
+
+   # Linux
+   chmod +x book2anki-linux-amd64
+   ./book2anki-linux-amd64 mybook.epub
+
+   # Windows
+   .\book2anki-windows-amd64.exe mybook.epub
    ```
 
 ## Install from source
