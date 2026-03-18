@@ -23,12 +23,10 @@ Convert nonfiction books (EPUB/PDF), articles (URL), and YouTube videos into Ank
 5. Run (examples for macOS, replace binary name for your platform):
    ```bash
    ./book2anki-macos-arm64 mybook.epub
-   ./book2anki-macos-arm64 mybook.pdf
+   ./book2anki-macos-arm64 mybook.pdf --depth 2              # more detailed cards
    ./book2anki-macos-arm64 "https://en.wikipedia.org/wiki/Spaced_repetition"
-   ./book2anki-macos-arm64 "https://www.youtube.com/watch?v=lrSB9gEUJEQ"
+   ./book2anki-macos-arm64 "https://www.youtube.com/watch?v=lrSB9gEUJEQ" --depth 3  # comprehensive
    ```
-
-   Add `--depth 2` for more detailed cards or `--depth 3` for comprehensive coverage (default is 1).
 
 ## Install from source
 
