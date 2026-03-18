@@ -17,8 +17,6 @@ jobs:
             asset_name: book2anki-linux-amd64
           - os: macos-latest
             asset_name: book2anki-macos-arm64
-          - os: macos-13
-            asset_name: book2anki-macos-amd64
           - os: windows-latest
             asset_name: book2anki-windows-amd64.exe
 
