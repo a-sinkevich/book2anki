@@ -20,19 +20,15 @@ Convert nonfiction books (EPUB/PDF), articles (URL), and YouTube videos into Ank
    > **macOS**: if you get "cannot be opened because the developer cannot be verified", run:
    > `xattr -d com.apple.quarantine book2anki-macos-arm64`
 
-5. Navigate to the folder with your book and run:
+5. Run (examples for macOS, replace binary name for your platform):
    ```bash
-   # macOS
    ./book2anki-macos-arm64 mybook.epub
-
-   # Linux
-   ./book2anki-linux-amd64 mybook.epub
-
-   # Windows (PowerShell)
-   .\book2anki-windows-amd64.exe mybook.epub
+   ./book2anki-macos-arm64 mybook.pdf
+   ./book2anki-macos-arm64 "https://en.wikipedia.org/wiki/Spaced_repetition"
+   ./book2anki-macos-arm64 "https://www.youtube.com/watch?v=lrSB9gEUJEQ"
    ```
 
-   Add ` --depth 2` for more detailed cards or ` --depth 3` for comprehensive coverage (default is 1).
+   Add `--depth 2` for more detailed cards or `--depth 3` for comprehensive coverage (default is 1).
 
 ## Install from source
 
