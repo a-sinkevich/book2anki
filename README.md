@@ -2,44 +2,30 @@
 
 Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks using LLMs.
 
-## Prerequisites
+## Quick start
 
-**Python 3.10+** is required.
+1. Download the binary for your platform from [Releases](https://github.com/a-sinkevich/book2anki/releases/latest)
+2. Get an API key from [Anthropic](https://console.anthropic.com/) or [OpenAI](https://platform.openai.com/)
+3. Create `~/.book2anki.env` (on Windows: `C:\Users\<YourName>\.book2anki.env`):
+   ```
+   ANTHROPIC_API_KEY=your-key
+   ```
+4. Run:
+   ```bash
+   ./book2anki-macos-arm64 mybook.epub
+   ```
 
-- **macOS**: `brew install python` (or download from [python.org](https://www.python.org/downloads/))
-- **Windows**: Download from [python.org](https://www.python.org/downloads/) — check "Add to PATH" during install
-- **Linux (Ubuntu/Debian)**: `sudo apt install python3 python3-venv python3-pip`
-- **Linux (Fedora)**: `sudo dnf install python3 python3-pip`
+## Install from source
 
-Verify: `python --version` (should show 3.10 or higher).
-
-**API key**: Get one from [Anthropic](https://console.anthropic.com/) or [OpenAI](https://platform.openai.com/).
-
-## Setup
+Requires **Python 3.10+**.
 
 ```bash
+git clone https://github.com/a-sinkevich/book2anki.git
+cd book2anki
 python -m venv .venv
-
-# Linux/macOS
-source .venv/bin/activate
-
-# Windows (cmd)
-.venv\Scripts\activate
-
-# Windows (PowerShell)
-.venv\Scripts\Activate.ps1
-
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
 ```
-
-Set your API key by creating `~/.book2anki.env`:
-```
-ANTHROPIC_API_KEY=your-key
-```
-
-On Windows, this file goes in `C:\Users\<YourName>\.book2anki.env`.
-
-You can also place a `.env` file in the current working directory (takes precedence), or set the variable as a traditional environment variable.
 
 ## Usage
 
@@ -81,7 +67,7 @@ pip install -e ".[dev]" build
 # Run checks individually
 python -m flake8 book2anki/ tests/    # lint
 python -m mypy book2anki/             # type check
-python -m pytest tests/ -v            # tests (67 tests)
+python -m pytest tests/ -v            # tests
 
 # Or use make (Linux/macOS)
 make check       # lint + typecheck + tests
