@@ -1,4 +1,5 @@
 import os
+import sys
 
 import anthropic
 
@@ -22,8 +23,16 @@ class ClaudeProvider(LLMProvider):
         elif api_key:
             self.client = anthropic.Anthropic(api_key=api_key, timeout=1800.0)
         else:
+            if sys.platform == "win32":
+                env_path = r"C:\Users\<YourName>\.book2anki.env"
+            else:
+                env_path = "~/.book2anki.env"
             raise ValueError(
-                "Set ANTHROPIC_API_KEY in ~/.book2anki.env or as an environment variable."
+                "ANTHROPIC_API_KEY is not set.\n\n"
+                "1. Get an API key at: https://console.anthropic.com/settings/keys\n"
+                "2. Add credit at: https://console.anthropic.com/settings/billing\n"
+                f"3. Save the key in {env_path}:\n"
+                "   ANTHROPIC_API_KEY=sk-ant-...\n"
             )
 
         self.model = "claude-sonnet-4-6"
