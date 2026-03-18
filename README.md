@@ -13,7 +13,7 @@ Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks
    ```
    ANTHROPIC_API_KEY=your-key
    ```
-4. Run:
+4. Open a terminal (macOS: Terminal.app, Windows: PowerShell, Linux: any terminal), navigate to the folder with the downloaded binary and your book, and run:
    ```bash
    # macOS
    chmod +x book2anki-macos-arm64
@@ -23,9 +23,12 @@ Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks
    chmod +x book2anki-linux-amd64
    ./book2anki-linux-amd64 mybook.epub
 
-   # Windows
+   # Windows (PowerShell)
    .\book2anki-windows-amd64.exe mybook.epub
    ```
+
+   > **macOS note**: if you get "cannot be opened because the developer cannot be verified", run:
+   > `xattr -d com.apple.quarantine book2anki-macos-arm64`
 
 ## Install from source
 
