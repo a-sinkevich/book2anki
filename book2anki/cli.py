@@ -48,15 +48,9 @@ def parse_chapters(spec: str) -> list[int]:
     return sorted(result)
 
 
-def _create_provider(model: str) -> LLMProvider:
-    if model == "claude":
-        from book2anki.provider_claude import ClaudeProvider
-        return ClaudeProvider()
-    elif model == "gpt-4o":
-        from book2anki.provider_openai import OpenAIProvider
-        return OpenAIProvider()
-    else:
-        raise ValueError(f"Unknown model: {model}")
+def _create_provider() -> LLMProvider:
+    from book2anki.provider_claude import ClaudeProvider
+    return ClaudeProvider()
 
 
 def _parse_args() -> argparse.Namespace:
@@ -68,10 +62,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--depth", type=int, choices=[1, 2, 3], default=1,
         help="Card generation depth: 1=core, 2=detailed, 3=comprehensive (default: 1)",
-    )
-    parser.add_argument(
-        "--model", choices=["claude", "gpt-4o"], default="claude",
-        help="LLM provider (default: claude)",
     )
     parser.add_argument(
         "--lang", choices=["en", "ru"], default=None,
@@ -189,7 +179,7 @@ def main() -> None:
         sys.exit(1)
 
     print(f'"{book_title}" — {len(chapters)} chapter(s) extracted.')
-    print(f"Parameters: depth={args.depth}, model={args.model}"
+    print(f"Parameters: depth={args.depth}"
           f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
           f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
           f"{', parallel' if args.parallel else ''}")
@@ -201,7 +191,7 @@ def main() -> None:
     print(f"Language: {lang}\n")
 
     try:
-        provider = _create_provider(args.model)
+        provider = _create_provider()
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

@@ -12,7 +12,6 @@ CHARS_PER_TOKEN = 4
 
 PRICING: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6": (3.0, 15.0),
-    "gpt-4o": (2.5, 10.0),
 }
 
 

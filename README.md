@@ -5,7 +5,7 @@ Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks
 ## Quick start
 
 1. Download the binary for your platform from [Releases](https://github.com/a-sinkevich/book2anki/releases/latest)
-2. Get an API key from [Anthropic](https://console.anthropic.com/) or [OpenAI](https://platform.openai.com/)
+2. Get an API key from [Anthropic](https://console.anthropic.com/)
 3. Create `~/.book2anki.env` (on Windows: `C:\Users\<YourName>\.book2anki.env`):
    ```
    ANTHROPIC_API_KEY=your-key
@@ -44,9 +44,6 @@ book2anki mybook.epub --chapters 1,3-5,8
 
 # From a URL (article → single flat deck)
 book2anki https://example.com/article
-
-# Use GPT-4o instead of Claude
-book2anki mybook.epub --model gpt-4o
 ```
 
 ## Output

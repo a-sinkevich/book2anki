@@ -15,7 +15,6 @@ dependencies = [
     "PyMuPDF>=1.24",
     "langdetect>=1.0.9",
     "anthropic>=0.40",
-    "openai>=1.50",
     "genanki>=0.13",
     "beautifulsoup4>=4.12",
 ]
