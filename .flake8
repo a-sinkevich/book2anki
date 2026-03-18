@@ -1,0 +1,5 @@
+[flake8]
+max-line-length = 120
+jobs = 1
+per-file-ignores =
+    book2anki/prompts.py:E501

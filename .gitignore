@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.DS_Store
+*.apkg
+*.progress.json
+dist/
+build/
+*.pyz
+*.spec
+.pytest_cache/
+.mypy_cache/
+.env
+.book2anki.env

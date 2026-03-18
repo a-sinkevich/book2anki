@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "book2anki"
+version = "0.1.0"
+description = "Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks using LLMs"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Alexey Sinkevich"}]
+requires-python = ">=3.10"
+dependencies = [
+    "ebooklib>=0.18",
+    "PyMuPDF>=1.24",
+    "langdetect>=1.0.9",
+    "anthropic>=0.40",
+    "openai>=1.50",
+    "genanki>=0.13",
+    "beautifulsoup4>=4.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "flake8>=7.0",
+    "mypy>=1.13",
+    "pytest>=8.0",
+]
+
+[project.scripts]
+book2anki = "book2anki.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/a-sinkevich/book2anki"
+Repository = "https://github.com/a-sinkevich/book2anki"
+Issues = "https://github.com/a-sinkevich/book2anki/issues"
+
+[tool.setuptools.packages.find]
+include = ["book2anki*"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+[[tool.mypy.overrides]]
+module = [
+    "ebooklib.*",
+    "genanki.*",
+    "langdetect.*",
+    "fitz.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
