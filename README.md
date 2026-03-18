@@ -69,9 +69,8 @@ python -m pytest tests/ -v            # tests
 # Or use make (Linux/macOS)
 make check       # lint + typecheck + tests
 make build       # check + build wheel/sdist
-make binary      # check + standalone .pyz binary (requires shiv)
 make clean       # remove build artifacts
-make install-dev # install all dev deps including shiv and build
+make install-dev # install dev deps
 ```
 
 ## Features
