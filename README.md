@@ -8,7 +8,7 @@ Convert nonfiction books (EPUB/PDF), articles (URL), and YouTube videos into Ank
    - **macOS (Apple Silicon)**: `book2anki-macos-arm64`
    - **Linux**: `book2anki-linux-amd64`
    - **Windows**: `book2anki-windows-amd64.exe`
-2. Get an API key from [Anthropic](https://console.anthropic.com/settings/keys) and [add credit](https://console.anthropic.com/settings/billing) (the API is prepaid, see [costs](#costs) below)
+2. Get an API key from [Anthropic](https://console.anthropic.com/settings/keys) and [add credit](https://console.anthropic.com/settings/billing) (the API is prepaid, see [costs](#costs) below). If you already have `ANTHROPIC_API_KEY` set in your environment, skip to step 4.
 3. Create `~/.book2anki.env` (on Windows: `C:\Users\<YourName>\.book2anki.env`):
    ```
    ANTHROPIC_API_KEY=your-key
