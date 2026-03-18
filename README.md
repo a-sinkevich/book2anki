@@ -4,14 +4,18 @@ Convert nonfiction books (EPUB/PDF) and articles (URL) into Anki flashcard decks
 
 ## Quick start
 
-1. Download the binary for your platform from [Releases](https://github.com/a-sinkevich/book2anki/releases/latest)
+1. Download the binary for your platform from [Releases](https://github.com/a-sinkevich/book2anki/releases/latest):
+   - **macOS (Apple Silicon)**: `book2anki-macos-arm64`
+   - **Linux**: `book2anki-linux-amd64`
+   - **Windows**: `book2anki-windows-amd64.exe`
 2. Get an API key from [Anthropic](https://console.anthropic.com/settings/keys) and [add credit](https://console.anthropic.com/settings/billing) (the API is prepaid; a typical book costs $0.50–$2.00)
 3. Create `~/.book2anki.env` (on Windows: `C:\Users\<YourName>\.book2anki.env`):
    ```
    ANTHROPIC_API_KEY=your-key
    ```
-4. Run:
+4. Make the binary executable and run it:
    ```bash
+   chmod +x book2anki-macos-arm64   # macOS/Linux only
    ./book2anki-macos-arm64 mybook.epub
    ```
 
