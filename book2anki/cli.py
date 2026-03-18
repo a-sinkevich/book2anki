@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import sys
 import threading
 import time
@@ -131,7 +132,7 @@ def _write_single_output(
     is_youtube: bool = False,
 ) -> str:
     """Write a single .apkg file for a URL source. Returns output path."""
-    base_name = output or book_title.replace(" ", "-")
+    base_name = output or re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
     path = f"{base_name}.apkg"
     if is_youtube:
         package_cards_flat(all_cards, book_title, path, tag_prefix="youtube", model=YOUTUBE_MODEL)
@@ -149,7 +150,7 @@ def _write_output(
     """Write final Anki deck output files."""
     if full_book:
         os.makedirs(output_dir, exist_ok=True)
-        base_name = book_title.replace(" ", "-")
+        base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
         combined_path = str(Path(output_dir) / f"{base_name}.apkg")
         package_cards(all_cards, book_title, combined_path)
 
@@ -224,7 +225,7 @@ def main() -> None:
         print(f"\nDone! Generated {len(all_cards)} cards. Cost: {format_cost(estimate_cost(total_usage, model))}")
         print(f"Output: {base}.apkg\n")
     else:
-        base_name = book_title.replace(' ', '-')
+        base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(' ', '_')
         output_dir = args.output or base_name
         chapters_dir = str(Path(output_dir) / "chapters")
 
