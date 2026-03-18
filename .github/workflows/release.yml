@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset_name: book2anki-linux-amd64
+          - os: macos-latest
+            asset_name: book2anki-macos-arm64
+          - os: macos-13
+            asset_name: book2anki-macos-amd64
+          - os: windows-latest
+            asset_name: book2anki-windows-amd64.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install . pyinstaller
+
+      - name: Build binary
+        run: >
+          pyinstaller
+          --onefile
+          --name ${{ matrix.asset_name }}
+          --hidden-import book2anki
+          --collect-submodules book2anki
+          --collect-data langdetect
+          book2anki/__main__.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.asset_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/**/*
