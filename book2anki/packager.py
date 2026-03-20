@@ -10,8 +10,9 @@ import genanki
 
 from book2anki.models import Card
 
-_SAFE_TAGS = {"pre", "code", "/pre", "/code", "b", "/b", "i", "/i", "br", "br/",
-              "ul", "/ul", "ol", "/ol", "li", "/li", "p", "/p"}
+_SAFE_TAGS = {"pre", "code", "/pre", "/code", "b", "/b", "br", "br/",
+              "ul", "/ul", "ol", "/ol", "li", "/li", "p", "/p",
+              "strong", "/strong"}
 _TAG_RE = re.compile(r"<(/?\w+)[^>]*>")
 
 
@@ -57,7 +58,27 @@ code {
     font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
     font-size: 16px;
 }
+.example {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px dashed #ccc;
+    font-size: 17px;
+    color: #444;
+}
+.example-label {
+    font-size: 13px;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
 """
+
+_ANSWER_FMT = (
+    '{{FrontSide}}<hr id="answer"><div class="answer">{{Answer}}</div>'
+    '{{#Example}}<div class="example">'
+    '<div class="example-label">Example</div>{{Example}}</div>{{/Example}}'
+)
 
 CARD_MODEL = genanki.Model(
     model_id=1607392319,
@@ -65,6 +86,7 @@ CARD_MODEL = genanki.Model(
     fields=[
         {"name": "Question"},
         {"name": "Answer"},
+        {"name": "Example"},
         {"name": "Chapter"},
         {"name": "Book"},
     ],
@@ -72,7 +94,7 @@ CARD_MODEL = genanki.Model(
         {
             "name": "Card 1",
             "qfmt": '<div class="question">{{Question}}</div>',
-            "afmt": '{{FrontSide}}<hr id="answer"><div class="answer">{{Answer}}</div>',
+            "afmt": _ANSWER_FMT,
         },
     ],
     css=CARD_CSS,
@@ -84,6 +106,7 @@ ARTICLE_MODEL = genanki.Model(
     fields=[
         {"name": "Question"},
         {"name": "Answer"},
+        {"name": "Example"},
         {"name": "Article"},
         {"name": "Source"},
     ],
@@ -91,7 +114,7 @@ ARTICLE_MODEL = genanki.Model(
         {
             "name": "Card 1",
             "qfmt": '<div class="question">{{Question}}</div>',
-            "afmt": '{{FrontSide}}<hr id="answer"><div class="answer">{{Answer}}</div>',
+            "afmt": _ANSWER_FMT,
         },
     ],
     css=CARD_CSS,
@@ -103,6 +126,7 @@ YOUTUBE_MODEL = genanki.Model(
     fields=[
         {"name": "Question"},
         {"name": "Answer"},
+        {"name": "Example"},
         {"name": "Video"},
         {"name": "Source"},
     ],
@@ -110,7 +134,7 @@ YOUTUBE_MODEL = genanki.Model(
         {
             "name": "Card 1",
             "qfmt": '<div class="question">{{Question}}</div>',
-            "afmt": '{{FrontSide}}<hr id="answer"><div class="answer">{{Answer}}</div>',
+            "afmt": _ANSWER_FMT,
         },
     ],
     css=CARD_CSS,
@@ -170,9 +194,10 @@ def _build_chapter_deck(
     for card in chapter_cards:
         q = _escape_field(card.question)
         a = _escape_field(card.answer)
+        ex = _escape_field(card.example) if card.example else ""
         note = genanki.Note(
             model=CARD_MODEL,
-            fields=[q, a, card.chapter_title, card.book_title],
+            fields=[q, a, ex, card.chapter_title, card.book_title],
             tags=[book_tag],
             guid=genanki.guid_for(card.question, card.book_title, card.chapter_title),
         )
@@ -204,9 +229,10 @@ def package_cards_flat(
     for card in cards:
         q = _escape_field(card.question)
         a = _escape_field(card.answer)
+        ex = _escape_field(card.example) if card.example else ""
         note = genanki.Note(
             model=model,
-            fields=[q, a, deck_name, source_url],
+            fields=[q, a, ex, deck_name, source_url],
             tags=[tag],
             guid=genanki.guid_for(card.question, deck_name, source_url),
         )
@@ -261,7 +287,15 @@ def _read_cards_from_apkg(filepath: str) -> list[Card]:
     cards = []
     for (flds,) in rows:
         parts = flds.split("\x1f")
-        if len(parts) >= 4:
+        if len(parts) >= 5:
+            cards.append(Card(
+                question=parts[0],
+                answer=parts[1],
+                example=parts[2],
+                chapter_title=parts[3],
+                book_title=parts[4],
+            ))
+        elif len(parts) >= 4:
             cards.append(Card(
                 question=parts[0],
                 answer=parts[1],

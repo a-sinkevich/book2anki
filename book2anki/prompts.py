@@ -66,19 +66,32 @@ def build_prompt(
         )
         text_label = "Chapter text"
 
+    example_rule = (
+        '\n- **Example field**: include an optional "example" field with a concrete illustration '
+        "when it helps understand the concept — a real-world scenario, a classic case, "
+        "an analogy, or a brief demonstration. Can go beyond the book's own examples. "
+        'Leave "example" as empty string when not needed — not every card needs one'
+    )
+
     programming_rules = ""
     if is_programming:
         programming_rules = """
-- **Code in answers**: when a concept is best illustrated with code, include a short snippet (3-6 lines max) using <pre><code> tags. Only include code when it genuinely helps — not every card needs it
 - **Focus on "why" and "when"**: prefer cards like "When would you use X?" or "What problem does X solve?" over "What is the syntax for X?"
 - **Technique cards**: for named techniques/patterns/refactorings, test: (1) what problem it solves, (2) how it works, (3) when to apply it
 - **Trade-off cards**: when the text compares approaches, create cards that test understanding of trade-offs
 - **No trivial syntax cards**: don't create cards for basic language syntax that any developer would know"""
+        example_rule = (
+            '\n- **Example field**: include an optional "example" field with an illustrative code snippet '
+            "when it helps understand the concept. Use <pre><code> tags for code. "
+            "Can go beyond the book's own examples. "
+            'Leave "example" as empty string when not needed — not every card needs one. '
+            "Good candidates: patterns, techniques, refactorings, before/after transformations"
+        )
 
     code_format_note = ""
     if is_programming:
         code_format_note = (
-            "\n\nIMPORTANT: Answers are rendered as HTML. For code snippets use "
+            "\n\nIMPORTANT: All fields are rendered as HTML. For code snippets use "
             "<pre><code>...</code></pre> tags."
         )
 
@@ -96,14 +109,16 @@ Guidelines:
 - **No trivial cards**: every card should test something genuinely worth remembering
 - **No cards about page numbers, chapter structure, or meta-information**
 {context_rule}
-- **Answers should be concise but complete** — typically 1-3 sentences{programming_rules}
+- **Answers should be concise but complete** — typically 1-3 sentences
+- **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
+- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{example_rule}
 
-Output ONLY a JSON array of objects with "question" and "answer" fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
+Output ONLY a JSON array of objects with "question", "answer", and optionally "example" fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
 
 Example format:
 [
-  {{"question": "What is X?", "answer": "X is..."}},
-  {{"question": "Why does Y happen?", "answer": "Because..."}}
+  {{"question": "What is X?", "answer": "X is...", "example": ""}},
+  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."}}
 ]
 
 {text_label}:

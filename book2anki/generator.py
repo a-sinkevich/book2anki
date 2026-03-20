@@ -153,6 +153,7 @@ def _generate_with_retries(
                     chapter_title=chapter_title,
                     book_title=book_title,
                     source_url=source_url,
+                    example=item.get("example", ""),
                 )
                 for item in cards_data
                 if "question" in item and "answer" in item
