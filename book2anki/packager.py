@@ -1,4 +1,5 @@
 import hashlib
+import html
 import os
 import re
 import sqlite3
@@ -126,13 +127,14 @@ def _build_chapter_deck(
     deck = genanki.Deck(deck_id=_stable_id(subdeck_name), name=subdeck_name)
 
     book_tag = f"book::{_slugify(book_title)}"
-    chapter_tag = f"chapter::{padded}-{_slugify_for_filename(chapter_title)}"
 
     for card in chapter_cards:
+        q = html.escape(card.question)
+        a = html.escape(card.answer)
         note = genanki.Note(
             model=CARD_MODEL,
-            fields=[card.question, card.answer, card.chapter_title, card.book_title],
-            tags=[book_tag, chapter_tag],
+            fields=[q, a, card.chapter_title, card.book_title],
+            tags=[book_tag],
             guid=genanki.guid_for(card.question, card.book_title, card.chapter_title),
         )
         deck.add_note(note)
@@ -161,9 +163,11 @@ def package_cards_flat(
     source_url = cards[0].source_url if cards else ""
 
     for card in cards:
+        q = html.escape(card.question)
+        a = html.escape(card.answer)
         note = genanki.Note(
             model=model,
-            fields=[card.question, card.answer, deck_name, source_url],
+            fields=[q, a, deck_name, source_url],
             tags=[tag],
             guid=genanki.guid_for(card.question, deck_name, source_url),
         )
