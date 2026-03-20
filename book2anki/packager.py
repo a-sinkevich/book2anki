@@ -105,7 +105,6 @@ code {
 .image-caption {
     font-size: 16px;
     margin-top: 4px;
-    font-style: italic;
 }
 """
 
