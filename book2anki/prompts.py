@@ -45,6 +45,8 @@ def build_prompt(
     language: str,
     is_article: bool = False,
     is_programming: bool = False,
+    diagrams: bool = False,
+    diagram_mode: str = "svg",
 ) -> str:
     depth_instruction = DEPTH_INSTRUCTIONS[depth]
 
@@ -88,11 +90,49 @@ def build_prompt(
             "Good candidates: patterns, techniques, refactorings, before/after transformations"
         )
 
+    diagram_rule = ""
+    if diagrams and diagram_mode == "gemini":
+        diagram_rule = (
+            '\n- **Diagram field**: include an optional "diagram" field with an '
+            f"image-generation prompt (in {language}) when a concept is significantly "
+            "easier to understand visually. Describe **what** to show and **what "
+            "to highlight** — the key structures, elements, labels, and their "
+            "relationships. Don't specify how to draw it — the image generator "
+            "will choose the best visual style. "
+            "Good examples: 'Labeled diagram of the hypothalamus showing the "
+            "hunger center (lateral nucleus) and satiety center (ventromedial "
+            "nucleus) with mutual inhibition arrows, highlighted within a brain "
+            "cross-section', 'The dopamine reward pathway from VTA to nucleus "
+            "accumbens and prefrontal cortex, labeled'. "
+            'Leave "diagram" as empty string when not needed — most cards won\'t '
+            "have one. Only add diagrams when visual representation genuinely aids "
+            "understanding"
+        )
+    elif diagrams:
+        diagram_rule = (
+            '\n- **Diagram field**: include an optional "diagram" field with an '
+            "inline SVG when a concept is significantly easier to understand "
+            "visually. **Prioritize spatially grounded diagrams**: for anatomy, "
+            "show a simplified outline of the organ/body/brain with the relevant "
+            "structures highlighted in their real approximate positions — not just "
+            "abstract boxes with arrows. Use clear colors (fills with #hex), "
+            "readable font sizes (12-14px), and clean labels. Keep SVGs compact "
+            "(viewBox up to 350x280). "
+            'Leave "diagram" as empty string when not needed — most cards won\'t '
+            "have one. Only add diagrams when visual representation genuinely aids "
+            "understanding"
+        )
+
     code_format_note = ""
     if is_programming:
         code_format_note = (
             "\n\nIMPORTANT: All fields are rendered as HTML. For code snippets use "
             "<pre><code>...</code></pre> tags."
+        )
+    elif diagrams and diagram_mode == "svg":
+        code_format_note = (
+            "\n\nIMPORTANT: All fields are rendered as HTML. "
+            "Diagrams should be inline SVG elements."
         )
 
     return f"""You are an expert at creating Anki flashcards from nonfiction {"articles" if is_article else "books"}.
@@ -111,14 +151,14 @@ Guidelines:
 {context_rule}
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
-- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{example_rule}
+- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{example_rule}{diagram_rule}
 
-Output ONLY a JSON array of objects with "question", "answer", and optionally "example" fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
+Output ONLY a JSON array of objects with "question", "answer", and optionally "example"{' and "diagram"' if diagrams else ''} fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
 
 Example format:
 [
-  {{"question": "What is X?", "answer": "X is...", "example": ""}},
-  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."}}
+  {{"question": "What is X?", "answer": "X is...", "example": ""{', "diagram": ""' if diagrams else ''}}},
+  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "diagram": "Labeled diagram showing Y with key components A and B highlighted and their interaction arrows"' if diagrams else ''}}}
 ]
 
 {text_label}:

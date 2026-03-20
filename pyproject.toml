@@ -21,6 +21,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+diagrams = [
+    "google-genai>=1.0",
+]
 dev = [
     "flake8>=7.0",
     "mypy>=1.13",
@@ -51,6 +54,7 @@ module = [
     "langdetect.*",
     "fitz.*",
     "youtube_transcript_api.*",
+    "google.*",
 ]
 ignore_missing_imports = true
 

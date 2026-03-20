@@ -14,6 +14,7 @@ from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
 from book2anki.generator import LLMProvider, generate_cards_for_chapter, estimate_cost, format_cost
 from book2anki.prompts import detect_programming
+from book2anki.diagram_gen import DiagramResult, is_gemini_available, process_diagrams
 from book2anki.packager import (
     package_cards, package_cards_flat, package_single_chapter,
     load_existing_chapters, YOUTUBE_MODEL,
@@ -83,6 +84,10 @@ def _parse_args() -> argparse.Namespace:
         "--chapters", type=str, default=None,
         help="Chapters to process, e.g. '3', '1,2,5', '3-7', '1,3-5,8' (1-based)",
     )
+    parser.add_argument(
+        "--diagrams", action="store_true",
+        help="Generate inline SVG diagrams for visual concepts (opt-in)",
+    )
     return parser.parse_args()
 
 
@@ -131,15 +136,19 @@ def _select_chapters(
 
 def _write_single_output(
     all_cards: list[Card], book_title: str, output: str | None,
-    is_youtube: bool = False,
+    is_youtube: bool = False, media_files: list[str] | None = None,
 ) -> str:
     """Write a single .apkg file for a URL source. Returns output path."""
     base_name = output or re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
     path = f"{base_name}.apkg"
     if is_youtube:
-        package_cards_flat(all_cards, book_title, path, tag_prefix="youtube", model=YOUTUBE_MODEL)
+        package_cards_flat(
+            all_cards, book_title, path,
+            tag_prefix="youtube", model=YOUTUBE_MODEL,
+            media_files=media_files,
+        )
     else:
-        package_cards_flat(all_cards, book_title, path)
+        package_cards_flat(all_cards, book_title, path, media_files=media_files)
     return base_name
 
 
@@ -148,13 +157,14 @@ def _write_output(
     book_title: str,
     output_dir: str,
     full_book: bool,
+    media_files: list[str] | None = None,
 ) -> None:
     """Write final Anki deck output files."""
     if full_book:
         os.makedirs(output_dir, exist_ok=True)
         base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
         combined_path = str(Path(output_dir) / f"{base_name}.apkg")
-        package_cards(all_cards, book_title, combined_path)
+        package_cards(all_cards, book_title, combined_path, media_files=media_files)
 
 
 def main() -> None:
@@ -193,6 +203,7 @@ def main() -> None:
     print(f"Parameters: depth={args.depth}"
           f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
           f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
+          f"{', diagrams' if args.diagrams else ''}"
           f"{', parallel' if args.parallel else ''}")
 
     chapters_to_generate = _select_chapters(chapters, args.chapters)
@@ -200,6 +211,9 @@ def main() -> None:
     all_text = "\n".join(ch.text for ch in chapters_to_generate)
     lang = detect_language(all_text, override=args.lang)
     is_prog = detect_programming(all_text)
+    diagram_mode = "svg"
+    if args.diagrams and is_gemini_available():
+        diagram_mode = "gemini"
     print(f"Language: {lang}")
     if is_prog:
         print("Content: programming (code-aware cards)")
@@ -211,24 +225,40 @@ def main() -> None:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    print(f"Cards model: {provider.model_name()}")
+    if args.diagrams:
+        if diagram_mode == "gemini":
+            print("Diagrams: Gemini image generation")
+        else:
+            print("Diagrams: inline SVG (set GOOGLE_API_KEY for Gemini images)")
+    print()
+
     all_cards: list[Card] = []
+    diag_result = DiagramResult()
 
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
 
     if is_url or is_yt:
         source_url = args.file if is_url else f"https://www.youtube.com/watch?v={args.file}"
-        all_cards, total_usage = _process_sequential(
+        all_cards, total_usage, diag_result = _process_sequential(
             provider, chapters_to_generate, book_title, args.depth, lang,
             total=1, all_cards=[], chapters_dir="", is_article=True,
             source_url=source_url, is_programming=is_prog,
+            diagrams=args.diagrams, diagram_mode=diagram_mode,
         )
         if not all_cards:
             print("Error: No cards were generated.", file=sys.stderr)
             sys.exit(1)
 
-        base = _write_single_output(all_cards, book_title, args.output, is_youtube=is_yt)
-        print(f"\nDone! Generated {len(all_cards)} cards. Cost: {format_cost(estimate_cost(total_usage, model))}")
+        base = _write_single_output(
+            all_cards, book_title, args.output,
+            is_youtube=is_yt, media_files=diag_result.media_files,
+        )
+        text_cost = estimate_cost(total_usage, model)
+        total_cost = text_cost + diag_result.cost
+        diag_str = _format_diagram_summary(diag_result)
+        print(f"\nDone! Generated {len(all_cards)} cards. Cost: {format_cost(total_cost)}{diag_str}")
         print(f"Output: {base}.apkg\n")
     else:
         base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(' ', '_')
@@ -251,14 +281,16 @@ def main() -> None:
 
         if pending:
             if args.parallel:
-                all_cards, total_usage = _process_parallel(
+                all_cards, total_usage, diag_result = _process_parallel(
                     provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
-                    is_programming=is_prog,
+                    is_programming=is_prog, diagrams=args.diagrams,
+                    diagram_mode=diagram_mode,
                 )
             else:
-                all_cards, total_usage = _process_sequential(
+                all_cards, total_usage, diag_result = _process_sequential(
                     provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
-                    is_programming=is_prog,
+                    is_programming=is_prog, diagrams=args.diagrams,
+                    diagram_mode=diagram_mode,
                 )
 
         if not all_cards:
@@ -268,11 +300,34 @@ def main() -> None:
         _write_output(
             all_cards, book_title, output_dir,
             full_book=(args.chapters is None),
+            media_files=diag_result.media_files,
         )
 
-        cost_str = f" Cost: {format_cost(estimate_cost(total_usage, model))}" if total_usage.input_tokens else ""
-        print(f"\nDone! Generated {len(all_cards)} cards across {len(chapters_to_generate)} chapter(s).{cost_str}")
+        text_cost = estimate_cost(total_usage, model)
+        total_cost = text_cost + diag_result.cost
+        cost_str = f" Cost: {format_cost(total_cost)}" if total_cost > 0 else ""
+        diag_str = _format_diagram_summary(diag_result)
+        n_ch = len(chapters_to_generate)
+        print(f"\nDone! Generated {len(all_cards)} cards across {n_ch} chapter(s).{cost_str}{diag_str}")
         print(f"Output: {output_dir}/\n")
+
+
+def _format_diagram_summary(diag: DiagramResult) -> str:
+    """Format diagram generation summary for output."""
+    if not diag.generated and not diag.cached:
+        return ""
+    parts = []
+    total = diag.generated + diag.cached
+    parts.append(f"\nDiagrams: {total} generated")
+    if diag.cached:
+        parts.append(f" ({diag.cached} cached)")
+    if diag.failed:
+        parts.append(f", {diag.failed} failed")
+    if diag.primary_model:
+        parts.append(f", model: {diag.primary_model}")
+    if diag.generated:
+        parts.append(f", cost: {diag.cost_str}")
+    return "".join(parts)
 
 
 def _fmt_elapsed(seconds: float) -> str:
@@ -288,13 +343,26 @@ def _fmt_mm_ss(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
-_TBL_HEADER = f"{'Chapter':<45} {'Cards':>5}  {'Time':>7}  {'Cost':>8}"
-_TBL_SEP = "-" * 45 + " " + "-" * 5 + "  " + "-" * 7 + "  " + "-" * 8
+_TBL_HEADER = (
+    f"{'Chapter':<45} {'Cards':>5}  {'Diag':>4}  {'Time':>7}"
+    f"  {'Cost':>8}  {'DiagCost':>8}  {'Total':>8}"
+)
+_TBL_SEP = (
+    "-" * 45 + " " + "-" * 5 + "  " + "-" * 4 + "  " + "-" * 7
+    + "  " + "-" * 8 + "  " + "-" * 8 + "  " + "-" * 8
+)
 
 
-def _tbl_row(title: str, cards: int, elapsed: float, cost: str) -> str:
+def _tbl_row(
+    title: str, cards: int, elapsed: float, cost: str,
+    diags: int = 0, diag_cost: str = "", total_cost: str = "",
+) -> str:
     short = title[:43] + "…" if len(title) > 44 else title
-    return f"{short:<45} {cards:>5}  {_fmt_elapsed(elapsed):>7}  {cost:>8}"
+    diag_s = str(diags) if diags else ""
+    return (
+        f"{short:<45} {cards:>5}  {diag_s:>4}  {_fmt_elapsed(elapsed):>7}"
+        f"  {cost:>8}  {diag_cost:>8}  {total_cost:>8}"
+    )
 
 
 class _ProgressBar:
@@ -388,11 +456,13 @@ def _process_sequential(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
     is_article: bool = False, source_url: str = "", is_programming: bool = False,
-) -> tuple[list[Card], TokenUsage]:
+    diagrams: bool = False, diagram_mode: str = "svg",
+) -> tuple[list[Card], TokenUsage, DiagramResult]:
     session_cards = 0
     total_usage = TokenUsage(0, 0)
     total_time = 0.0
     model = provider.model_name()
+    all_diagrams = DiagramResult()
 
     show_table = not is_article
     pbar = _ProgressBar(total=total, initial=total - len(chapters))
@@ -411,7 +481,26 @@ def _process_sequential(
             is_article=is_article,
             source_url=source_url,
             is_programming=is_programming,
+            diagrams=diagrams,
+            diagram_mode=diagram_mode,
         )
+
+        ch_diag = DiagramResult()
+        if cards and diagrams and diagram_mode == "gemini":
+            media_dir = os.path.join(chapters_dir or ".", "media")
+            ch_diag = process_diagrams(
+                cards, media_dir, status_fn=lambda m: pbar.set_postfix_str(m),
+                language=lang, is_programming=is_programming,
+            )
+            all_diagrams.media_files.extend(ch_diag.media_files)
+            all_diagrams.generated += ch_diag.generated
+            all_diagrams.cached += ch_diag.cached
+            all_diagrams.failed += ch_diag.failed
+            for m, c in ch_diag.model_counts.items():
+                all_diagrams.model_counts[m] = (
+                    all_diagrams.model_counts.get(m, 0) + c
+                )
+
         ch_elapsed = time.monotonic() - ch_start
         total_time += ch_elapsed
         all_cards.extend(cards)
@@ -419,33 +508,51 @@ def _process_sequential(
         total_usage += usage
 
         if cards and chapters_dir:
-            package_single_chapter(cards, book_title, chapter.index, chapters_dir)
+            package_single_chapter(
+                cards, book_title, chapter.index, chapters_dir,
+                media_files=ch_diag.media_files,
+            )
 
         if show_table:
-            ch_cost = format_cost(estimate_cost(usage, model))
-            pbar.write(_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
+            ch_text_cost = estimate_cost(usage, model)
+            ch_cost = format_cost(ch_text_cost)
+            n_diag = ch_diag.generated + ch_diag.cached
+            ch_dcost = ch_diag.cost_str if ch_diag.generated else ""
+            ch_total = format_cost(ch_text_cost + ch_diag.cost)
+            pbar.write(_tbl_row(
+                chapter.title, len(cards), ch_elapsed, ch_cost,
+                diags=n_diag, diag_cost=ch_dcost, total_cost=ch_total,
+            ))
         pbar.update(1)
         pbar.set_postfix_str(f"{session_cards} cards")
 
     pbar.close()
     if show_table:
-        total_cost = format_cost(estimate_cost(total_usage, model))
+        text_cost = estimate_cost(total_usage, model)
+        total_diags = all_diagrams.generated + all_diagrams.cached
+        total_dcost = all_diagrams.cost_str if all_diagrams.generated else ""
+        combined = format_cost(text_cost + all_diagrams.cost)
         print(_TBL_SEP, file=sys.stderr)
-        print(_tbl_row("Total", session_cards, total_time, total_cost), file=sys.stderr)
-    return all_cards, total_usage
+        print(_tbl_row(
+            "Total", session_cards, total_time, format_cost(text_cost),
+            diags=total_diags, diag_cost=total_dcost, total_cost=combined,
+        ), file=sys.stderr)
+    return all_cards, total_usage, all_diagrams
 
 
 def _process_parallel(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
-    is_programming: bool = False,
-) -> tuple[list[Card], TokenUsage]:
+    is_programming: bool = False, diagrams: bool = False,
+    diagram_mode: str = "svg",
+) -> tuple[list[Card], TokenUsage, DiagramResult]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
     session_cards = 0
     total_usage = TokenUsage(0, 0)
     total_time = 0.0
     model = provider.model_name()
     chapter_start: dict[int, float] = {}
+    all_diagrams = DiagramResult()
 
     pbar = _ProgressBar(total=total, initial=total - len(chapters))
     pbar.write(_TBL_HEADER)
@@ -462,6 +569,8 @@ def _process_parallel(
                 depth=depth,
                 language=lang,
                 is_programming=is_programming,
+                diagrams=diagrams,
+                diagram_mode=diagram_mode,
             )] = chapter
 
         for future in as_completed(future_to_chapter):
@@ -469,6 +578,23 @@ def _process_parallel(
             ch_elapsed = time.monotonic() - chapter_start[chapter.index]
             try:
                 cards, usage = future.result()
+
+                ch_diag = DiagramResult()
+                if cards and diagrams and diagram_mode == "gemini":
+                    media_dir = os.path.join(chapters_dir, "media")
+                    ch_diag = process_diagrams(
+                        cards, media_dir, language=lang,
+                        is_programming=is_programming,
+                    )
+                    all_diagrams.media_files.extend(ch_diag.media_files)
+                    all_diagrams.generated += ch_diag.generated
+                    all_diagrams.cached += ch_diag.cached
+                    all_diagrams.failed += ch_diag.failed
+                    for m, c in ch_diag.model_counts.items():
+                        all_diagrams.model_counts[m] = (
+                            all_diagrams.model_counts.get(m, 0) + c
+                        )
+
                 all_cards.extend(cards)
                 session_cards += len(cards)
                 total_usage.input_tokens += usage.input_tokens
@@ -476,10 +602,20 @@ def _process_parallel(
                 total_time += ch_elapsed
 
                 if cards:
-                    package_single_chapter(cards, book_title, chapter.index, chapters_dir)
+                    package_single_chapter(
+                        cards, book_title, chapter.index, chapters_dir,
+                        media_files=ch_diag.media_files,
+                    )
 
-                ch_cost = format_cost(estimate_cost(usage, model))
-                pbar.write(_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
+                ch_text_cost = estimate_cost(usage, model)
+                ch_cost = format_cost(ch_text_cost)
+                n_diag = ch_diag.generated + ch_diag.cached
+                ch_dcost = ch_diag.cost_str if ch_diag.generated else ""
+                ch_total = format_cost(ch_text_cost + ch_diag.cost)
+                pbar.write(_tbl_row(
+                    chapter.title, len(cards), ch_elapsed, ch_cost,
+                    diags=n_diag, diag_cost=ch_dcost, total_cost=ch_total,
+                ))
                 pbar.update(1)
                 pbar.set_postfix_str(f"{session_cards} cards")
             except Exception as e:
@@ -487,10 +623,16 @@ def _process_parallel(
                 pbar.update(1)
 
     pbar.close()
-    total_cost = format_cost(estimate_cost(total_usage, model))
+    text_cost = estimate_cost(total_usage, model)
+    total_diags = all_diagrams.generated + all_diagrams.cached
+    total_dcost = all_diagrams.cost_str if all_diagrams.generated else ""
+    combined = format_cost(text_cost + all_diagrams.cost)
     print(_TBL_SEP, file=sys.stderr)
-    print(_tbl_row("Total", session_cards, total_time, total_cost), file=sys.stderr)
-    return all_cards, total_usage
+    print(_tbl_row(
+        "Total", session_cards, total_time, format_cost(text_cost),
+        diags=total_diags, diag_cost=total_dcost, total_cost=combined,
+    ), file=sys.stderr)
+    return all_cards, total_usage, all_diagrams
 
 
 if __name__ == "__main__":

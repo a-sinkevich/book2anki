@@ -12,7 +12,15 @@ from book2anki.models import Card
 
 _SAFE_TAGS = {"pre", "code", "/pre", "/code", "b", "/b", "br", "br/",
               "ul", "/ul", "ol", "/ol", "li", "/li", "p", "/p",
-              "strong", "/strong"}
+              "strong", "/strong", "img",
+              "svg", "/svg", "rect", "/rect", "circle", "/circle",
+              "ellipse", "/ellipse", "line", "/line", "polyline", "/polyline",
+              "polygon", "/polygon", "path", "/path", "text", "/text",
+              "tspan", "/tspan", "g", "/g", "defs", "/defs",
+              "marker", "/marker", "use", "/use",
+              "linearGradient", "/linearGradient",  # noqa: N815
+              "radialGradient", "/radialGradient",  # noqa: N815
+              "stop", "/stop"}
 _TAG_RE = re.compile(r"<(/?\w+)[^>]*>")
 
 
@@ -72,21 +80,41 @@ code {
     letter-spacing: 0.5px;
     margin-bottom: 4px;
 }
+.diagram {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px dashed #ccc;
+    text-align: center;
+}
+.diagram-label {
+    font-size: 13px;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+.diagram svg {
+    max-width: 100%;
+    height: auto;
+}
 """
 
 _ANSWER_FMT = (
     '{{FrontSide}}<hr id="answer"><div class="answer">{{Answer}}</div>'
     '{{#Example}}<div class="example">'
     '<div class="example-label">Example</div>{{Example}}</div>{{/Example}}'
+    '{{#Diagram}}<div class="diagram">'
+    '<div class="diagram-label">Diagram</div>{{Diagram}}</div>{{/Diagram}}'
 )
 
 CARD_MODEL = genanki.Model(
-    model_id=1607392319,
+    model_id=1607392322,
     name="book2anki Basic",
     fields=[
         {"name": "Question"},
         {"name": "Answer"},
         {"name": "Example"},
+        {"name": "Diagram"},
         {"name": "Chapter"},
         {"name": "Book"},
     ],
@@ -101,12 +129,13 @@ CARD_MODEL = genanki.Model(
 )
 
 ARTICLE_MODEL = genanki.Model(
-    model_id=1607392320,
+    model_id=1607392323,
     name="book2anki Article",
     fields=[
         {"name": "Question"},
         {"name": "Answer"},
         {"name": "Example"},
+        {"name": "Diagram"},
         {"name": "Article"},
         {"name": "Source"},
     ],
@@ -121,12 +150,13 @@ ARTICLE_MODEL = genanki.Model(
 )
 
 YOUTUBE_MODEL = genanki.Model(
-    model_id=1607392321,
+    model_id=1607392324,
     name="book2anki YouTube",
     fields=[
         {"name": "Question"},
         {"name": "Answer"},
         {"name": "Example"},
+        {"name": "Diagram"},
         {"name": "Video"},
         {"name": "Source"},
     ],
@@ -195,9 +225,10 @@ def _build_chapter_deck(
         q = _escape_field(card.question)
         a = _escape_field(card.answer)
         ex = _escape_field(card.example) if card.example else ""
+        dg = _escape_field(card.diagram) if card.diagram else ""
         note = genanki.Note(
             model=CARD_MODEL,
-            fields=[q, a, ex, card.chapter_title, card.book_title],
+            fields=[q, a, ex, dg, card.chapter_title, card.book_title],
             tags=[book_tag],
             guid=genanki.guid_for(card.question, card.book_title, card.chapter_title),
         )
@@ -206,7 +237,10 @@ def _build_chapter_deck(
     return deck
 
 
-def package_cards(cards: list[Card], book_title: str, output_path: str) -> None:
+def package_cards(
+    cards: list[Card], book_title: str, output_path: str,
+    media_files: list[str] | None = None,
+) -> None:
     """Package all cards into a single .apkg file with chapter-based subdecks."""
     grouped = _group_cards_by_chapter(cards)
     decks = [
@@ -214,12 +248,15 @@ def package_cards(cards: list[Card], book_title: str, output_path: str) -> None:
         for i, (chapter_title, chapter_cards) in enumerate(grouped)
     ]
     package = genanki.Package(decks)
+    if media_files:
+        package.media_files = media_files
     package.write_to_file(output_path)
 
 
 def package_cards_flat(
     cards: list[Card], deck_name: str, output_path: str,
     tag_prefix: str = "article", model: genanki.Model = ARTICLE_MODEL,
+    media_files: list[str] | None = None,
 ) -> None:
     """Package all cards into a single flat deck (no subdecks)."""
     deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
@@ -230,15 +267,18 @@ def package_cards_flat(
         q = _escape_field(card.question)
         a = _escape_field(card.answer)
         ex = _escape_field(card.example) if card.example else ""
+        dg = _escape_field(card.diagram) if card.diagram else ""
         note = genanki.Note(
             model=model,
-            fields=[q, a, ex, deck_name, source_url],
+            fields=[q, a, ex, dg, deck_name, source_url],
             tags=[tag],
             guid=genanki.guid_for(card.question, deck_name, source_url),
         )
         deck.add_note(note)
 
     package = genanki.Package([deck])
+    if media_files:
+        package.media_files = media_files
     package.write_to_file(output_path)
 
 
@@ -249,7 +289,8 @@ def chapter_filename(chapter_title: str, chapter_index: int) -> str:
 
 
 def package_single_chapter(
-    cards: list[Card], book_title: str, chapter_index: int, output_dir: str
+    cards: list[Card], book_title: str, chapter_index: int, output_dir: str,
+    media_files: list[str] | None = None,
 ) -> str:
     """Package a single chapter's cards and save to output_dir. Returns filepath."""
     os.makedirs(output_dir, exist_ok=True)
@@ -258,6 +299,8 @@ def package_single_chapter(
     base = chapter_filename(chapter_title, chapter_index)
     filepath = os.path.join(output_dir, f"{base}.apkg")
     package = genanki.Package([deck])
+    if media_files:
+        package.media_files = media_files
     package.write_to_file(filepath)
     return filepath
 
@@ -287,7 +330,16 @@ def _read_cards_from_apkg(filepath: str) -> list[Card]:
     cards = []
     for (flds,) in rows:
         parts = flds.split("\x1f")
-        if len(parts) >= 5:
+        if len(parts) >= 6:
+            cards.append(Card(
+                question=parts[0],
+                answer=parts[1],
+                example=parts[2],
+                diagram=parts[3],
+                chapter_title=parts[4],
+                book_title=parts[5],
+            ))
+        elif len(parts) >= 5:
             cards.append(Card(
                 question=parts[0],
                 answer=parts[1],

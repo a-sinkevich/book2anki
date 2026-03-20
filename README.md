@@ -12,6 +12,7 @@ Convert nonfiction books (EPUB/PDF), articles (URL), and YouTube videos into Ank
 3. Create `~/.book2anki.env` (on Windows: `C:\Users\<YourName>\.book2anki.env`):
    ```
    ANTHROPIC_API_KEY=your-key
+   GOOGLE_API_KEY=your-key   # optional, for --diagrams
    ```
 4. Open a terminal (macOS: Terminal.app, Windows: PowerShell, Linux: any terminal) and make the binary executable (once, macOS/Linux only):
    ```bash
@@ -72,7 +73,27 @@ book2anki VIDEO_ID    # just the YouTube video ID (no quotes needed)
 
 # Generate cards in a different language than the source
 book2anki mybook.epub --lang ru    # English book → Russian cards
+
+# Generate visual diagrams for concepts (requires GOOGLE_API_KEY)
+book2anki mybook.epub --diagrams
 ```
+
+## Diagrams
+
+The `--diagrams` flag generates educational images for cards where visual representation aids understanding (e.g. brain anatomy, system architecture, data flow). Images are generated using the Gemini API.
+
+**Setup:**
+1. Get an API key from [Google AI Studio](https://aistudio.google.com/apikey)
+2. Add it to `~/.book2anki.env`:
+   ```
+   GOOGLE_API_KEY=your-key
+   ```
+3. Install the diagrams dependency (from source only — binaries include it):
+   ```bash
+   pip install -e ".[diagrams]"
+   ```
+
+The tool automatically adapts diagram style to the content: realistic anatomical illustrations for biology, architecture diagrams for programming, maps for geography, etc.
 
 ## Output
 
@@ -81,6 +102,7 @@ Book-Title/
   Book-Title.apkg          # combined Anki deck
   chapters/
     01 - chapter-name.apkg  # per-chapter decks
+    media/                  # diagram images (when --diagrams is used)
 ```
 
 ## Development
@@ -103,17 +125,20 @@ make install-dev # install dev deps
 
 ## Costs
 
-The tool uses the Anthropic API which charges per token. Typical costs:
+The tool uses the Anthropic API (card generation) and optionally the Gemini API (diagrams). Typical costs:
 
 | Source | Depth 1 (core) | Depth 2 (detailed) | Depth 3 (comprehensive) |
 |--------|:-:|:-:|:-:|
 | YouTube video (1 hour) | ~$0.06 | ~$0.07 | ~$0.13 |
 | Book (full) | $0.50–$2.00 | $1.00–$3.00 | $2.00–$5.00 |
 
+Diagrams add ~$0.04–$0.07 per image depending on the Gemini model used. A typical book chapter generates 2–5 diagrams.
+
 ## Features
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Three depth levels**: core ideas, detailed coverage, or comprehensive
+- **Visual diagrams** — AI-generated images for concepts that benefit from visual representation
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
 - **Auto language detection** (English, Russian)
-- **Progress bar** with live status during generation
+- **Progress bar** with per-chapter cost breakdown during generation
