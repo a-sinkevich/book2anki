@@ -72,27 +72,12 @@ code {
     padding-top: 8px;
     border-top: 1px dashed #ccc;
     font-size: 17px;
-    color: #444;
-}
-.example-label {
-    font-size: 13px;
-    color: #999;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 4px;
 }
 .image {
     margin-top: 12px;
     padding-top: 8px;
     border-top: 1px dashed #ccc;
     text-align: center;
-}
-.image-label {
-    font-size: 13px;
-    color: #999;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 4px;
 }
 .image img {
     max-width: 100%;
@@ -110,10 +95,8 @@ code {
 
 _ANSWER_FMT = (
     '{{FrontSide}}<hr id="answer"><div class="answer">{{Answer}}</div>'
-    '{{#Example}}<div class="example">'
-    '<div class="example-label">Example</div>{{Example}}</div>{{/Example}}'
-    '{{#Image}}<div class="image">'
-    '<div class="image-label">Image</div>{{Image}}</div>{{/Image}}'
+    '{{#Example}}<div class="example">{{Example}}</div>{{/Example}}'
+    '{{#Image}}<div class="image">{{Image}}</div>{{/Image}}'
 )
 
 CARD_MODEL = genanki.Model(
@@ -220,7 +203,7 @@ def _slugify_for_filename(title: str) -> str:
 
 
 def _build_chapter_deck(
-    book_title: str, chapter_title: str, chapter_index: int, chapter_cards: list[Card]
+    book_title: str, chapter_title: str, chapter_index: int, chapter_cards: list[Card],
 ) -> genanki.Deck:
     """Build a single subdeck for a chapter."""
     padded = str(chapter_index + 1).zfill(2)
