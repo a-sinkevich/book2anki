@@ -1,11 +1,14 @@
 """Generate diagram images using Gemini's image generation API."""
 import hashlib
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from book2anki.models import Card
+from book2anki.models import BookImage, Card
+
+_BOOK_IMG_RE = re.compile(r"^\[BOOK-IMG-(\d+)\]$", re.IGNORECASE)
 
 _MODELS = [
     "gemini-3-pro-image-preview",
@@ -153,6 +156,61 @@ def _image_filename(card: Card, index: int) -> str:
     return f"diagram_{h}_{index}.png"
 
 
+def _book_img_filename(image: BookImage, card: Card) -> str:
+    """Generate a stable filename for a book image."""
+    h = hashlib.md5(image.data[:1024]).hexdigest()[:10]
+    return f"bookimg_{h}.{image.ext}"
+
+
+def process_book_images(
+    cards: list[Card],
+    images: list[BookImage],
+    media_dir: str,
+) -> list[str]:
+    """Resolve [BOOK-IMG-N] references in card diagram fields.
+
+    Saves referenced images to media_dir, replaces references with <img> tags.
+    Returns list of media file paths.
+    """
+    if not images:
+        return []
+
+    image_by_num: dict[int, BookImage] = {}
+    for img in images:
+        parts = img.id.rsplit("-", 1)
+        if parts:
+            try:
+                image_by_num[int(parts[-1])] = img
+            except ValueError:
+                pass
+
+    os.makedirs(media_dir, exist_ok=True)
+    media_files: list[str] = []
+
+    for card in cards:
+        if not card.diagram.strip():
+            continue
+        m = _BOOK_IMG_RE.match(card.diagram.strip())
+        if not m:
+            continue
+        num = int(m.group(1))
+        image = image_by_num.get(num)
+        if not image:
+            card.diagram = ""
+            continue
+
+        filename = _book_img_filename(image, card)
+        filepath = os.path.join(media_dir, filename)
+        if not os.path.exists(filepath):
+            with open(filepath, "wb") as f:
+                f.write(image.data)
+        card.diagram = f'<img src="{filename}">'
+        if filepath not in media_files:
+            media_files.append(filepath)
+
+    return media_files
+
+
 def process_diagrams(
     cards: list[Card],
     media_dir: str,
@@ -163,6 +221,7 @@ def process_diagrams(
     """Generate images for cards that have diagram prompts.
 
     Modifies cards in place: replaces text prompts with <img> tags.
+    Skips cards that already have <img> tags (e.g. from book images).
     Returns DiagramResult with media files, counts, and cost.
     """
     result = DiagramResult()
@@ -173,7 +232,8 @@ def process_diagrams(
     os.makedirs(media_dir, exist_ok=True)
 
     diagram_cards = [
-        (i, c) for i, c in enumerate(cards) if c.diagram.strip()
+        (i, c) for i, c in enumerate(cards)
+        if c.diagram.strip() and "<img" not in c.diagram
     ]
 
     if not diagram_cards:

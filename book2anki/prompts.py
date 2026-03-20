@@ -37,6 +37,18 @@ def detect_programming(text: str) -> bool:
     return hits >= 5
 
 
+def _format_figures_section(
+    captions: list[tuple[str, str]] | None,
+) -> str:
+    """Format book figures as a numbered list for the prompt."""
+    if not captions:
+        return ""
+    lines = ["Available figures from the book (reference by ID in the diagram field):"]
+    for img_id, caption in captions:
+        lines.append(f"  [{img_id.upper()}] {caption}")
+    return "\n".join(lines) + "\n\n"
+
+
 def build_prompt(
     book_title: str,
     chapter_title: str,
@@ -47,6 +59,7 @@ def build_prompt(
     is_programming: bool = False,
     diagrams: bool = False,
     diagram_mode: str = "svg",
+    book_image_captions: list[tuple[str, str]] | None = None,
 ) -> str:
     depth_instruction = DEPTH_INSTRUCTIONS[depth]
 
@@ -90,6 +103,15 @@ def build_prompt(
             "Good candidates: patterns, techniques, refactorings, before/after transformations"
         )
 
+    has_book_images = bool(book_image_captions)
+    book_img_instruction = ""
+    if has_book_images:
+        book_img_instruction = (
+            " If one of the available book figures matches the card's concept, "
+            "reference it by writing its ID (e.g. [BOOK-IMG-1]) in the diagram field "
+            "— prefer book figures over generating new ones when they fit."
+        )
+
     diagram_rule = ""
     if diagrams and diagram_mode == "gemini":
         diagram_rule = (
@@ -104,7 +126,8 @@ def build_prompt(
             "nucleus) with mutual inhibition arrows, highlighted within a brain "
             "cross-section', 'The dopamine reward pathway from VTA to nucleus "
             "accumbens and prefrontal cortex, labeled'. "
-            'Leave "diagram" as empty string when not needed — most cards won\'t '
+            + book_img_instruction +
+            ' Leave "diagram" as empty string when not needed — most cards won\'t '
             "have one. Only add diagrams when visual representation genuinely aids "
             "understanding"
         )
@@ -118,9 +141,18 @@ def build_prompt(
             "abstract boxes with arrows. Use clear colors (fills with #hex), "
             "readable font sizes (12-14px), and clean labels. Keep SVGs compact "
             "(viewBox up to 350x280). "
-            'Leave "diagram" as empty string when not needed — most cards won\'t '
+            + book_img_instruction +
+            ' Leave "diagram" as empty string when not needed — most cards won\'t '
             "have one. Only add diagrams when visual representation genuinely aids "
             "understanding"
+        )
+    elif has_book_images:
+        diagram_rule = (
+            '\n- **Diagram field**: include an optional "diagram" field. '
+            "If one of the available book figures matches the card's concept, "
+            "reference it by writing its ID (e.g. [BOOK-IMG-1]). "
+            "Prefer using book figures when they help understand the concept visually. "
+            'Leave "diagram" as empty string when not needed'
         )
 
     code_format_note = ""
@@ -153,12 +185,12 @@ Guidelines:
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
 - **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{example_rule}{diagram_rule}
 
-Output ONLY a JSON array of objects with "question", "answer", and optionally "example"{' and "diagram"' if diagrams else ''} fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
+{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example"{' and "diagram"' if diagrams or has_book_images else ''} fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
 
 Example format:
 [
-  {{"question": "What is X?", "answer": "X is...", "example": ""{', "diagram": ""' if diagrams else ''}}},
-  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "diagram": "Labeled diagram showing Y with key components A and B highlighted and their interaction arrows"' if diagrams else ''}}}
+  {{"question": "What is X?", "answer": "X is...", "example": ""{', "diagram": ""' if diagrams or has_book_images else ''}}},
+  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "diagram": "Labeled diagram showing Y with key components A and B highlighted and their interaction arrows"' if diagrams else ', "diagram": "[BOOK-IMG-1]"' if has_book_images else ''}}}
 ]
 
 {text_label}:

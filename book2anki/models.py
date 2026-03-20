@@ -1,4 +1,13 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass
+class BookImage:
+    """An image extracted from the source book."""
+    id: str          # "book-img-1" (per-chapter sequential)
+    data: bytes      # raw image bytes
+    ext: str         # file extension: "png", "jpg", etc.
+    caption: str     # description for the LLM
 
 
 @dataclass
@@ -6,6 +15,7 @@ class Chapter:
     title: str
     text: str
     index: int
+    images: list[BookImage] = field(default_factory=list)
 
 
 @dataclass

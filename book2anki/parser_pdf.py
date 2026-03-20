@@ -3,7 +3,13 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from book2anki.models import Chapter, should_skip_chapter
+from book2anki.models import BookImage, Chapter, should_skip_chapter
+
+_MIN_IMAGE_BYTES = 5000
+_FIGURE_RE = re.compile(
+    r"^(fig(ure|\.)|рис(унок|\.)|diagram|схема|table|таблица|chart|график)",
+    re.IGNORECASE,
+)
 
 CHUNK_SIZE = 20  # pages per chunk in fallback mode
 
@@ -86,7 +92,10 @@ def _from_outline(doc: fitz.Document) -> list[Chapter]:
             continue
         if should_skip_chapter(title, text):
             continue
-        chapters.append(Chapter(title=title, text=text, index=index))
+        images = _extract_images_from_pages(doc, start_page, end_page)
+        chapters.append(Chapter(
+            title=title, text=text, index=index, images=images,
+        ))
         index += 1
 
     return chapters
@@ -125,7 +134,10 @@ def _from_heuristics(doc: fitz.Document) -> list[Chapter]:
         end_page = boundaries[i + 1][0] if i + 1 < len(boundaries) else len(doc)
         text = _extract_page_range(doc, start_page, end_page)
         if text.strip():
-            chapters.append(Chapter(title=title, text=text, index=i))
+            images = _extract_images_from_pages(doc, start_page, end_page)
+            chapters.append(Chapter(
+                title=title, text=text, index=i, images=images,
+            ))
 
     return chapters
 
@@ -157,3 +169,64 @@ def _extract_page_range(doc: fitz.Document, start: int, end: int) -> str:
         if page_num < len(doc):
             parts.append(doc[page_num].get_text())
     return "\n".join(parts)
+
+
+def _find_caption_near_image(
+    page: fitz.Page, img_rect: fitz.Rect,
+) -> str:
+    """Find figure caption text near an image on the page."""
+    blocks = page.get_text("blocks")
+    for block in blocks:
+        bx0, by0, bx1, by1, text, _, _ = block
+        if by0 < img_rect.y1:
+            continue
+        if by0 - img_rect.y1 > 60:
+            break
+        text = str(text).strip()
+        if _FIGURE_RE.match(text) and len(text) < 300:
+            return text
+    return ""
+
+
+def _extract_images_from_pages(
+    doc: fitz.Document, start: int, end: int,
+) -> list[BookImage]:
+    """Extract images from a page range with captions."""
+    images: list[BookImage] = []
+    seen_xrefs: set[int] = set()
+
+    for page_num in range(start, min(end, len(doc))):
+        page = doc[page_num]
+        image_list = page.get_images(full=True)
+        for img_info in image_list:
+            xref = img_info[0]
+            if xref in seen_xrefs:
+                continue
+            seen_xrefs.add(xref)
+
+            try:
+                base_image = doc.extract_image(xref)
+            except Exception:
+                continue
+            if not base_image:
+                continue
+
+            data = base_image["image"]
+            if len(data) < _MIN_IMAGE_BYTES:
+                continue
+
+            ext = base_image.get("ext", "png")
+
+            img_rects = page.get_image_rects(xref)
+            caption = ""
+            if img_rects:
+                caption = _find_caption_near_image(page, img_rects[0])
+            if not caption:
+                continue
+
+            img_id = f"book-img-{len(images) + 1}"
+            images.append(BookImage(
+                id=img_id, data=data, ext=ext, caption=caption,
+            ))
+
+    return images

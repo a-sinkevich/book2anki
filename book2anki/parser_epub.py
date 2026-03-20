@@ -1,11 +1,22 @@
+import os
+import posixpath
 from pathlib import Path
 from typing import Any
 
 import ebooklib
 from ebooklib import epub
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
-from book2anki.models import Chapter, SKIP_TITLES, MIN_CHAPTER_LENGTH, should_skip_chapter
+from book2anki.models import BookImage, Chapter, SKIP_TITLES, MIN_CHAPTER_LENGTH, should_skip_chapter
+
+_MIN_IMAGE_BYTES = 5000  # skip icons/spacers smaller than 5KB
+_MIME_TO_EXT: dict[str, str] = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+}
 
 
 def _read_epub_safe(filepath: str) -> epub.EpubBook:
@@ -143,6 +154,160 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
     return toc_map
 
 
+def _build_image_map(book: epub.EpubBook) -> dict[str, Any]:
+    """Build a lookup from href (and basename) to image items."""
+    img_map: dict[str, Any] = {}
+    for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
+        img_map[item.get_name()] = item
+        basename = os.path.basename(item.get_name())
+        if basename not in img_map:
+            img_map[basename] = item
+    return img_map
+
+
+_FIGURE_PREFIXES = (
+    "fig", "рис", "figure", "рисунок", "diagram", "схема",
+    "table", "таблица", "chart", "график",
+)
+
+_FIGURE_CONTEXT_PATTERNS = (
+    "на рисунке", "на рис.", "на схеме", "на графике",
+    "на диаграмме", "на карте", "показан", "изображен",
+    "in the figure", "in the diagram", "shown in", "illustrated",
+)
+
+
+def _truncate(text: str, max_len: int = 200) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rsplit(" ", 1)[0] + "…"
+
+
+def _extract_image_caption(img_tag: Tag) -> str:
+    """Extract caption from an <img> tag's context.
+
+    Combines surrounding paragraph text to describe the image.
+    """
+    alt = img_tag.get("alt", "") or ""
+    if isinstance(alt, list):
+        alt = " ".join(alt)
+    if alt.lower().strip() in ("", "cover", "image", "img"):
+        alt = ""
+
+    # 1. <figcaption> inside <figure>
+    figure = img_tag.find_parent("figure")
+    if figure:
+        figcaption = figure.find("figcaption")
+        if figcaption:
+            caption = figcaption.get_text(strip=True)
+            if caption:
+                return caption
+
+    # 2. Caption sibling inside the same container as <img>
+    #    e.g. <div class="full_img"><img/><p class="PodRis">Рис. 2.3...</p></div>
+    for sib in img_tag.find_next_siblings():
+        if not sib.name or sib.name not in ("p", "div", "span"):
+            continue
+        text = sib.get_text(strip=True)
+        if not text:
+            continue
+        text_lower = text.lower()
+        if any(text_lower.startswith(p) for p in _FIGURE_PREFIXES):
+            # Collect continuation lines (multi-paragraph captions)
+            cap_parts = [text]
+            for cont in sib.find_next_siblings():
+                if not cont.name or cont.name not in ("p", "span"):
+                    break
+                ct = cont.get_text(strip=True)
+                if not ct:
+                    break
+                ct_lower = ct.lower()
+                if any(ct_lower.startswith(p) for p in _FIGURE_PREFIXES):
+                    break
+                cap_parts.append(ct)
+            return " ".join(cap_parts)
+
+    parent = img_tag.parent
+    if not parent:
+        return alt
+
+    # 3. Next sibling of parent starting with "Figure/Рис."
+    sibling = parent.find_next_sibling()
+    if sibling and sibling.name in ("p", "div", "span"):
+        text = sibling.get_text(strip=True)
+        if text and len(text) < 500:
+            text_lower = text.lower()
+            if any(text_lower.startswith(p) for p in _FIGURE_PREFIXES):
+                return text
+
+    # 4. Combine before + after paragraphs for context
+    parts: list[str] = []
+
+    prev = parent.find_previous_sibling()
+    if prev and prev.name in ("p", "div"):
+        text = prev.get_text(strip=True)
+        if text and len(text) >= 20:
+            parts.append(_truncate(text))
+
+    if sibling and sibling.name in ("p", "div"):
+        text = sibling.get_text(strip=True)
+        if text and len(text) >= 20:
+            parts.append(_truncate(text))
+
+    if parts:
+        return " | ".join(parts)
+
+    return alt
+
+
+def _extract_images_from_html(
+    html_content: bytes, item_name: str, image_map: dict[str, Any],
+) -> list[BookImage]:
+    """Extract images from an HTML document with captions."""
+    soup = BeautifulSoup(html_content, "html.parser")
+    images: list[BookImage] = []
+    seen_hrefs: set[str] = set()
+
+    for img_tag in soup.find_all("img"):
+        src = img_tag.get("src", "")
+        if isinstance(src, list):
+            src = src[0] if src else ""
+        if not src:
+            continue
+
+        base_dir = posixpath.dirname(item_name)
+        resolved = posixpath.normpath(posixpath.join(base_dir, src))
+        basename = os.path.basename(src)
+
+        img_item = image_map.get(resolved) or image_map.get(basename)
+        if not img_item:
+            continue
+
+        href = img_item.get_name()
+        if href in seen_hrefs:
+            continue
+        seen_hrefs.add(href)
+
+        data = img_item.get_content()
+        if len(data) < _MIN_IMAGE_BYTES:
+            continue
+
+        media_type = img_item.media_type or ""
+        ext = _MIME_TO_EXT.get(media_type, "")
+        if not ext:
+            ext_from_name = os.path.splitext(href)[1].lstrip(".")
+            ext = ext_from_name if ext_from_name else "png"
+
+        caption = _extract_image_caption(img_tag)
+        if not caption:
+            continue
+
+        img_id = f"book-img-{len(images) + 1}"
+        images.append(BookImage(id=img_id, data=data, ext=ext, caption=caption))
+
+    return images
+
+
 def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_title: str = "") -> list[Chapter]:
     """Extract chapters from the spine, using TOC titles when available.
 
@@ -151,14 +316,17 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
     empty/placeholder file, its title carries forward to the next
     content-bearing spine item.
     """
+    image_map = _build_image_map(book)
     chapter_texts: dict[str, list[str]] = {}
+    chapter_images: dict[str, list[BookImage]] = {}
     chapter_order: list[str] = []
     unnamed_count = 0
     pending_title: str | None = None
     empty_toc_titles: list[str] = []
 
     for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-        text = _html_to_text(item.get_content())
+        content = item.get_content()
+        text = _html_to_text(content)
         href = item.get_name()
         title = toc_titles.get(href)
 
@@ -181,8 +349,12 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
 
         if title not in chapter_texts:
             chapter_texts[title] = []
+            chapter_images[title] = []
             chapter_order.append(title)
         chapter_texts[title].append(text)
+
+        images = _extract_images_from_html(content, href, image_map)
+        chapter_images[title].extend(images)
 
     # If empty TOC entries came AFTER their content in the spine,
     # match remaining titles with unnamed substantial content items
@@ -198,6 +370,7 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
                 idx = chapter_order.index(old_key)
                 chapter_order[idx] = new_title
                 chapter_texts[new_title] = chapter_texts.pop(old_key)
+                chapter_images[new_title] = chapter_images.pop(old_key, [])
 
     chapters = []
     index = 0
@@ -206,7 +379,13 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
         if should_skip_chapter(title, combined, book_title=book_title):
             continue
         combined = _strip_references(combined)
-        chapters.append(Chapter(title=title, text=combined, index=index))
+        imgs = chapter_images.get(title, [])
+        # Re-number images sequentially per chapter
+        for i, img in enumerate(imgs):
+            img.id = f"book-img-{i + 1}"
+        chapters.append(Chapter(
+            title=title, text=combined, index=index, images=imgs,
+        ))
         index += 1
 
     return chapters

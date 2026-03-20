@@ -14,7 +14,9 @@ from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
 from book2anki.generator import LLMProvider, generate_cards_for_chapter, estimate_cost, format_cost
 from book2anki.prompts import detect_programming
-from book2anki.diagram_gen import DiagramResult, is_gemini_available, process_diagrams
+from book2anki.diagram_gen import (
+    DiagramResult, is_gemini_available, process_book_images, process_diagrams,
+)
 from book2anki.packager import (
     package_cards, package_cards_flat, package_single_chapter,
     load_existing_chapters, YOUTUBE_MODEL,
@@ -214,9 +216,12 @@ def main() -> None:
     diagram_mode = "svg"
     if args.diagrams and is_gemini_available():
         diagram_mode = "gemini"
+    total_book_images = sum(len(ch.images) for ch in chapters_to_generate)
     print(f"Language: {lang}")
     if is_prog:
         print("Content: programming (code-aware cards)")
+    if total_book_images:
+        print(f"Book images: {total_book_images} figures extracted")
     print()
 
     try:
@@ -486,12 +491,22 @@ def _process_sequential(
         )
 
         ch_diag = DiagramResult()
+        ch_media: list[str] = []
+        media_dir = os.path.join(chapters_dir or ".", "media")
+        if cards and chapter.images:
+            book_media = process_book_images(
+                cards, chapter.images, media_dir,
+            )
+            ch_media.extend(book_media)
+            all_diagrams.media_files.extend(book_media)
+
         if cards and diagrams and diagram_mode == "gemini":
-            media_dir = os.path.join(chapters_dir or ".", "media")
             ch_diag = process_diagrams(
-                cards, media_dir, status_fn=lambda m: pbar.set_postfix_str(m),
+                cards, media_dir,
+                status_fn=lambda m: pbar.set_postfix_str(m),
                 language=lang, is_programming=is_programming,
             )
+            ch_media.extend(ch_diag.media_files)
             all_diagrams.media_files.extend(ch_diag.media_files)
             all_diagrams.generated += ch_diag.generated
             all_diagrams.cached += ch_diag.cached
@@ -510,7 +525,7 @@ def _process_sequential(
         if cards and chapters_dir:
             package_single_chapter(
                 cards, book_title, chapter.index, chapters_dir,
-                media_files=ch_diag.media_files,
+                media_files=ch_media,
             )
 
         if show_table:
@@ -580,12 +595,21 @@ def _process_parallel(
                 cards, usage = future.result()
 
                 ch_diag = DiagramResult()
+                ch_media: list[str] = []
+                media_dir = os.path.join(chapters_dir, "media")
+                if cards and chapter.images:
+                    book_media = process_book_images(
+                        cards, chapter.images, media_dir,
+                    )
+                    ch_media.extend(book_media)
+                    all_diagrams.media_files.extend(book_media)
+
                 if cards and diagrams and diagram_mode == "gemini":
-                    media_dir = os.path.join(chapters_dir, "media")
                     ch_diag = process_diagrams(
                         cards, media_dir, language=lang,
                         is_programming=is_programming,
                     )
+                    ch_media.extend(ch_diag.media_files)
                     all_diagrams.media_files.extend(ch_diag.media_files)
                     all_diagrams.generated += ch_diag.generated
                     all_diagrams.cached += ch_diag.cached
@@ -604,7 +628,7 @@ def _process_parallel(
                 if cards:
                     package_single_chapter(
                         cards, book_title, chapter.index, chapters_dir,
-                        media_files=ch_diag.media_files,
+                        media_files=ch_media,
                     )
 
                 ch_text_cost = estimate_cost(usage, model)

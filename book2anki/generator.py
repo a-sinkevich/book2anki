@@ -74,6 +74,12 @@ def generate_cards_for_chapter(
     short = chapter.title[:60] + "…" if len(chapter.title) > 60 else chapter.title
     _status(f"\"{short}\"")
 
+    book_image_captions: list[tuple[str, str]] | None = None
+    if chapter.images:
+        book_image_captions = [
+            (img.id, img.caption) for img in chapter.images
+        ]
+
     max_text_tokens = min(
         int(provider.context_window_tokens() * 0.8),
         provider.max_request_tokens(),
@@ -96,6 +102,7 @@ def generate_cards_for_chapter(
             status_fn=_status, is_article=is_article, source_url=source_url,
             is_programming=is_programming, diagrams=diagrams,
             diagram_mode=diagram_mode,
+            book_image_captions=book_image_captions,
         )
         total_usage += usage
     else:
@@ -110,6 +117,7 @@ def generate_cards_for_chapter(
                 status_fn=_status, is_article=is_article, source_url=source_url,
                 is_programming=is_programming, diagrams=diagrams,
                 diagram_mode=diagram_mode,
+                book_image_captions=book_image_captions,
             )
             total_usage.input_tokens += usage.input_tokens
             total_usage.output_tokens += usage.output_tokens
@@ -134,12 +142,14 @@ def _generate_with_retries(
     is_programming: bool = False,
     diagrams: bool = False,
     diagram_mode: str = "svg",
+    book_image_captions: list[tuple[str, str]] | None = None,
 ) -> tuple[list[Card], TokenUsage]:
     """Call the LLM and parse JSON response, with retries for failures."""
     prompt = build_prompt(
         book_title, chapter_title, text, depth, language,
         is_article=is_article, is_programming=is_programming,
         diagrams=diagrams, diagram_mode=diagram_mode,
+        book_image_captions=book_image_captions,
     )
     short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title
     cumulative = TokenUsage(0, 0)
