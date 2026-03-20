@@ -103,8 +103,7 @@ code {
     height: auto;
 }
 .image-caption {
-    font-size: 13px;
-    color: #666;
+    font-size: 16px;
     margin-top: 4px;
     font-style: italic;
 }

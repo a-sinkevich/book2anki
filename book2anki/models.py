@@ -45,12 +45,11 @@ SKIP_TITLES = {
     "also by", "title page", "about the author", "about the authors",
     "acknowledgments", "acknowledgements", "bibliography", "notes", "index",
     "credits", "cover", "illustrations", "glossary", "preface", "foreword",
-    "introduction",
-    "prologue", "epilogue", "appendix",
-    "содержание", "оглавление", "предисловие", "вступление", "введение",
+    "appendix",
+    "содержание", "оглавление", "предисловие", "вступление",
     "об авторе", "об авторах", "благодарности", "библиография", "словарик",
     "посвящение", "примечания", "алфавитный указатель",
-    "пролог", "эпилог", "приложение",
+    "приложение",
 }
 
 MIN_CHAPTER_LENGTH = 3000  # chars — skip very short sections

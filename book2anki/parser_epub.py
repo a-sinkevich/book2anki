@@ -130,8 +130,9 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     if href and href not in toc_map:
                         toc_map[href] = title or ""
                     walk_toc(children, group_title=title, depth=depth + 1)
+                    is_chapter = _is_numbered_chapter(title)
                     level_group = title
-                    level_group_href = None
+                    level_group_href = None if is_chapter else href
                 else:
                     is_skip = _is_skip_title(title)
                     gt = title if (title and not is_skip) else None
@@ -156,9 +157,10 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     walk_toc(children, group_title=child_gt, depth=depth + 1)
 
                     # Group subsequent leaf siblings under this parent.
-                    # The group resets when the next tuple parent appears.
+                    # Numbered chapters group across files (subsections);
+                    # Parts/wrappers only group same-file siblings.
                     level_group = gt
-                    level_group_href = None
+                    level_group_href = None if is_chapter else href
             elif hasattr(item, "href"):
                 href = item.href.split("#")[0]
                 if href not in toc_map:

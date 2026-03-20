@@ -196,8 +196,8 @@ class TestSiblingGrouping:
         assert result["pro.html"] == "Prologue"
         assert result["a.html"] == "Chapter 1"
 
-    def test_sibling_after_parent_grouped(self):
-        """Leaf siblings after a parent are grouped under it."""
+    def test_sibling_after_part_keeps_own_title(self):
+        """Leaf siblings after a Part parent keep their own titles."""
         book = _book_with_toc([
             _parent("Part I", "p1.html", [
                 _link("Chapter 1", "ch1.html"),
@@ -206,33 +206,33 @@ class TestSiblingGrouping:
             _link("Part II", "p2.html"),
         ])
         result = _extract_toc_titles(book)
-        assert result["p2.html"] == "Part I"
+        assert result["p2.html"] == "Part II"
 
 
 class TestSkipTitleHandling:
     """Skip-title parents group their children for collective skipping."""
 
     def test_skip_title_parent_children_grouped(self):
-        """Children of 'Introduction' (a skip title) are grouped under it."""
+        """Children of 'Acknowledgments' (a skip title) are grouped under it."""
         book = _book_with_toc([
-            _parent("Introduction", "intro.html", [
-                _link("Background", "bg.html"),
-                _link("Overview", "ov.html"),
+            _parent("Acknowledgments", "ack.html", [
+                _link("People", "people.html"),
+                _link("Institutions", "inst.html"),
             ]),
         ])
         result = _extract_toc_titles(book)
-        assert result["bg.html"] == "Introduction"
-        assert result["ov.html"] == "Introduction"
+        assert result["people.html"] == "Acknowledgments"
+        assert result["inst.html"] == "Acknowledgments"
 
     def test_skip_title_parent_russian(self):
-        """Russian skip title 'Введение' groups children for skipping."""
+        """Russian skip title 'Благодарности' groups children for skipping."""
         book = _book_with_toc([
-            _parent("Введение", "intro.html", [
-                _link("Что будет дальше", "next.html"),
+            _parent("Благодарности", "ack.html", [
+                _link("Коллегам", "next.html"),
             ]),
         ])
         result = _extract_toc_titles(book)
-        assert result["next.html"] == "Введение"
+        assert result["next.html"] == "Благодарности"
 
     def test_skip_title_sibling_grouped(self):
         """Leaves after a parent are grouped under it."""
