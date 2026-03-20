@@ -105,7 +105,7 @@ Language: {language}
 Guidelines:
 - **Minimum information principle**: one idea per card
 - **Mix question types**: factual recall, conceptual understanding, and application
-- **Write cards in the same language as the {"article" if is_article else "book"}** ({language})
+- **Write cards in {language}**
 - **No trivial cards**: every card should test something genuinely worth remembering
 - **No cards about page numbers, chapter structure, or meta-information**
 {context_rule}

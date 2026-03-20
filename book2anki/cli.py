@@ -67,8 +67,9 @@ def _parse_args() -> argparse.Namespace:
         help="Card generation depth: 1=core, 2=detailed, 3=comprehensive (default: 1)",
     )
     parser.add_argument(
-        "--lang", choices=["en", "ru"], default=None,
-        help="Language override (default: auto-detect)",
+        "--lang", default=None,
+        help="Card language (default: auto-detect). "
+             "Use to generate cards in a different language, e.g. --lang ru",
     )
     parser.add_argument(
         "--output", default=None,

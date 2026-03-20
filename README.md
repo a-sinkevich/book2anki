@@ -69,6 +69,9 @@ book2anki mybook.epub --chapters 1,3-5,8
 book2anki "https://example.com/article"
 book2anki "https://www.youtube.com/watch?v=VIDEO_ID"
 book2anki VIDEO_ID    # just the YouTube video ID (no quotes needed)
+
+# Generate cards in a different language than the source
+book2anki mybook.epub --lang ru    # English book → Russian cards
 ```
 
 ## Output
