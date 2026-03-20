@@ -150,7 +150,7 @@ def _group_cards_by_chapter(cards: list[Card]) -> list[tuple[str, list[Card]]]:
 
 
 _CHAPTER_PREFIX_RE = re.compile(
-    r"^(\d+\.\s*|chapter\s+\d+[:\s]*|глава\s+\d+[.:\s]*)", re.IGNORECASE,
+    r"^(\d+\.\s*|chapter\s+\d+[.:\s]*|глава\s+\d+[.:\s]*)", re.IGNORECASE,
 )
 
 
