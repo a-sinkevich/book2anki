@@ -9,6 +9,7 @@ DEPTH_INSTRUCTIONS = {
     2: (
         "Generate cards that test understanding of core ideas plus important supporting material: "
         "key evidence, notable examples, important distinctions, and secondary arguments. "
+        "Skip minor details and tangential asides."
     ),
     3: (
         "Generate cards that test thorough understanding of the chapter: "
