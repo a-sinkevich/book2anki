@@ -244,10 +244,10 @@ class TestProcessBookImages:
         card = Card(
             question="Q", answer="A",
             chapter_title="Ch", book_title="B",
-            diagram="[BOOK-IMG-1]",
+            image="[BOOK-IMG-1]",
         )
         media = process_book_images([card], images, str(tmp_path))
-        assert card.diagram.startswith('<img src="')
+        assert card.image.startswith('<img src="')
         assert len(media) == 1
         assert (tmp_path / media[0].split("/")[-1]).read_bytes() == b"PNG_DATA"
 
@@ -256,36 +256,36 @@ class TestProcessBookImages:
         card = Card(
             question="Q", answer="A",
             chapter_title="Ch", book_title="B",
-            diagram="[BOOK-IMG-99]",  # doesn't exist
+            image="[BOOK-IMG-99]",  # doesn't exist
         )
         process_book_images([card], images, str(tmp_path))
-        assert card.diagram == ""
+        assert card.image == ""
 
     def test_ignores_non_reference_diagrams(self, tmp_path):
         images = [_make_book_image(1)]
         card = Card(
             question="Q", answer="A",
             chapter_title="Ch", book_title="B",
-            diagram="A text prompt for Gemini generation",
+            image="A text prompt for Gemini generation",
         )
         process_book_images([card], images, str(tmp_path))
-        assert card.diagram == "A text prompt for Gemini generation"
+        assert card.image == "A text prompt for Gemini generation"
 
     def test_ignores_empty_diagrams(self, tmp_path):
         images = [_make_book_image(1)]
         card = Card(
             question="Q", answer="A",
             chapter_title="Ch", book_title="B",
-            diagram="",
+            image="",
         )
         process_book_images([card], images, str(tmp_path))
-        assert card.diagram == ""
+        assert card.image == ""
 
     def test_no_images_returns_empty(self, tmp_path):
         card = Card(
             question="Q", answer="A",
             chapter_title="Ch", book_title="B",
-            diagram="[BOOK-IMG-1]",
+            image="[BOOK-IMG-1]",
         )
         media = process_book_images([card], [], str(tmp_path))
         assert media == []
@@ -294,9 +294,9 @@ class TestProcessBookImages:
         images = [_make_book_image(1)]
         cards = [
             Card(question="Q1", answer="A", chapter_title="Ch",
-                 book_title="B", diagram="[BOOK-IMG-1]"),
+                 book_title="B", image="[BOOK-IMG-1]"),
             Card(question="Q2", answer="A", chapter_title="Ch",
-                 book_title="B", diagram="[BOOK-IMG-1]"),
+                 book_title="B", image="[BOOK-IMG-1]"),
         ]
         media = process_book_images(cards, images, str(tmp_path))
         assert len(media) == 1  # same image, one file
@@ -306,10 +306,21 @@ class TestProcessBookImages:
         card = Card(
             question="Q", answer="A",
             chapter_title="Ch", book_title="B",
-            diagram="[book-img-1]",
+            image="[book-img-1]",
         )
         process_book_images([card], images, str(tmp_path))
-        assert card.diagram.startswith('<img src="')
+        assert card.image.startswith('<img src="')
+
+    def test_includes_caption(self, tmp_path):
+        images = [_make_book_image(1)]
+        card = Card(
+            question="Q", answer="A",
+            chapter_title="Ch", book_title="B",
+            image="[BOOK-IMG-1]",
+        )
+        process_book_images([card], images, str(tmp_path))
+        assert "Figure 1 caption" in card.image
+        assert "image-caption" in card.image
 
 
 # --- Prompt integration ---
@@ -335,17 +346,17 @@ class TestFormatFiguresSection:
 class TestBuildPromptWithBookImages:
     def test_no_diagrams_no_images(self):
         prompt = build_prompt("Book", "Ch", "text", 1, "en")
-        assert "diagram" not in prompt.lower() or "diagram" not in prompt
+        assert "image" not in prompt.lower() or '"image"' not in prompt
 
     def test_book_images_without_diagrams_flag(self):
-        """Book images add diagram field even without --diagrams."""
+        """Book images add image field even without --diagrams."""
         captions = [("book-img-1", "Figure 1")]
         prompt = build_prompt(
             "Book", "Ch", "text", 1, "en",
             book_image_captions=captions,
         )
         assert "[BOOK-IMG-1]" in prompt
-        assert "diagram" in prompt.lower()
+        assert '"image"' in prompt
 
     def test_book_images_with_diagrams(self):
         """Both book images and Gemini prompts available."""
@@ -356,7 +367,7 @@ class TestBuildPromptWithBookImages:
             book_image_captions=captions,
         )
         assert "[BOOK-IMG-1]" in prompt
-        assert "diagram" in prompt.lower()
+        assert '"image"' in prompt
         assert "book figure" in prompt.lower() or "BOOK-IMG" in prompt
 
     def test_diagrams_without_book_images(self):
@@ -364,5 +375,5 @@ class TestBuildPromptWithBookImages:
             "Book", "Ch", "text", 1, "en",
             diagrams=True, diagram_mode="gemini",
         )
-        assert "diagram" in prompt.lower()
+        assert '"image"' in prompt
         assert "BOOK-IMG" not in prompt

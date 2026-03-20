@@ -1,5 +1,6 @@
 import os
 import posixpath
+import re
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +67,23 @@ def _title_from_filename(filepath: str) -> str:
     return Path(filepath).stem.replace("-", " ").replace("_", " ").title()
 
 
+_NUMBERED_CHAPTER_RE = re.compile(
+    r"^(\d+[\.\s:]|chapter\s|глава\s|раздел\s|лекция\s)",
+    re.IGNORECASE,
+)
+
+
+def _is_numbered_chapter(title: str | None) -> bool:
+    """Return True if title looks like a numbered chapter heading.
+
+    Matches "1. Title", "Chapter N", "Глава N", etc. — titles that
+    indicate a real chapter whose sub-sections should be merged.
+    """
+    if not title:
+        return False
+    return bool(_NUMBERED_CHAPTER_RE.match(title.strip()))
+
+
 def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
     """Build a map of item href -> chapter title from the TOC.
 
@@ -129,10 +147,12 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
 
                     # Group children under parent when they share the
                     # parent's file (inline sub-headings) or at deep
-                    # nesting (chapter > section).  Depth-0 parents
-                    # with children in separate files are Parts, not
-                    # chapters, so their children keep own titles.
-                    child_gt = gt if (depth > 0 or same_file) else None
+                    # nesting (chapter > section).  At depth 0, only
+                    # group if the title looks like a numbered chapter
+                    # (e.g. "1. Title", "Chapter N") — Parts and book
+                    # titles let children keep their own titles.
+                    is_chapter = _is_numbered_chapter(title)
+                    child_gt = gt if (depth > 0 or same_file or is_chapter) else None
                     walk_toc(children, group_title=child_gt, depth=depth + 1)
 
                     # Group subsequent leaf siblings under this parent.

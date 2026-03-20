@@ -37,7 +37,7 @@ class Card:
     book_title: str
     source_url: str = ""
     example: str = ""
-    diagram: str = ""
+    image: str = ""
 
 
 SKIP_TITLES = {

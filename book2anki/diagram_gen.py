@@ -167,10 +167,10 @@ def process_book_images(
     images: list[BookImage],
     media_dir: str,
 ) -> list[str]:
-    """Resolve [BOOK-IMG-N] references in card diagram fields.
+    """Resolve [BOOK-IMG-N] references in card image fields.
 
-    Saves referenced images to media_dir, replaces references with <img> tags.
-    Returns list of media file paths.
+    Saves referenced images to media_dir, replaces references with <img> tags
+    and captions. Returns list of media file paths.
     """
     if not images:
         return []
@@ -188,15 +188,15 @@ def process_book_images(
     media_files: list[str] = []
 
     for card in cards:
-        if not card.diagram.strip():
+        if not card.image.strip():
             continue
-        m = _BOOK_IMG_RE.match(card.diagram.strip())
+        m = _BOOK_IMG_RE.match(card.image.strip())
         if not m:
             continue
         num = int(m.group(1))
         image = image_by_num.get(num)
         if not image:
-            card.diagram = ""
+            card.image = ""
             continue
 
         filename = _book_img_filename(image, card)
@@ -204,7 +204,10 @@ def process_book_images(
         if not os.path.exists(filepath):
             with open(filepath, "wb") as f:
                 f.write(image.data)
-        card.diagram = f'<img src="{filename}">'
+        caption_html = ""
+        if image.caption:
+            caption_html = f'<div class="image-caption">{image.caption}</div>'
+        card.image = f'<img src="{filename}">{caption_html}'
         if filepath not in media_files:
             media_files.append(filepath)
 
@@ -233,7 +236,7 @@ def process_diagrams(
 
     diagram_cards = [
         (i, c) for i, c in enumerate(cards)
-        if c.diagram.strip() and "<img" not in c.diagram
+        if c.image.strip() and "<img" not in c.image
     ]
 
     if not diagram_cards:
@@ -244,14 +247,14 @@ def process_diagrams(
             status_fn(msg)
 
     for seq, (idx, card) in enumerate(diagram_cards):
-        prompt = card.diagram
+        prompt = card.image
         filename = _image_filename(card, seq)
         filepath = os.path.join(media_dir, filename)
 
         # Skip if already generated (resume support)
         if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
             _report(f"diagram {seq + 1}/{len(diagram_cards)} (cached)")
-            card.diagram = f'<img src="{filename}">'
+            card.image = f'<img src="{filename}">'
             result.media_files.append(filepath)
             result.cached += 1
             continue
@@ -265,14 +268,14 @@ def process_diagrams(
                 is_programming=is_programming,
             )
             if model_used:
-                card.diagram = f'<img src="{filename}">'
+                card.image = f'<img src="{filename}">'
                 result.media_files.append(filepath)
                 result.generated += 1
                 result.model_counts[model_used] = (
                     result.model_counts.get(model_used, 0) + 1
                 )
             else:
-                card.diagram = ""
+                card.image = ""
                 result.failed += 1
         except Exception as e:
             _report(f"diagram {seq + 1} failed: {e}")

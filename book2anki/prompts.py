@@ -43,7 +43,7 @@ def _format_figures_section(
     """Format book figures as a numbered list for the prompt."""
     if not captions:
         return ""
-    lines = ["Available figures from the book (reference by ID in the diagram field):"]
+    lines = ["Available figures from the book (reference by ID in the image field):"]
     for img_id, caption in captions:
         lines.append(f"  [{img_id.upper()}] {caption}")
     return "\n".join(lines) + "\n\n"
@@ -108,14 +108,14 @@ def build_prompt(
     if has_book_images:
         book_img_instruction = (
             " If one of the available book figures matches the card's concept, "
-            "reference it by writing its ID (e.g. [BOOK-IMG-1]) in the diagram field "
+            "reference it by writing its ID (e.g. [BOOK-IMG-1]) in the image field "
             "— prefer book figures over generating new ones when they fit."
         )
 
-    diagram_rule = ""
+    image_rule = ""
     if diagrams and diagram_mode == "gemini":
-        diagram_rule = (
-            '\n- **Diagram field**: include an optional "diagram" field with an '
+        image_rule = (
+            '\n- **Image field**: include an optional "image" field with an '
             f"image-generation prompt (in {language}) when a concept is significantly "
             "easier to understand visually. Describe **what** to show and **what "
             "to highlight** — the key structures, elements, labels, and their "
@@ -127,13 +127,13 @@ def build_prompt(
             "cross-section', 'The dopamine reward pathway from VTA to nucleus "
             "accumbens and prefrontal cortex, labeled'. "
             + book_img_instruction +
-            ' Leave "diagram" as empty string when not needed — most cards won\'t '
-            "have one. Only add diagrams when visual representation genuinely aids "
+            ' Leave "image" as empty string when not needed — most cards won\'t '
+            "have one. Only add images when visual representation genuinely aids "
             "understanding"
         )
     elif diagrams:
-        diagram_rule = (
-            '\n- **Diagram field**: include an optional "diagram" field with an '
+        image_rule = (
+            '\n- **Image field**: include an optional "image" field with an '
             "inline SVG when a concept is significantly easier to understand "
             "visually. **Prioritize spatially grounded diagrams**: for anatomy, "
             "show a simplified outline of the organ/body/brain with the relevant "
@@ -142,17 +142,17 @@ def build_prompt(
             "readable font sizes (12-14px), and clean labels. Keep SVGs compact "
             "(viewBox up to 350x280). "
             + book_img_instruction +
-            ' Leave "diagram" as empty string when not needed — most cards won\'t '
-            "have one. Only add diagrams when visual representation genuinely aids "
+            ' Leave "image" as empty string when not needed — most cards won\'t '
+            "have one. Only add images when visual representation genuinely aids "
             "understanding"
         )
     elif has_book_images:
-        diagram_rule = (
-            '\n- **Diagram field**: include an optional "diagram" field. '
+        image_rule = (
+            '\n- **Image field**: include an optional "image" field. '
             "If one of the available book figures matches the card's concept, "
             "reference it by writing its ID (e.g. [BOOK-IMG-1]). "
             "Prefer using book figures when they help understand the concept visually. "
-            'Leave "diagram" as empty string when not needed'
+            'Leave "image" as empty string when not needed'
         )
 
     code_format_note = ""
@@ -183,14 +183,14 @@ Guidelines:
 {context_rule}
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
-- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{example_rule}{diagram_rule}
+- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{example_rule}{image_rule}
 
-{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example"{' and "diagram"' if diagrams or has_book_images else ''} fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
+{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example"{' and "image"' if diagrams or has_book_images else ''} fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
 
 Example format:
 [
-  {{"question": "What is X?", "answer": "X is...", "example": ""{', "diagram": ""' if diagrams or has_book_images else ''}}},
-  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "diagram": "Labeled diagram showing Y with key components A and B highlighted and their interaction arrows"' if diagrams else ', "diagram": "[BOOK-IMG-1]"' if has_book_images else ''}}}
+  {{"question": "What is X?", "answer": "X is...", "example": ""{', "image": ""' if diagrams or has_book_images else ''}}},
+  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "Labeled diagram showing Y with key components A and B highlighted and their interaction arrows"' if diagrams else ', "image": "[BOOK-IMG-1]"' if has_book_images else ''}}}
 ]
 
 {text_label}:

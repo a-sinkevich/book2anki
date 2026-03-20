@@ -12,6 +12,7 @@ from book2anki.models import Card
 
 _SAFE_TAGS = {"pre", "code", "/pre", "/code", "b", "/b", "br", "br/",
               "ul", "/ul", "ol", "/ol", "li", "/li", "p", "/p",
+              "div", "/div",
               "strong", "/strong", "img",
               "svg", "/svg", "rect", "/rect", "circle", "/circle",
               "ellipse", "/ellipse", "line", "/line", "polyline", "/polyline",
@@ -80,22 +81,32 @@ code {
     letter-spacing: 0.5px;
     margin-bottom: 4px;
 }
-.diagram {
+.image {
     margin-top: 12px;
     padding-top: 8px;
     border-top: 1px dashed #ccc;
     text-align: center;
 }
-.diagram-label {
+.image-label {
     font-size: 13px;
     color: #999;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 4px;
 }
-.diagram svg {
+.image img {
     max-width: 100%;
     height: auto;
+}
+.image svg {
+    max-width: 100%;
+    height: auto;
+}
+.image-caption {
+    font-size: 13px;
+    color: #666;
+    margin-top: 4px;
+    font-style: italic;
 }
 """
 
@@ -103,8 +114,8 @@ _ANSWER_FMT = (
     '{{FrontSide}}<hr id="answer"><div class="answer">{{Answer}}</div>'
     '{{#Example}}<div class="example">'
     '<div class="example-label">Example</div>{{Example}}</div>{{/Example}}'
-    '{{#Diagram}}<div class="diagram">'
-    '<div class="diagram-label">Diagram</div>{{Diagram}}</div>{{/Diagram}}'
+    '{{#Image}}<div class="image">'
+    '<div class="image-label">Image</div>{{Image}}</div>{{/Image}}'
 )
 
 CARD_MODEL = genanki.Model(
@@ -114,7 +125,7 @@ CARD_MODEL = genanki.Model(
         {"name": "Question"},
         {"name": "Answer"},
         {"name": "Example"},
-        {"name": "Diagram"},
+        {"name": "Image"},
         {"name": "Chapter"},
         {"name": "Book"},
     ],
@@ -135,7 +146,7 @@ ARTICLE_MODEL = genanki.Model(
         {"name": "Question"},
         {"name": "Answer"},
         {"name": "Example"},
-        {"name": "Diagram"},
+        {"name": "Image"},
         {"name": "Article"},
         {"name": "Source"},
     ],
@@ -156,7 +167,7 @@ YOUTUBE_MODEL = genanki.Model(
         {"name": "Question"},
         {"name": "Answer"},
         {"name": "Example"},
-        {"name": "Diagram"},
+        {"name": "Image"},
         {"name": "Video"},
         {"name": "Source"},
     ],
@@ -225,7 +236,7 @@ def _build_chapter_deck(
         q = _escape_field(card.question)
         a = _escape_field(card.answer)
         ex = _escape_field(card.example) if card.example else ""
-        dg = _escape_field(card.diagram) if card.diagram else ""
+        dg = _escape_field(card.image) if card.image else ""
         note = genanki.Note(
             model=CARD_MODEL,
             fields=[q, a, ex, dg, card.chapter_title, card.book_title],
@@ -267,7 +278,7 @@ def package_cards_flat(
         q = _escape_field(card.question)
         a = _escape_field(card.answer)
         ex = _escape_field(card.example) if card.example else ""
-        dg = _escape_field(card.diagram) if card.diagram else ""
+        dg = _escape_field(card.image) if card.image else ""
         note = genanki.Note(
             model=model,
             fields=[q, a, ex, dg, deck_name, source_url],
@@ -335,7 +346,7 @@ def _read_cards_from_apkg(filepath: str) -> list[Card]:
                 question=parts[0],
                 answer=parts[1],
                 example=parts[2],
-                diagram=parts[3],
+                image=parts[3],
                 chapter_title=parts[4],
                 book_title=parts[5],
             ))

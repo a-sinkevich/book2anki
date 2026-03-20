@@ -171,7 +171,7 @@ def _generate_with_retries(
                     book_title=book_title,
                     source_url=source_url,
                     example=item.get("example", ""),
-                    diagram=item.get("diagram", ""),
+                    image=item.get("image", ""),
                 )
                 for item in cards_data
                 if "question" in item and "answer" in item
