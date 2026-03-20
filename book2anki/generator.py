@@ -60,6 +60,7 @@ def generate_cards_for_chapter(
     progress_bar: Any = None,
     is_article: bool = False,
     source_url: str = "",
+    is_programming: bool = False,
 ) -> tuple[list[Card], TokenUsage]:
     """Generate flashcards for a single chapter. Returns (cards, token_usage)."""
     def _status(msg: str) -> None:
@@ -91,6 +92,7 @@ def generate_cards_for_chapter(
         cards, usage = _generate_with_retries(
             provider, chapter.text, book_title, chapter.title, depth, language,
             status_fn=_status, is_article=is_article, source_url=source_url,
+            is_programming=is_programming,
         )
         total_usage += usage
     else:
@@ -103,6 +105,7 @@ def generate_cards_for_chapter(
             chunk_cards, usage = _generate_with_retries(
                 provider, chunk, book_title, chapter.title, depth, language,
                 status_fn=_status, is_article=is_article, source_url=source_url,
+                is_programming=is_programming,
             )
             total_usage.input_tokens += usage.input_tokens
             total_usage.output_tokens += usage.output_tokens
@@ -124,9 +127,13 @@ def _generate_with_retries(
     status_fn: Callable[[str], None] | None = None,
     is_article: bool = False,
     source_url: str = "",
+    is_programming: bool = False,
 ) -> tuple[list[Card], TokenUsage]:
     """Call the LLM and parse JSON response, with retries for failures."""
-    prompt = build_prompt(book_title, chapter_title, text, depth, language, is_article=is_article)
+    prompt = build_prompt(
+        book_title, chapter_title, text, depth, language,
+        is_article=is_article, is_programming=is_programming,
+    )
     short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title
     cumulative = TokenUsage(0, 0)
 

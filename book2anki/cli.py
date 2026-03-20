@@ -13,6 +13,7 @@ from book2anki.parser_web import parse_url
 from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
 from book2anki.generator import LLMProvider, generate_cards_for_chapter, estimate_cost, format_cost
+from book2anki.prompts import detect_programming
 from book2anki.packager import (
     package_cards, package_cards_flat, package_single_chapter,
     load_existing_chapters, YOUTUBE_MODEL,
@@ -197,7 +198,11 @@ def main() -> None:
 
     all_text = "\n".join(ch.text for ch in chapters_to_generate)
     lang = detect_language(all_text, override=args.lang)
-    print(f"Language: {lang}\n")
+    is_prog = detect_programming(all_text)
+    print(f"Language: {lang}")
+    if is_prog:
+        print("Content: programming (code-aware cards)")
+    print()
 
     try:
         provider = _create_provider()
@@ -215,7 +220,7 @@ def main() -> None:
         all_cards, total_usage = _process_sequential(
             provider, chapters_to_generate, book_title, args.depth, lang,
             total=1, all_cards=[], chapters_dir="", is_article=True,
-            source_url=source_url,
+            source_url=source_url, is_programming=is_prog,
         )
         if not all_cards:
             print("Error: No cards were generated.", file=sys.stderr)
@@ -247,10 +252,12 @@ def main() -> None:
             if args.parallel:
                 all_cards, total_usage = _process_parallel(
                     provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
+                    is_programming=is_prog,
                 )
             else:
                 all_cards, total_usage = _process_sequential(
                     provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
+                    is_programming=is_prog,
                 )
 
         if not all_cards:
@@ -379,7 +386,7 @@ class _ProgressBar:
 def _process_sequential(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
-    is_article: bool = False, source_url: str = "",
+    is_article: bool = False, source_url: str = "", is_programming: bool = False,
 ) -> tuple[list[Card], TokenUsage]:
     session_cards = 0
     total_usage = TokenUsage(0, 0)
@@ -402,6 +409,7 @@ def _process_sequential(
             progress_bar=pbar,
             is_article=is_article,
             source_url=source_url,
+            is_programming=is_programming,
         )
         ch_elapsed = time.monotonic() - ch_start
         total_time += ch_elapsed
@@ -429,6 +437,7 @@ def _process_sequential(
 def _process_parallel(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
+    is_programming: bool = False,
 ) -> tuple[list[Card], TokenUsage]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
     session_cards = 0
@@ -451,6 +460,7 @@ def _process_parallel(
                 book_title=book_title,
                 depth=depth,
                 language=lang,
+                is_programming=is_programming,
             )] = chapter
 
         for future in as_completed(future_to_chapter):

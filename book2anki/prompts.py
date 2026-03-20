@@ -1,3 +1,5 @@
+import re
+
 DEPTH_INSTRUCTIONS = {
     1: (
         "Generate cards that test understanding of the chapter's core ideas: "
@@ -15,6 +17,25 @@ DEPTH_INSTRUCTIONS = {
     ),
 }
 
+_CODE_INDICATORS = re.compile(
+    r"(?:"
+    r"(?:^|\n)\s*(?:def |class |import |from .+ import |public |private |protected |void |int |return )"
+    r"|(?:^|\n)\s*(?:if\s*\(|for\s*\(|while\s*\(|switch\s*\()"
+    r"|\b(?:nullptr|NULL|this->|self\.|\.getInstance|@Override|@Test)"
+    r"|\b(?:function\s+\w+\s*\(|const\s+\w+\s*=|=>\s*\{)"
+    r"|(?:^|\n)\s*(?:#include|#define|#ifdef)"
+    r"|(?:\{\s*\n.*\n\s*\})"
+    r")",
+    re.MULTILINE,
+)
+
+
+def detect_programming(text: str) -> bool:
+    """Heuristic: is this text from a programming book?"""
+    sample = text[:30000]
+    hits = len(_CODE_INDICATORS.findall(sample))
+    return hits >= 5
+
 
 def build_prompt(
     book_title: str,
@@ -23,6 +44,7 @@ def build_prompt(
     depth: int,
     language: str,
     is_article: bool = False,
+    is_programming: bool = False,
 ) -> str:
     depth_instruction = DEPTH_INSTRUCTIONS[depth]
 
@@ -44,6 +66,22 @@ def build_prompt(
         )
         text_label = "Chapter text"
 
+    programming_rules = ""
+    if is_programming:
+        programming_rules = """
+- **Code in answers**: when a concept is best illustrated with code, include a short snippet (3-6 lines max) using <pre><code> tags. Only include code when it genuinely helps — not every card needs it
+- **Focus on "why" and "when"**: prefer cards like "When would you use X?" or "What problem does X solve?" over "What is the syntax for X?"
+- **Technique cards**: for named techniques/patterns/refactorings, test: (1) what problem it solves, (2) how it works, (3) when to apply it
+- **Trade-off cards**: when the text compares approaches, create cards that test understanding of trade-offs
+- **No trivial syntax cards**: don't create cards for basic language syntax that any developer would know"""
+
+    code_format_note = ""
+    if is_programming:
+        code_format_note = (
+            "\n\nIMPORTANT: Answers are rendered as HTML. For code snippets use "
+            "<pre><code>...</code></pre> tags."
+        )
+
     return f"""You are an expert at creating Anki flashcards from nonfiction {"articles" if is_article else "books"}.
 
 {source_header}
@@ -58,9 +96,9 @@ Guidelines:
 - **No trivial cards**: every card should test something genuinely worth remembering
 - **No cards about page numbers, chapter structure, or meta-information**
 {context_rule}
-- **Answers should be concise but complete** — typically 1-3 sentences
+- **Answers should be concise but complete** — typically 1-3 sentences{programming_rules}
 
-Output ONLY a JSON array of objects with "question" and "answer" fields. No markdown, no explanation, no wrapper — just the raw JSON array.
+Output ONLY a JSON array of objects with "question" and "answer" fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
 
 Example format:
 [
