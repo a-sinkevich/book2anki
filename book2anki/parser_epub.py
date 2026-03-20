@@ -88,12 +88,11 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                 has_subtree = any(isinstance(c, tuple) for c in children)
 
                 if _is_skip_title(title):
-                    # Skip-titled section — map itself, let children keep
-                    # their own titles, but mark subsequent siblings for
-                    # skipping via level_group.
+                    # Skip-titled section — group children under it
+                    # so they all get skipped together.
                     if href and href not in toc_map:
                         toc_map[href] = title or ""
-                    walk_toc(children, group_title=None, depth=depth + 1)
+                    walk_toc(children, group_title=title, depth=depth + 1)
                     level_group = title
                     level_group_href = None  # apply to any file
                     continue
@@ -101,8 +100,8 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                 if has_subtree:
                     if href and href not in toc_map:
                         toc_map[href] = title or ""
-                    walk_toc(children, group_title=None, depth=depth + 1)
-                    level_group = None
+                    walk_toc(children, group_title=title, depth=depth + 1)
+                    level_group = title
                     level_group_href = None
                 else:
                     is_skip = _is_skip_title(title)
@@ -119,20 +118,16 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
 
                     # Group children under parent when they share the
                     # parent's file (inline sub-headings) or at deep
-                    # nesting (chapter > section).  Depth-1 parents
+                    # nesting (chapter > section).  Depth-0 parents
                     # with children in separate files are Parts, not
                     # chapters, so their children keep own titles.
-                    child_gt = gt if (depth > 1 or same_file) else None
+                    child_gt = gt if (depth > 0 or same_file) else None
                     walk_toc(children, group_title=child_gt, depth=depth + 1)
 
-                    # Sibling merging only when children are in the
-                    # same file as the parent.
-                    if same_file:
-                        level_group = gt
-                        level_group_href = href
-                    else:
-                        level_group = None
-                        level_group_href = None
+                    # Group subsequent leaf siblings under this parent.
+                    # The group resets when the next tuple parent appears.
+                    level_group = gt
+                    level_group_href = None
             elif hasattr(item, "href"):
                 href = item.href.split("#")[0]
                 if href not in toc_map:

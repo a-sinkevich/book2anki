@@ -91,11 +91,11 @@ class TestHierarchicalGrouping:
         assert result["p1.html"] == "Part I"
 
 
-class TestWrappedPartsNoGrouping:
-    """Bauer-style: Book > Parts > Chapters as leaves — chapters keep own titles."""
+class TestWrappedPartsGrouping:
+    """Bauer-style: Book > Parts > Chapters as leaves — chapters group under parts."""
 
-    def test_chapters_not_grouped_under_parts(self):
-        """Chapters in separate files under Parts should keep own titles."""
+    def test_chapters_grouped_under_parts(self):
+        """Chapters in separate files under Parts group under part title."""
         book = _book_with_toc([
             _parent("Book Title", "book.html", [
                 _parent("Part I", "p1.html", [
@@ -110,11 +110,11 @@ class TestWrappedPartsNoGrouping:
             ]),
         ])
         result = _extract_toc_titles(book)
-        assert result["ch1.html"] == "Chapter 1"
-        assert result["ch2.html"] == "Chapter 2"
-        assert result["ch3.html"] == "Chapter 3"
-        assert result["ch4.html"] == "Chapter 4"
-        assert result["ch5.html"] == "Chapter 5"
+        assert result["ch1.html"] == "Part I"
+        assert result["ch2.html"] == "Part I"
+        assert result["ch3.html"] == "Part I"
+        assert result["ch4.html"] == "Part II"
+        assert result["ch5.html"] == "Part II"
         assert result["p1.html"] == "Part I"
         assert result["p2.html"] == "Part II"
 
@@ -164,10 +164,10 @@ class TestRootLevelNoGrouping:
 
 
 class TestSiblingGrouping:
-    """Dubynin-style: parent entries with same-file children, mixed with sibling leaves."""
+    """Gazzali-style: parent entries with children, mixed with sibling leaves."""
 
-    def test_leaves_after_same_file_parent_not_grouped_across_files(self):
-        """Leaves in different files should NOT be grouped under a preceding parent."""
+    def test_leaves_after_parent_grouped(self):
+        """Leaf siblings after a parent are grouped under it (subsections)."""
         book = _book_with_toc([
             _parent("Chapter 1", "ch1.html", [
                 _link("Intro", "ch1.html#1"),
@@ -180,9 +180,9 @@ class TestSiblingGrouping:
             _link("Topic C", "c.html"),
         ])
         result = _extract_toc_titles(book)
-        assert result["a.html"] == "Topic A"
-        assert result["b.html"] == "Topic B"
-        assert result["c.html"] == "Topic C"
+        assert result["a.html"] == "Chapter 1"
+        assert result["b.html"] == "Chapter 1"
+        assert result["c.html"] == "Chapter 2"
 
     def test_leaves_before_first_parent_keep_own_titles(self):
         book = _book_with_toc([
@@ -194,10 +194,10 @@ class TestSiblingGrouping:
         ])
         result = _extract_toc_titles(book)
         assert result["pro.html"] == "Prologue"
-        assert result["a.html"] == "Section A"
+        assert result["a.html"] == "Chapter 1"
 
-    def test_no_sibling_grouping_when_children_in_different_files(self):
-        """When children are in separate files, siblings should NOT be grouped."""
+    def test_sibling_after_parent_grouped(self):
+        """Leaf siblings after a parent are grouped under it."""
         book = _book_with_toc([
             _parent("Part I", "p1.html", [
                 _link("Chapter 1", "ch1.html"),
@@ -206,15 +206,14 @@ class TestSiblingGrouping:
             _link("Part II", "p2.html"),
         ])
         result = _extract_toc_titles(book)
-        # Part II should NOT be grouped under Part I
-        assert result["p2.html"] == "Part II"
+        assert result["p2.html"] == "Part I"
 
 
 class TestSkipTitleHandling:
-    """Skip-title parents should not group their children or siblings."""
+    """Skip-title parents group their children for collective skipping."""
 
-    def test_skip_title_parent_children_keep_own_titles(self):
-        """Children of 'Introduction' (a skip title) keep their own titles."""
+    def test_skip_title_parent_children_grouped(self):
+        """Children of 'Introduction' (a skip title) are grouped under it."""
         book = _book_with_toc([
             _parent("Introduction", "intro.html", [
                 _link("Background", "bg.html"),
@@ -222,21 +221,21 @@ class TestSkipTitleHandling:
             ]),
         ])
         result = _extract_toc_titles(book)
-        assert result["bg.html"] == "Background"
-        assert result["ov.html"] == "Overview"
+        assert result["bg.html"] == "Introduction"
+        assert result["ov.html"] == "Introduction"
 
     def test_skip_title_parent_russian(self):
-        """Russian skip title 'Введение' should not group children."""
+        """Russian skip title 'Введение' groups children for skipping."""
         book = _book_with_toc([
             _parent("Введение", "intro.html", [
                 _link("Что будет дальше", "next.html"),
             ]),
         ])
         result = _extract_toc_titles(book)
-        assert result["next.html"] == "Что будет дальше"
+        assert result["next.html"] == "Введение"
 
-    def test_skip_title_sibling_not_grouped(self):
-        """Leaves with skip titles should not be absorbed by preceding parent."""
+    def test_skip_title_sibling_grouped(self):
+        """Leaves after a parent are grouped under it."""
         book = _book_with_toc([
             _parent("Chapter 10", "ch10.html", [
                 _link("Last section", "ch10.html#end"),
@@ -245,11 +244,11 @@ class TestSkipTitleHandling:
             _link("Notes", "notes.html"),
         ])
         result = _extract_toc_titles(book)
-        assert result["bib.html"] == "Bibliography"
-        assert result["notes.html"] == "Notes"
+        assert result["bib.html"] == "Chapter 10"
+        assert result["notes.html"] == "Chapter 10"
 
-    def test_non_skip_sibling_keeps_own_title(self):
-        """Siblings in different files keep their own titles."""
+    def test_non_skip_sibling_grouped_under_parent(self):
+        """Siblings after a parent are grouped under it."""
         book = _book_with_toc([
             _parent("Chapter 5", "ch5.html", [
                 _link("Start", "ch5.html#1"),
@@ -258,8 +257,8 @@ class TestSkipTitleHandling:
             _link("Acknowledgments", "ack.html"),
         ])
         result = _extract_toc_titles(book)
-        assert result["x.html"] == "Topic X"
-        assert result["ack.html"] == "Acknowledgments"
+        assert result["x.html"] == "Chapter 5"
+        assert result["ack.html"] == "Chapter 5"
 
 
 class TestFragmentHandling:
