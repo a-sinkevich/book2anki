@@ -1,6 +1,6 @@
 # book2anki
 
-Convert nonfiction books (EPUB/PDF), articles (URL), and YouTube videos into Anki flashcard decks using LLMs.
+AI-powered tool to convert books (EPUB/PDF), web articles, and YouTube videos into Anki flashcards for spaced repetition learning. Uses Claude to generate high-quality question-answer cards from any content.
 
 ## Quick start
 

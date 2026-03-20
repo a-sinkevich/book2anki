@@ -120,7 +120,7 @@ def build_prompt(
             "<pre><code>...</code></pre> tags."
         )
 
-    return f"""You are an expert at creating Anki flashcards from nonfiction {"articles" if is_article else "books"}.
+    return f"""You are an expert at creating Anki flashcards from {"articles" if is_article else "books"}.
 
 {source_header}
 Language: {language}
