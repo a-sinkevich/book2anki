@@ -61,8 +61,6 @@ def generate_cards_for_chapter(
     is_article: bool = False,
     source_url: str = "",
     is_programming: bool = False,
-    diagrams: bool = False,
-    diagram_mode: str = "svg",
 ) -> tuple[list[Card], TokenUsage]:
     """Generate flashcards for a single chapter. Returns (cards, token_usage)."""
     def _status(msg: str) -> None:
@@ -100,8 +98,7 @@ def generate_cards_for_chapter(
         cards, usage = _generate_with_retries(
             provider, chapter.text, book_title, chapter.title, depth, language,
             status_fn=_status, is_article=is_article, source_url=source_url,
-            is_programming=is_programming, diagrams=diagrams,
-            diagram_mode=diagram_mode,
+            is_programming=is_programming,
             book_image_captions=book_image_captions,
         )
         total_usage += usage
@@ -115,8 +112,7 @@ def generate_cards_for_chapter(
             chunk_cards, usage = _generate_with_retries(
                 provider, chunk, book_title, chapter.title, depth, language,
                 status_fn=_status, is_article=is_article, source_url=source_url,
-                is_programming=is_programming, diagrams=diagrams,
-                diagram_mode=diagram_mode,
+                is_programming=is_programming,
                 book_image_captions=book_image_captions,
             )
             total_usage.input_tokens += usage.input_tokens
@@ -140,15 +136,12 @@ def _generate_with_retries(
     is_article: bool = False,
     source_url: str = "",
     is_programming: bool = False,
-    diagrams: bool = False,
-    diagram_mode: str = "svg",
     book_image_captions: list[tuple[str, str]] | None = None,
 ) -> tuple[list[Card], TokenUsage]:
     """Call the LLM and parse JSON response, with retries for failures."""
     prompt = build_prompt(
         book_title, chapter_title, text, depth, language,
         is_article=is_article, is_programming=is_programming,
-        diagrams=diagrams, diagram_mode=diagram_mode,
         book_image_captions=book_image_captions,
     )
     short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title

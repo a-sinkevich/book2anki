@@ -57,8 +57,6 @@ def build_prompt(
     language: str,
     is_article: bool = False,
     is_programming: bool = False,
-    diagrams: bool = False,
-    diagram_mode: str = "svg",
     book_image_captions: list[tuple[str, str]] | None = None,
 ) -> str:
     depth_instruction = DEPTH_INSTRUCTIONS[depth]
@@ -104,49 +102,9 @@ def build_prompt(
         )
 
     has_book_images = bool(book_image_captions)
-    book_img_instruction = ""
-    if has_book_images:
-        book_img_instruction = (
-            " If one of the available book figures matches the card's concept, "
-            "reference it by writing its ID (e.g. [BOOK-IMG-1]) in the image field "
-            "— prefer book figures over generating new ones when they fit."
-        )
 
     image_rule = ""
-    if diagrams and diagram_mode == "gemini":
-        image_rule = (
-            '\n- **Image field**: include an optional "image" field with an '
-            f"image-generation prompt (in {language}) when a concept is significantly "
-            "easier to understand visually. Describe **what** to show and **what "
-            "to highlight** — the key structures, elements, labels, and their "
-            "relationships. Don't specify how to draw it — the image generator "
-            "will choose the best visual style. "
-            "Good examples: 'Labeled diagram of the hypothalamus showing the "
-            "hunger center (lateral nucleus) and satiety center (ventromedial "
-            "nucleus) with mutual inhibition arrows, highlighted within a brain "
-            "cross-section', 'The dopamine reward pathway from VTA to nucleus "
-            "accumbens and prefrontal cortex, labeled'. "
-            + book_img_instruction +
-            ' Leave "image" as empty string when not needed — most cards won\'t '
-            "have one. Only add images when visual representation genuinely aids "
-            "understanding"
-        )
-    elif diagrams:
-        image_rule = (
-            '\n- **Image field**: include an optional "image" field with an '
-            "inline SVG when a concept is significantly easier to understand "
-            "visually. **Prioritize spatially grounded diagrams**: for anatomy, "
-            "show a simplified outline of the organ/body/brain with the relevant "
-            "structures highlighted in their real approximate positions — not just "
-            "abstract boxes with arrows. Use clear colors (fills with #hex), "
-            "readable font sizes (12-14px), and clean labels. Keep SVGs compact "
-            "(viewBox up to 350x280). "
-            + book_img_instruction +
-            ' Leave "image" as empty string when not needed — most cards won\'t '
-            "have one. Only add images when visual representation genuinely aids "
-            "understanding"
-        )
-    elif has_book_images:
+    if has_book_images:
         image_rule = (
             '\n- **Image field**: include an optional "image" field. '
             "If one of the available book figures matches the card's concept, "
@@ -160,11 +118,6 @@ def build_prompt(
         code_format_note = (
             "\n\nIMPORTANT: All fields are rendered as HTML. For code snippets use "
             "<pre><code>...</code></pre> tags."
-        )
-    elif diagrams and diagram_mode == "svg":
-        code_format_note = (
-            "\n\nIMPORTANT: All fields are rendered as HTML. "
-            "Diagrams should be inline SVG elements."
         )
 
     return f"""You are an expert at creating Anki flashcards from nonfiction {"articles" if is_article else "books"}.
@@ -185,12 +138,12 @@ Guidelines:
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
 - **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{example_rule}{image_rule}
 
-{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example"{' and "image"' if diagrams or has_book_images else ''} fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
+{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example"{' and "image"' if has_book_images else ''} fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
 
 Example format:
 [
-  {{"question": "What is X?", "answer": "X is...", "example": ""{', "image": ""' if diagrams or has_book_images else ''}}},
-  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "Labeled diagram showing Y with key components A and B highlighted and their interaction arrows"' if diagrams else ', "image": "[BOOK-IMG-1]"' if has_book_images else ''}}}
+  {{"question": "What is X?", "answer": "X is...", "example": ""{', "image": ""' if has_book_images else ''}}},
+  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "[BOOK-IMG-1]"' if has_book_images else ''}}}
 ]
 
 {text_label}:

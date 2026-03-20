@@ -261,15 +261,15 @@ class TestProcessBookImages:
         process_book_images([card], images, str(tmp_path))
         assert card.image == ""
 
-    def test_ignores_non_reference_diagrams(self, tmp_path):
+    def test_ignores_non_reference_images(self, tmp_path):
         images = [_make_book_image(1)]
         card = Card(
             question="Q", answer="A",
             chapter_title="Ch", book_title="B",
-            image="A text prompt for Gemini generation",
+            image="some random text",
         )
         process_book_images([card], images, str(tmp_path))
-        assert card.image == "A text prompt for Gemini generation"
+        assert card.image == "some random text"
 
     def test_ignores_empty_diagrams(self, tmp_path):
         images = [_make_book_image(1)]
@@ -349,7 +349,7 @@ class TestBuildPromptWithBookImages:
         assert "image" not in prompt.lower() or '"image"' not in prompt
 
     def test_book_images_without_diagrams_flag(self):
-        """Book images add image field even without --diagrams."""
+        """Book images add image field to prompt."""
         captions = [("book-img-1", "Figure 1")]
         prompt = build_prompt(
             "Book", "Ch", "text", 1, "en",
@@ -358,22 +358,7 @@ class TestBuildPromptWithBookImages:
         assert "[BOOK-IMG-1]" in prompt
         assert '"image"' in prompt
 
-    def test_book_images_with_diagrams(self):
-        """Both book images and Gemini prompts available."""
-        captions = [("book-img-1", "Figure 1")]
-        prompt = build_prompt(
-            "Book", "Ch", "text", 1, "en",
-            diagrams=True, diagram_mode="gemini",
-            book_image_captions=captions,
-        )
-        assert "[BOOK-IMG-1]" in prompt
-        assert '"image"' in prompt
-        assert "book figure" in prompt.lower() or "BOOK-IMG" in prompt
-
-    def test_diagrams_without_book_images(self):
-        prompt = build_prompt(
-            "Book", "Ch", "text", 1, "en",
-            diagrams=True, diagram_mode="gemini",
-        )
-        assert '"image"' in prompt
+    def test_no_book_images_no_image_field(self):
+        """Without book images, no image field in prompt."""
+        prompt = build_prompt("Book", "Ch", "text", 1, "en")
         assert "BOOK-IMG" not in prompt
