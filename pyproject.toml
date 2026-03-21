@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "book2anki"
-version = "0.1.0"
+version = "0.1.1"
 description = "AI tool to convert books (EPUB/PDF), web articles, and YouTube videos into Anki flashcards using Claude"
 readme = "README.md"
 license = {text = "MIT"}
