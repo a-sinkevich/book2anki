@@ -151,13 +151,16 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
         return images
 
     # Classes whose images should be skipped (infoboxes, navboxes, etc.)
-    _SKIP_PARENTS = {"infobox", "navbox", "sidebar", "metadata", "mw-indicator"}
+    _SKIP_PARENTS = {"infobox", "navbox", "sidebar", "metadata", "mw-indicator",
+                     "frontMatter", "author"}
 
     for img_tag in article.find_all("img"):
-        # Skip images inside infobox/navbox/sidebar containers
+        # Skip images inside infobox/navbox/sidebar/author containers
         if any(
-            p.get("class") and _SKIP_PARENTS & set(
-                c for cls in p.get("class", []) for c in cls.split()
+            p.get("class") and any(
+                kw in c
+                for c in p.get("class", [])
+                for kw in _SKIP_PARENTS
             )
             for p in img_tag.parents
             if isinstance(p, Tag) and p is not article
@@ -216,11 +219,12 @@ def _find_caption(img_tag: Tag) -> str:
 
     # 3. Adjacent text block (common in blogs/pikabu-style posts
     #    where text and images alternate). Walk up parents to find
-    #    the block-level container, then check siblings.
+    #    the block-level container, then check paragraph siblings.
     container = figure or img_tag.find_parent("div")
-    while container:
-        nxt = container.find_next_sibling()
-        prev = container.find_previous_sibling()
+    levels = 0
+    while container and levels < 3:
+        nxt = _next_text_sibling(container)
+        prev = _prev_text_sibling(container)
         # Prefer next sibling (caption often follows the image)
         caption = _first_sentence(nxt) or _last_sentence(prev)
         if caption:
@@ -228,8 +232,40 @@ def _find_caption(img_tag: Tag) -> str:
         container = container.parent
         if not isinstance(container, Tag):
             break
+        levels += 1
+
+    # 4. Nearest heading above the image (h1-h3) as last resort
+    for level in ("h2", "h3", "h1"):
+        heading = img_tag.find_previous(level)
+        if heading:
+            text = heading.get_text(strip=True)
+            if text and len(text) > 3:
+                return text
 
     return ""
+
+
+_TEXT_TAGS = {"p", "span", "div"}
+
+
+def _next_text_sibling(tag: Tag) -> Tag | None:
+    """Find next sibling that contains meaningful text (skip empty/whitespace)."""
+    sib = tag.find_next_sibling()
+    while sib:
+        if isinstance(sib, Tag) and sib.get_text(strip=True):
+            return sib
+        sib = sib.find_next_sibling() if isinstance(sib, Tag) else None
+    return None
+
+
+def _prev_text_sibling(tag: Tag) -> Tag | None:
+    """Find previous sibling that contains meaningful text."""
+    sib = tag.find_previous_sibling()
+    while sib:
+        if isinstance(sib, Tag) and sib.get_text(strip=True):
+            return sib
+        sib = sib.find_previous_sibling() if isinstance(sib, Tag) else None
+    return None
 
 
 def _first_sentence(tag: Tag | None) -> str:
