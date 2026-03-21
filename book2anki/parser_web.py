@@ -88,19 +88,23 @@ def _extract_title(soup: BeautifulSoup, url: str) -> str:
 
 def _find_article(soup: BeautifulSoup) -> Tag | None:
     """Find the main article container in a page."""
-    # Site-specific containers first
+    # Wikipedia / MediaWiki: find mw-parser-output inside #mw-content-text
+    # (page may have multiple mw-parser-output divs; the content one lives
+    #  inside #mw-content-text)
+    mw_content = soup.find(id="mw-content-text")
+    if mw_content:
+        mw_output = mw_content.find(class_="mw-parser-output")
+        if mw_output:
+            return mw_output
+        return mw_content
+
+    # Site-specific containers
     for cls in [
         "story__content-inner",   # Pikabu
-        "mw-parser-output",       # Wikipedia
         "post-content",           # blogs
         "entry-content",          # WordPress
     ]:
         elem = soup.find(class_=cls)
-        if elem:
-            return elem
-
-    for elem_id in ["mw-content-text"]:
-        elem = soup.find(id=elem_id)
         if elem:
             return elem
 
@@ -146,7 +150,20 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
     if not isinstance(article, Tag):
         return images
 
+    # Classes whose images should be skipped (infoboxes, navboxes, etc.)
+    _SKIP_PARENTS = {"infobox", "navbox", "sidebar", "metadata", "mw-indicator"}
+
     for img_tag in article.find_all("img"):
+        # Skip images inside infobox/navbox/sidebar containers
+        if any(
+            p.get("class") and _SKIP_PARENTS & set(
+                c for cls in p.get("class", []) for c in cls.split()
+            )
+            for p in img_tag.parents
+            if isinstance(p, Tag) and p is not article
+        ):
+            continue
+
         # Support lazy-loaded images (data-src, data-large-image)
         src = (img_tag.get("data-large-image", "")
                or img_tag.get("data-src", "")
