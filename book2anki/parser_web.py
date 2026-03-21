@@ -164,10 +164,7 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
         ):
             continue
 
-        # Support lazy-loaded images (data-src, data-large-image)
-        src = (img_tag.get("data-large-image", "")
-               or img_tag.get("data-src", "")
-               or img_tag.get("src", ""))
+        src = _best_src(img_tag)
         if not src:
             continue
 
@@ -264,6 +261,24 @@ def _last_sentence(tag: Tag | None) -> str:
         if idx >= 0:
             return chunk[idx + 2:]
     return chunk if len(text) <= 200 else ""
+
+
+def _best_src(img_tag: Tag) -> str:
+    """Pick the largest available image URL from src/srcset."""
+    srcset = img_tag.get("srcset", "")
+    if srcset:
+        # srcset format: "url1 1.5x, url2 2x" — pick the last (largest) entry
+        parts = [s.strip() for s in srcset.split(",") if s.strip()]
+        if parts:
+            best = parts[-1].split()[0]  # URL part (before "1.5x"/"2x")
+            if best.startswith("//"):
+                best = "https:" + best
+            return best
+
+    # Fallback to data-src / data-large-image / src
+    return (img_tag.get("data-large-image", "")
+            or img_tag.get("data-src", "")
+            or img_tag.get("src", ""))
 
 
 def _ext_from_url(url: str) -> str:
