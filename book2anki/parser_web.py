@@ -17,12 +17,11 @@ def parse_url(url: str) -> tuple[str, list[Chapter]]:
     soup = BeautifulSoup(html, "html.parser")
 
     title = _extract_title(soup, url)
+    images = _extract_images(soup, url)
     text = _extract_article_text(soup)
 
     if not text.strip():
         raise ValueError(f"No readable text found at {url}")
-
-    images = _extract_images(soup, url)
     chapters = [Chapter(title=title, text=text, index=0, images=images)]
     return title, chapters
 
@@ -35,19 +34,37 @@ def _fetch(url: str) -> bytes:
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/120.0.0.0 Safari/537.36"
         ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
     })
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data: bytes = resp.read()
             return data
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            raise ValueError(
+                f"Access denied (HTTP 403) for {url}. "
+                "The site may use Cloudflare or bot protection that blocks automated access."
+            ) from e
+        raise ValueError(f"Failed to fetch {url}: {e}") from e
     except urllib.error.URLError as e:
         if "CERTIFICATE_VERIFY_FAILED" in str(e):
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
-            with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-                data = resp.read()
-                return data
+            try:
+                with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                    data = resp.read()
+                    return data
+            except urllib.error.HTTPError as e2:
+                if e2.code == 403:
+                    raise ValueError(
+                        f"Access denied (HTTP 403) for {url}. "
+                        "The site may use Cloudflare or bot protection "
+                        "that blocks automated access."
+                    ) from e2
+                raise ValueError(f"Failed to fetch {url}: {e2}") from e2
         raise ValueError(f"Failed to fetch {url}: {e}") from e
 
 
@@ -69,6 +86,34 @@ def _extract_title(soup: BeautifulSoup, url: str) -> str:
     return path.replace("_", " ").replace("-", " ").title() or "Web Article"
 
 
+def _find_article(soup: BeautifulSoup) -> Tag | None:
+    """Find the main article container in a page."""
+    # Site-specific containers first
+    for cls in [
+        "story__content-inner",   # Pikabu
+        "mw-parser-output",       # Wikipedia
+        "post-content",           # blogs
+        "entry-content",          # WordPress
+    ]:
+        elem = soup.find(class_=cls)
+        if elem:
+            return elem
+
+    for elem_id in ["mw-content-text"]:
+        elem = soup.find(id=elem_id)
+        if elem:
+            return elem
+
+    # Generic containers (skip sidebar/widget articles)
+    for tag_name in ["article", "main"]:
+        for elem in soup.find_all(tag_name):
+            classes = " ".join(elem.get("class", []))
+            if "sidebar" not in classes and "game" not in classes:
+                return elem
+
+    return soup.body or soup
+
+
 def _extract_article_text(soup: BeautifulSoup) -> str:
     """Extract the main article text, stripping navigation and boilerplate."""
     for tag_name in ["script", "style", "nav", "header", "footer", "aside"]:
@@ -82,16 +127,9 @@ def _extract_article_text(soup: BeautifulSoup) -> str:
         for tag in soup.find_all(id=elem_id):
             tag.decompose()
 
-    article = (
-        soup.find("article")
-        or soup.find("main")
-        or soup.find(class_="mw-parser-output")  # Wikipedia
-        or soup.find(id="mw-content-text")        # Wikipedia fallback
-        or soup.find(class_="post-content")        # blogs
-        or soup.find(class_="entry-content")       # WordPress
-    )
-
-    target = article if isinstance(article, Tag) else soup.body or soup
+    target = _find_article(soup)
+    if not isinstance(target, Tag):
+        target = soup.body or soup
     return target.get_text(separator="\n", strip=True)
 
 
@@ -104,21 +142,15 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
     images: list[BookImage] = []
     seen_urls: set[str] = set()
 
-    article = (
-        soup.find("article")
-        or soup.find("main")
-        or soup.find(class_="mw-parser-output")
-        or soup.find(id="mw-content-text")
-        or soup.find(class_="post-content")
-        or soup.find(class_="entry-content")
-        or soup.body
-        or soup
-    )
+    article = _find_article(soup)
     if not isinstance(article, Tag):
         return images
 
     for img_tag in article.find_all("img"):
-        src = img_tag.get("src", "")
+        # Support lazy-loaded images (data-src, data-large-image)
+        src = (img_tag.get("data-large-image", "")
+               or img_tag.get("data-src", "")
+               or img_tag.get("src", ""))
         if not src:
             continue
 
@@ -168,7 +200,53 @@ def _find_caption(img_tag: Tag) -> str:
     if alt and len(alt) > 10 and not alt.lower().startswith("image"):
         return alt
 
+    # 3. Adjacent text block (common in blogs/pikabu-style posts
+    #    where text and images alternate). Walk up parents to find
+    #    the block-level container, then check siblings.
+    container = figure or img_tag.find_parent("div")
+    while container:
+        nxt = container.find_next_sibling()
+        prev = container.find_previous_sibling()
+        # Prefer next sibling (caption often follows the image)
+        caption = _first_sentence(nxt) or _last_sentence(prev)
+        if caption:
+            return caption
+        container = container.parent
+        if not isinstance(container, Tag):
+            break
+
     return ""
+
+
+def _first_sentence(tag: Tag | None) -> str:
+    """Extract the first sentence from a tag's text."""
+    if not tag or not hasattr(tag, "get_text"):
+        return ""
+    text = tag.get_text(separator=" ", strip=True)
+    if not text or len(text) <= 10:
+        return ""
+    # Take first ~200 chars, end at sentence boundary
+    chunk = text[:200]
+    for sep in [". ", "! ", "? "]:
+        idx = chunk.find(sep)
+        if idx >= 0:
+            return chunk[:idx + 1]
+    return chunk if len(text) <= 200 else ""
+
+
+def _last_sentence(tag: Tag | None) -> str:
+    """Extract the last sentence from a tag's text."""
+    if not tag or not hasattr(tag, "get_text"):
+        return ""
+    text = tag.get_text(separator=" ", strip=True)
+    if not text or len(text) <= 10:
+        return ""
+    chunk = text[-200:] if len(text) > 200 else text
+    for sep in [". ", "! ", "? "]:
+        idx = chunk.rfind(sep, 0, len(chunk) - 1)
+        if idx >= 0:
+            return chunk[idx + 2:]
+    return chunk if len(text) <= 200 else ""
 
 
 def _ext_from_url(url: str) -> str:

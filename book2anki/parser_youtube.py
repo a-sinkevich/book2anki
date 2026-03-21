@@ -80,6 +80,12 @@ def _fetch_title(url: str, video_id: str) -> str:
 def _fetch_transcript(video_id: str) -> str:
     """Fetch and join transcript snippets into plain text."""
     ytt = YouTubeTranscriptApi()
-    transcript = ytt.fetch(video_id)
+    try:
+        transcript = ytt.fetch(video_id)
+    except Exception:
+        # English not available — list all transcripts and pick the first one
+        transcript_list = ytt.list(video_id)
+        first = next(iter(transcript_list))
+        transcript = first.fetch()
     lines = [snippet.text for snippet in transcript.snippets]
     return "\n".join(lines)
