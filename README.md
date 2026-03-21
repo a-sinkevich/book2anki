@@ -116,7 +116,8 @@ The tool uses the Anthropic API for card generation. Typical costs:
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Three depth levels**: core ideas, detailed coverage, or comprehensive
-- **Book images** — extracts figures from EPUB books and includes them in relevant cards
+- **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
+- **Dark & light theme** — cards adapt to your Anki theme
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
-- **Auto language detection** (English, Russian)
+- **Auto language detection** with `--lang` override for translation to any language
 - **Progress bar** with per-chapter cost breakdown during generation
