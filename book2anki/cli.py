@@ -211,7 +211,8 @@ def main() -> None:
     if is_prog:
         print("Content: programming (code-aware cards)")
     if total_book_images:
-        print(f"Book images: {total_book_images} figures extracted")
+        label = "Images" if is_url or is_yt else "Book images"
+        print(f"{label}: {total_book_images} figures extracted")
     print()
 
     try:
