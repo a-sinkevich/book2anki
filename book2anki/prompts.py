@@ -109,7 +109,8 @@ def build_prompt(
         image_rule = (
             '\n- **Image field**: include an optional "image" field. '
             "If one of the available book figures matches the card's concept, "
-            "reference it by writing its ID (e.g. [BOOK-IMG-1]). "
+            f"reference it by writing its ID followed by a caption in {language} "
+            "(e.g. \"[BOOK-IMG-1] short description of the figure\"). "
             "Prefer using book figures when they help understand the concept visually. "
             'Leave "image" as empty string when not needed'
         )
@@ -144,7 +145,7 @@ Guidelines:
 Example format:
 [
   {{"question": "What is X?", "answer": "X is...", "example": ""{', "image": ""' if has_book_images else ''}}},
-  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "[BOOK-IMG-1]"' if has_book_images else ''}}}
+  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "[BOOK-IMG-1] Description of the figure"' if has_book_images else ''}}}
 ]
 
 {text_label}:

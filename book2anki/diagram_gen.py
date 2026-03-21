@@ -7,7 +7,7 @@ import urllib.request
 
 from book2anki.models import BookImage, Card
 
-_BOOK_IMG_RE = re.compile(r"^\[BOOK-IMG-(\d+)\]$", re.IGNORECASE)
+_BOOK_IMG_RE = re.compile(r"^\[BOOK-IMG-(\d+)\]\s*(.*)?$", re.IGNORECASE)
 
 
 def _fetch_image(url: str) -> bytes:
@@ -82,6 +82,7 @@ def process_book_images(
         if not m:
             continue
         num = int(m.group(1))
+        llm_caption = (m.group(2) or "").strip()
         image = image_by_num.get(num)
         if not image:
             card.image = ""
@@ -101,9 +102,10 @@ def process_book_images(
         if not os.path.exists(filepath):
             with open(filepath, "wb") as f:
                 f.write(data)
+        caption = llm_caption or image.caption
         caption_html = ""
-        if image.caption:
-            caption_html = f'<div class="image-caption">{image.caption}</div>'
+        if caption:
+            caption_html = f'<div class="image-caption">{caption}</div>'
         card.image = f'<img src="{filename}">{caption_html}'
         if filepath not in media_files:
             media_files.append(filepath)

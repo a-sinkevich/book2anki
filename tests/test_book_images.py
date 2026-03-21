@@ -218,12 +218,15 @@ class TestBookImgPattern:
     def test_no_match_text(self):
         assert not _BOOK_IMG_RE.match("some diagram prompt text")
 
-    def test_no_match_partial(self):
-        assert not _BOOK_IMG_RE.match("[BOOK-IMG-1] extra text")
+    def test_matches_with_caption(self):
+        m = _BOOK_IMG_RE.match("[BOOK-IMG-1] translated caption")
+        assert m and m.group(1) == "1"
+        assert m.group(2) == "translated caption"
 
     def test_extracts_number(self):
         m = _BOOK_IMG_RE.match("[BOOK-IMG-7]")
         assert m and m.group(1) == "7"
+        assert m.group(2) == ""
 
 
 # --- Process book images ---
