@@ -109,8 +109,9 @@ def build_prompt(
         image_rule = (
             '\n- **Image field**: include an optional "image" field. '
             "If one of the available book figures matches the card's concept, "
-            f"reference it by writing its ID followed by a caption in {language} "
+            f"reference it by writing its ID followed by a short caption in {language} "
             "(e.g. \"[BOOK-IMG-1] short description of the figure\"). "
+            f"The caption after the ID is REQUIRED and must be in {language}. "
             "Prefer using book figures when they help understand the concept visually. "
             'Leave "image" as empty string when not needed'
         )
