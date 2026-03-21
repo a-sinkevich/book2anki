@@ -93,7 +93,8 @@ def build_prompt(
 - **Focus on "why" and "when"**: prefer cards like "When would you use X?" or "What problem does X solve?" over "What is the syntax for X?"
 - **Technique cards**: for named techniques/patterns/refactorings, test: (1) what problem it solves, (2) how it works, (3) when to apply it
 - **Trade-off cards**: when the text compares approaches, create cards that test understanding of trade-offs
-- **No trivial syntax cards**: don't create cards for basic language syntax that any developer would know"""
+- **No trivial syntax cards**: don't create cards for basic language syntax that any developer would know
+- **Code context rule**: if a question references a specific code listing, class, or implementation from the text, include the relevant code snippet directly in the "question" field using <pre><code> tags — the reader needs to see the code before answering"""
         example_rule = (
             '\n- **Example field**: include an optional "example" field with an illustrative code snippet '
             "when it helps understand the concept. Use <pre><code> tags for code. "
