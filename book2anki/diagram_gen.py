@@ -21,14 +21,16 @@ def _fetch_image(url: str) -> bytes:
     })
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            return resp.read()
+            data: bytes = resp.read()
+            return data
     except urllib.error.URLError as e:
         if "CERTIFICATE_VERIFY_FAILED" in str(e):
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
             with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-                return resp.read()
+                data = resp.read()
+                return data
         raise
 
 

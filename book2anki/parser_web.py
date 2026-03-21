@@ -111,7 +111,7 @@ def _find_article(soup: BeautifulSoup) -> Tag | None:
     # Generic containers (skip sidebar/widget articles)
     for tag_name in ["article", "main"]:
         for elem in soup.find_all(tag_name):
-            classes = " ".join(elem.get("class", []))
+            classes = " ".join(str(c) for c in (elem.get("class") or []))
             if "sidebar" not in classes and "game" not in classes:
                 return elem
 
@@ -157,9 +157,9 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
     for img_tag in article.find_all("img"):
         # Skip images inside infobox/navbox/sidebar/author containers
         if any(
-            p.get("class") and any(
-                kw in c
-                for c in p.get("class", [])
+            any(
+                kw in str(c)
+                for c in (p.get("class") or [])
                 for kw in _SKIP_PARENTS
             )
             for p in img_tag.parents
@@ -172,8 +172,8 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
             continue
 
         # Skip tiny images (icons, spacers)
-        width = img_tag.get("width", "")
-        height = img_tag.get("height", "")
+        width = str(img_tag.get("width", ""))
+        height = str(img_tag.get("height", ""))
         try:
             if width and int(width) < _MIN_IMAGE_DIMENSION:
                 continue
@@ -213,7 +213,7 @@ def _find_caption(img_tag: Tag) -> str:
                 return text
 
     # 2. alt text (if substantial, not just "image" or filename)
-    alt = img_tag.get("alt", "").strip()
+    alt = str(img_tag.get("alt", "")).strip()
     if alt and len(alt) > 10 and not alt.lower().startswith("image"):
         return alt
 
@@ -301,7 +301,7 @@ def _last_sentence(tag: Tag | None) -> str:
 
 def _best_src(img_tag: Tag) -> str:
     """Pick the largest available image URL from src/srcset."""
-    srcset = img_tag.get("srcset", "")
+    srcset = str(img_tag.get("srcset", ""))
     if srcset:
         # srcset format: "url1 1.5x, url2 2x" — pick the last (largest) entry
         parts = [s.strip() for s in srcset.split(",") if s.strip()]
@@ -312,9 +312,11 @@ def _best_src(img_tag: Tag) -> str:
             return best
 
     # Fallback to data-src / data-large-image / src
-    return (img_tag.get("data-large-image", "")
-            or img_tag.get("data-src", "")
-            or img_tag.get("src", ""))
+    return str(
+        img_tag.get("data-large-image", "")
+        or img_tag.get("data-src", "")
+        or img_tag.get("src", "")
+    )
 
 
 def _ext_from_url(url: str) -> str:
