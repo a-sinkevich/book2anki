@@ -52,12 +52,10 @@ CARD_CSS = """\
     font-family: arial;
     font-size: 20px;
     text-align: left;
-    color: black;
-    background-color: white;
 }
 pre {
-    background-color: #f4f4f4;
-    border: 1px solid #ddd;
+    background-color: rgba(128, 128, 128, 0.12);
+    border: 1px solid rgba(128, 128, 128, 0.25);
     border-radius: 4px;
     padding: 8px 12px;
     overflow-x: auto;
@@ -70,13 +68,13 @@ code {
 .example {
     margin-top: 12px;
     padding-top: 8px;
-    border-top: 1px dashed #ccc;
+    border-top: 1px dashed rgba(128, 128, 128, 0.4);
     font-size: 17px;
 }
 .image {
     margin-top: 12px;
     padding-top: 8px;
-    border-top: 1px dashed #ccc;
+    border-top: 1px dashed rgba(128, 128, 128, 0.4);
     text-align: center;
 }
 .image img {
