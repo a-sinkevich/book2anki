@@ -394,6 +394,15 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
                 chapter_texts[new_title] = chapter_texts.pop(old_key)
                 chapter_images[new_title] = chapter_images.pop(old_key, [])
 
+    # Collect ALL images from every chapter (including skipped ones)
+    # and make them available book-wide. Many books put all images
+    # in a single "Illustrations" section rather than inline.
+    all_images: list[BookImage] = []
+    for title in chapter_order:
+        all_images.extend(chapter_images.get(title, []))
+    for i, img in enumerate(all_images):
+        img.id = f"book-img-{i + 1}"
+
     chapters = []
     index = 0
     for title in chapter_order:
@@ -401,12 +410,8 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
         if should_skip_chapter(title, combined, book_title=book_title):
             continue
         combined = _strip_references(combined)
-        imgs = chapter_images.get(title, [])
-        # Re-number images sequentially per chapter
-        for i, img in enumerate(imgs):
-            img.id = f"book-img-{i + 1}"
         chapters.append(Chapter(
-            title=title, text=combined, index=index, images=imgs,
+            title=title, text=combined, index=index, images=all_images,
         ))
         index += 1
 

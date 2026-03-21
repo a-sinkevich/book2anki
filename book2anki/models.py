@@ -3,11 +3,12 @@ from dataclasses import dataclass, field
 
 @dataclass
 class BookImage:
-    """An image extracted from the source book."""
+    """An image extracted from the source book or web page."""
     id: str          # "book-img-1" (per-chapter sequential)
-    data: bytes      # raw image bytes
+    data: bytes      # raw image bytes (empty if url is set)
     ext: str         # file extension: "png", "jpg", etc.
     caption: str     # description for the LLM
+    url: str = ""    # source URL for lazy download (web images)
 
 
 @dataclass

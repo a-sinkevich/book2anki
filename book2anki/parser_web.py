@@ -1,11 +1,14 @@
+import os
 import re
 import ssl
 import urllib.request
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from book2anki.models import Chapter
+from book2anki.models import BookImage, Chapter
+
+_MIN_IMAGE_DIMENSION = 100  # skip tiny icons/decorations
 
 
 def parse_url(url: str) -> tuple[str, list[Chapter]]:
@@ -19,7 +22,8 @@ def parse_url(url: str) -> tuple[str, list[Chapter]]:
     if not text.strip():
         raise ValueError(f"No readable text found at {url}")
 
-    chapters = [Chapter(title=title, text=text, index=0)]
+    images = _extract_images(soup, url)
+    chapters = [Chapter(title=title, text=text, index=0, images=images)]
     return title, chapters
 
 
@@ -89,3 +93,88 @@ def _extract_article_text(soup: BeautifulSoup) -> str:
 
     target = article if isinstance(article, Tag) else soup.body or soup
     return target.get_text(separator="\n", strip=True)
+
+
+def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
+    """Extract images with captions from a web page.
+
+    Looks for <figure>/<figcaption> (Wikipedia, blogs), alt text,
+    and nearby text. Only includes images that have a meaningful caption.
+    """
+    images: list[BookImage] = []
+    seen_urls: set[str] = set()
+
+    article = (
+        soup.find("article")
+        or soup.find("main")
+        or soup.find(class_="mw-parser-output")
+        or soup.find(id="mw-content-text")
+        or soup.find(class_="post-content")
+        or soup.find(class_="entry-content")
+        or soup.body
+        or soup
+    )
+    if not isinstance(article, Tag):
+        return images
+
+    for img_tag in article.find_all("img"):
+        src = img_tag.get("src", "")
+        if not src:
+            continue
+
+        # Skip tiny images (icons, spacers)
+        width = img_tag.get("width", "")
+        height = img_tag.get("height", "")
+        try:
+            if width and int(width) < _MIN_IMAGE_DIMENSION:
+                continue
+            if height and int(height) < _MIN_IMAGE_DIMENSION:
+                continue
+        except ValueError:
+            pass
+
+        img_url = urljoin(page_url, src)
+        if img_url in seen_urls:
+            continue
+        seen_urls.add(img_url)
+
+        caption = _find_caption(img_tag)
+        if not caption:
+            continue
+
+        ext = _ext_from_url(img_url)
+
+        img_id = f"book-img-{len(images) + 1}"
+        images.append(BookImage(
+            id=img_id, data=b"", ext=ext, caption=caption, url=img_url,
+        ))
+
+    return images
+
+
+def _find_caption(img_tag: Tag) -> str:
+    """Find a caption for an image tag."""
+    # 1. <figcaption> inside parent <figure>
+    figure = img_tag.find_parent("figure")
+    if figure:
+        figcaption = figure.find("figcaption")
+        if figcaption:
+            text = figcaption.get_text(separator=" ", strip=True)
+            if text:
+                return text
+
+    # 2. alt text (if substantial, not just "image" or filename)
+    alt = img_tag.get("alt", "").strip()
+    if alt and len(alt) > 10 and not alt.lower().startswith("image"):
+        return alt
+
+    return ""
+
+
+def _ext_from_url(url: str) -> str:
+    """Extract file extension from a URL."""
+    path = urlparse(url).path
+    ext = os.path.splitext(path)[1].lstrip(".").lower()
+    if ext in ("jpg", "jpeg", "png", "gif", "svg", "webp"):
+        return ext
+    return "jpg"
