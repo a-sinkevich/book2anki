@@ -52,6 +52,12 @@ CARD_CSS = """\
     font-family: arial;
     font-size: 20px;
     text-align: left;
+    color: black;
+    background-color: white;
+}
+.card.night_mode {
+    color: white;
+    background-color: #1e1e1e;
 }
 pre {
     background-color: rgba(128, 128, 128, 0.12);
