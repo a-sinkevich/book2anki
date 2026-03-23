@@ -64,8 +64,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("file", help="Path to .epub or .pdf file, or a URL (article/YouTube)")
     parser.add_argument(
-        "--depth", type=int, choices=[1, 2, 3], default=1,
-        help="Card generation depth: 1=core, 2=detailed, 3=comprehensive (default: 1)",
+        "--depth", type=int, choices=[0, 1, 2, 3], default=1,
+        help="Card generation depth: 0=summary (2-3 cards), 1=core, 2=detailed, 3=comprehensive (default: 1)",
     )
     parser.add_argument(
         "--lang", default=None,
@@ -251,18 +251,21 @@ def main() -> None:
     else:
         base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(' ', '_')
         output_dir = args.output or base_name
-        chapters_dir = str(Path(output_dir) / "chapters")
+        # Depth 0 (summary): single deck, no per-chapter files
+        chapters_dir = "" if args.depth == 0 else str(Path(output_dir) / "chapters")
 
-        existing = load_existing_chapters(chapters_dir)
-        for idx, cards in sorted(existing.items()):
-            if any(ch.index == idx for ch in chapters_to_generate):
-                all_cards.extend(cards)
+        existing: dict[int, list[Card]] = {}
+        if chapters_dir:
+            existing = load_existing_chapters(chapters_dir)
+            for idx, cards in sorted(existing.items()):
+                if any(ch.index == idx for ch in chapters_to_generate):
+                    all_cards.extend(cards)
 
-        if existing:
-            existing_in_scope = {idx for idx in existing if any(ch.index == idx for ch in chapters_to_generate)}
-            if existing_in_scope:
-                print(f"Resuming: {len(existing_in_scope)}/{len(chapters_to_generate)} chapters already done"
-                      f" ({len(all_cards)} cards)")
+            if existing:
+                existing_in_scope = {idx for idx in existing if any(ch.index == idx for ch in chapters_to_generate)}
+                if existing_in_scope:
+                    print(f"Resuming: {len(existing_in_scope)}/{len(chapters_to_generate)} chapters already done"
+                          f" ({len(all_cards)} cards)")
 
         pending = [ch for ch in chapters_to_generate if ch.index not in existing]
         total = len(chapters_to_generate)

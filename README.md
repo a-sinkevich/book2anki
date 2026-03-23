@@ -56,7 +56,8 @@ In the examples below, replace `book2anki` with how you run it:
 # Basic — generates Anki deck with core-level cards
 book2anki mybook.epub
 
-# Choose depth: 1=core, 2=detailed, 3=comprehensive
+# Choose depth: 0=summary (2-3 cards), 1=core, 2=detailed, 3=comprehensive
+book2anki mybook.epub --depth 0   # just the key takeaways
 book2anki mybook.pdf --depth 2
 
 # Specific chapters
@@ -115,7 +116,7 @@ The tool uses the Anthropic API for card generation. Typical costs:
 ## Features
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
-- **Three depth levels**: core ideas, detailed coverage, or comprehensive
+- **Four depth levels**: summary (2-3 cards), core ideas, detailed, or comprehensive
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
 - **Dark & light theme** — cards adapt to your Anki theme
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
