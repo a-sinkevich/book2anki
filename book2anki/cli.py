@@ -13,14 +13,14 @@ from book2anki.parser_web import parse_url
 from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
 from book2anki.generator import (
-    LLMProvider, generate_cards_for_chapter, estimate_cost, format_cost,
-    deduplicate, consolidate_cards,
+    LLMProvider, generate_cards_for_chapter, generate_vocab_for_chapter,
+    estimate_cost, format_cost, deduplicate, consolidate_cards,
 )
 from book2anki.prompts import detect_programming
 from book2anki.diagram_gen import process_book_images
 from book2anki.packager import (
-    package_cards, package_cards_flat, package_single_chapter,
-    load_existing_chapters, YOUTUBE_MODEL,
+    package_cards, package_cards_flat, package_vocab_flat,
+    package_single_chapter, load_existing_chapters, YOUTUBE_MODEL,
 )
 
 
@@ -90,6 +90,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--chapters", type=str, default=None,
         help="Chapters to process, e.g. '3', '1,2,5', '3-7', '1,3-5,8' (1-based)",
+    )
+    parser.add_argument(
+        "--vocab", action="store_true",
+        help="Vocabulary mode: extract words/phrases above your level for language learning",
+    )
+    parser.add_argument(
+        "--level", default=None,
+        choices=["A1", "A2", "B1", "B2", "C1", "C2"],
+        help="Your CEFR language level (used with --vocab), e.g. --level B2",
     )
     return parser.parse_args()
 
@@ -218,12 +227,21 @@ def main() -> None:
         print("Error: No content could be extracted.", file=sys.stderr)
         sys.exit(1)
 
+    if args.vocab and not args.level:
+        print("Error: --vocab requires --level (e.g. --vocab --level B2)", file=sys.stderr)
+        sys.exit(1)
+
     print(f'"{book_title}" — {len(chapters)} chapter(s) extracted.')
-    print(f"Parameters: depth={args.depth}"
-          f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
-          f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
-          f"{', topic=' + args.topic if args.topic else ''}"
-          f"{', parallel' if args.parallel else ''}")
+    if args.vocab:
+        print(f"Mode: vocabulary extraction (level {args.level})"
+              f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
+              f"{', lang=' + args.lang if args.lang else ', lang=auto'}")
+    else:
+        print(f"Parameters: depth={args.depth}"
+              f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
+              f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
+              f"{', topic=' + args.topic if args.topic else ''}"
+              f"{', parallel' if args.parallel else ''}")
 
     chapters_to_generate = _select_chapters(chapters, args.chapters)
 
@@ -254,6 +272,46 @@ def main() -> None:
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
     deck_title = _deck_title(book_title, args.topic)
+
+    if args.vocab:
+        native_lang = lang  # --lang specifies the translation target
+        total = len(chapters_to_generate)
+        pbar = _ProgressBar(total=total)
+        for chapter in chapters_to_generate:
+            cards, usage = generate_vocab_for_chapter(
+                provider, chapter, book_title,
+                level=args.level, native_language=native_lang,
+                progress_bar=pbar,
+                is_article=(is_url or is_yt),
+            )
+            all_cards.extend(cards)
+            total_usage += usage
+            pbar.update(1)
+        pbar.close()
+
+        if not all_cards:
+            print("Error: No vocabulary cards were generated.", file=sys.stderr)
+            sys.exit(1)
+
+        # Dedup across chapters (same word may appear in multiple chapters)
+        before = len(all_cards)
+        all_cards = deduplicate(all_cards)
+        if len(all_cards) < before:
+            print(f"Removed {before - len(all_cards)} duplicate words"
+                  f" ({before} → {len(all_cards)})")
+
+        vocab_deck_title = f"{book_title} — Vocab {args.level}"
+        base_name = re.sub(r'[<>:"/\\|?*]', "", vocab_deck_title).replace(' ', '_')
+        output_path = args.output or f"{base_name}.apkg"
+        if not output_path.endswith(".apkg"):
+            output_path = str(Path(output_path) / f"{base_name}.apkg")
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        package_vocab_flat(all_cards, vocab_deck_title, output_path)
+
+        cost = estimate_cost(total_usage, model)
+        print(f"\nDone! Generated {len(all_cards)} vocabulary cards. Cost: {format_cost(cost)}")
+        print(f"Output: {output_path}\n")
+        return
 
     if is_url or is_yt:
         source_url = args.file if is_url else f"https://www.youtube.com/watch?v={args.file}"

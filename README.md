@@ -77,6 +77,10 @@ book2anki mybook.epub --lang ru    # English book → Russian cards
 # Focus on a specific topic
 book2anki mybook.epub --topic "dopamine"   # only cards about dopamine
 
+# Vocabulary mode — extract words above your level for language learning
+book2anki mybook.epub --vocab --level B2 --lang ru    # English book, B2 learner, translate to Russian
+book2anki "https://example.com/article" --vocab --level C1 --lang en
+
 # Combine flags
 book2anki mybook.epub --depth 0 --topic "agriculture"  # 2-3 cards about agriculture
 book2anki mybook.epub --depth 2 --topic "memory" --lang ru
@@ -161,6 +165,7 @@ The tool uses the Anthropic API for card generation. Typical costs:
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
 - **Dark & light theme** — cards adapt to your Anki theme
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
+- **Vocabulary mode** (`--vocab --level B2`) — extract words/phrases above your CEFR level for language learning
 - **Topic filter** (`--topic`) — generate cards only about a specific subject
 - **Smart dedup** — removes duplicate cards across chapters in summary and topic modes
 - **Auto language detection** with `--lang` override for translation to any language

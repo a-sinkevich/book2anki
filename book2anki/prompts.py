@@ -169,3 +169,58 @@ Example format:
 ---
 
 Generate the flashcards now as a JSON array:"""
+
+
+VALID_LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2")
+
+
+def build_vocab_prompt(
+    book_title: str,
+    chapter_title: str,
+    chapter_text: str,
+    level: str,
+    native_language: str,
+    is_article: bool = False,
+) -> str:
+    """Build a prompt to extract vocabulary above the reader's level."""
+    if is_article:
+        source_header = f'Article: "{book_title}"'
+        text_label = "Article text"
+    else:
+        source_header = f'Book: "{book_title}"\nChapter: "{chapter_title}"'
+        text_label = "Chapter text"
+
+    return f"""You are an expert language teacher creating Anki vocabulary cards.
+
+{source_header}
+Reader's level: {level} (CEFR)
+Translate to: {native_language}
+
+Extract words and phrases from the text that a {level}-level reader would NOT already know. \
+These are words above {level} — uncommon, literary, domain-specific, or idiomatic expressions \
+that a learner at this level would benefit from studying.
+
+Guidelines:
+- **Skip common words** that any {level} reader would know
+- **Include**: uncommon single words, idiomatic phrases, phrasal verbs, collocations, literary/formal vocabulary
+- **Context sentence**: use the EXACT sentence from the text where the word appears (or shorten it if too long, but keep the word in context)
+- **Translation**: natural translation to {native_language}, not word-for-word
+- **Definition**: brief explanation in the source language (1 sentence max)
+- **No proper nouns** (names of people, places, brands) unless they have a general meaning
+- **No numbers, dates, or abbreviations**
+- For phrases/idioms: the "word" field should contain the full phrase
+
+Output ONLY a JSON array. No markdown, no explanation, no wrapper.
+
+Example format:
+[
+  {{"word": "ubiquitous", "context": "Smartphones have become ubiquitous in modern life.", "translation": "...", "definition": "Present or found everywhere"}},
+  {{"word": "to come to grips with", "context": "She had to come to grips with the new reality.", "translation": "...", "definition": "To begin to understand and deal with something difficult"}}
+]
+
+{text_label}:
+---
+{chapter_text}
+---
+
+Extract vocabulary above {level} as a JSON array:"""

@@ -6,7 +6,7 @@ from difflib import SequenceMatcher
 from typing import Any, Callable
 
 from book2anki.models import Card, Chapter, TokenUsage
-from book2anki.prompts import build_prompt
+from book2anki.prompts import build_prompt, build_vocab_prompt
 
 CHARS_PER_TOKEN = 4
 
@@ -123,6 +123,128 @@ def generate_cards_for_chapter(
 
     valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
     return valid_cards, total_usage
+
+
+def generate_vocab_for_chapter(
+    provider: LLMProvider,
+    chapter: Chapter,
+    book_title: str,
+    level: str,
+    native_language: str,
+    progress_bar: Any = None,
+    is_article: bool = False,
+) -> tuple[list[Card], TokenUsage]:
+    """Extract vocabulary cards for a single chapter. Returns (cards, token_usage)."""
+    def _status(msg: str) -> None:
+        if progress_bar is not None:
+            progress_bar.set_postfix_str(msg, refresh=True)
+        else:
+            print(msg, flush=True)
+
+    short = chapter.title[:60] + "…" if len(chapter.title) > 60 else chapter.title
+    _status(f"\"{short}\"")
+
+    max_text_tokens = min(
+        int(provider.context_window_tokens() * 0.8),
+        provider.max_request_tokens(),
+    )
+    prompt_overhead = 500
+    output_reserve = 4000
+    available_tokens = max_text_tokens - prompt_overhead - output_reserve
+    max_chars = available_tokens * CHARS_PER_TOKEN
+
+    total_usage = TokenUsage(0, 0)
+
+    if len(chapter.text) <= max_chars:
+        cards, usage = _generate_vocab_with_retries(
+            provider, chapter.text, book_title, chapter.title,
+            level, native_language,
+            status_fn=_status, is_article=is_article,
+        )
+        total_usage += usage
+    else:
+        chunks = _split_into_chunks(chapter.text, max_chars)
+        all_cards: list[Card] = []
+        for i, chunk in enumerate(chunks):
+            _status(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
+            if i > 0:
+                time.sleep(5)
+            chunk_cards, usage = _generate_vocab_with_retries(
+                provider, chunk, book_title, chapter.title,
+                level, native_language,
+                status_fn=_status, is_article=is_article,
+            )
+            total_usage += usage
+            all_cards.extend(chunk_cards)
+        cards = deduplicate(all_cards)
+
+    valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
+    return valid_cards, total_usage
+
+
+def _generate_vocab_with_retries(
+    provider: LLMProvider,
+    text: str,
+    book_title: str,
+    chapter_title: str,
+    level: str,
+    native_language: str,
+    max_retries: int = 3,
+    status_fn: Callable[[str], None] | None = None,
+    is_article: bool = False,
+) -> tuple[list[Card], TokenUsage]:
+    """Call LLM with vocab prompt and parse response, with retries."""
+    prompt = build_vocab_prompt(
+        book_title, chapter_title, text, level, native_language,
+        is_article=is_article,
+    )
+    short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title
+    cumulative = TokenUsage(0, 0)
+
+    def _report(msg: str) -> None:
+        if status_fn:
+            status_fn(msg)
+
+    for attempt in range(max_retries):
+        try:
+            response, usage = provider.generate(prompt)
+            cumulative += usage
+            cards_data = _parse_json_response(response)
+            return [
+                Card(
+                    question=item["word"],
+                    answer=item.get("translation", ""),
+                    chapter_title=chapter_title,
+                    book_title=book_title,
+                    example=item.get("context", ""),
+                    image=item.get("definition", ""),
+                )
+                for item in cards_data
+                if "word" in item
+            ], cumulative
+        except (json.JSONDecodeError, KeyError, ValueError):
+            if attempt < max_retries - 1:
+                _report(f"\"{short}\" parse error, retry {attempt + 2}/{max_retries}")
+                time.sleep(1)
+                continue
+            _report(f"\"{short}\" failed after {max_retries} attempts")
+            return [], cumulative
+        except Exception as e:
+            if attempt < max_retries - 1:
+                err_str = str(e)
+                if "rate_limit" in err_str or "429" in err_str:
+                    wait = 60 * (attempt + 1)
+                    _report(f"\"{short}\" rate limited, waiting {wait}s...")
+                else:
+                    wait = 5 * (2 ** attempt)
+                    _report(f"\"{short}\" error, retry in {wait}s...")
+                time.sleep(wait)
+                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
+                continue
+            _report(f"\"{short}\" failed after {max_retries} attempts")
+            return [], cumulative
+
+    return [], cumulative
 
 
 def _generate_with_retries(

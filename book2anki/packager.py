@@ -145,6 +145,62 @@ ARTICLE_MODEL = genanki.Model(
     css=CARD_CSS,
 )
 
+VOCAB_MODEL = genanki.Model(
+    model_id=1607392325,
+    name="book2anki Vocab",
+    fields=[
+        {"name": "Word"},
+        {"name": "Context"},
+        {"name": "Translation"},
+        {"name": "Definition"},
+        {"name": "Book"},
+        {"name": "Chapter"},
+    ],
+    templates=[
+        {
+            "name": "Card 1",
+            "qfmt": (
+                '<div class="word">{{Word}}</div>'
+                '<div class="context">{{Context}}</div>'
+            ),
+            "afmt": (
+                '{{FrontSide}}<hr id="answer">'
+                '<div class="translation">{{Translation}}</div>'
+                '{{#Definition}}<div class="definition">{{Definition}}</div>{{/Definition}}'
+            ),
+        },
+    ],
+    css=CARD_CSS + """\
+.word {
+    font-size: 26px;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+.context {
+    font-size: 18px;
+    color: #555;
+    font-style: italic;
+}
+.card.night_mode .context {
+    color: #aaa;
+}
+.translation {
+    font-size: 22px;
+    margin-bottom: 6px;
+}
+.definition {
+    font-size: 17px;
+    color: #666;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed rgba(128, 128, 128, 0.4);
+}
+.card.night_mode .definition {
+    color: #999;
+}
+""",
+)
+
 YOUTUBE_MODEL = genanki.Model(
     model_id=1607392324,
     name="book2anki YouTube",
@@ -275,6 +331,31 @@ def package_cards_flat(
     package = genanki.Package([deck])
     if media_files:
         package.media_files = media_files
+    package.write_to_file(output_path)
+
+
+def package_vocab_flat(
+    cards: list[Card], deck_name: str, output_path: str,
+) -> None:
+    """Package vocabulary cards into a single flat deck."""
+    deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
+    tag = f"vocab::{_slugify(deck_name)}"
+
+    for card in cards:
+        word = _escape_field(card.question)
+        context = _escape_field(card.example) if card.example else ""
+        translation = _escape_field(card.answer)
+        definition = _escape_field(card.image) if card.image else ""
+        note = genanki.Note(
+            model=VOCAB_MODEL,
+            fields=[word, context, translation, definition,
+                    card.book_title, card.chapter_title],
+            tags=[tag],
+            guid=genanki.guid_for(card.question, deck_name, "vocab"),
+        )
+        deck.add_note(note)
+
+    package = genanki.Package([deck])
     package.write_to_file(output_path)
 
 
