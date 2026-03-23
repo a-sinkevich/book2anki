@@ -64,8 +64,17 @@ def build_prompt(
     is_article: bool = False,
     is_programming: bool = False,
     book_image_captions: list[tuple[str, str]] | None = None,
+    topic: str = "",
 ) -> str:
     depth_instruction = DEPTH_INSTRUCTIONS[depth]
+
+    topic_instruction = ""
+    if topic:
+        topic_instruction = (
+            f"\n\nIMPORTANT: Generate cards ONLY about: {topic}. "
+            "Skip everything unrelated to this topic. "
+            "If the text contains nothing relevant, return an empty JSON array []."
+        )
 
     if is_article:
         source_header = f'Article: "{book_title}"'
@@ -133,7 +142,7 @@ def build_prompt(
 {source_header}
 Language: {language}
 
-{depth_instruction}
+{depth_instruction}{topic_instruction}
 
 Guidelines:
 - **Minimum information principle**: one idea per card

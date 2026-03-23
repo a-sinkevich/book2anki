@@ -74,6 +74,9 @@ book2anki VIDEO_ID    # just the YouTube video ID (no quotes needed)
 # Generate cards in a different language than the source
 book2anki mybook.epub --lang ru    # English book → Russian cards
 
+# Focus on a specific topic
+book2anki mybook.epub --topic "dopamine"   # only cards about dopamine
+
 ```
 
 ## Output
@@ -120,5 +123,6 @@ The tool uses the Anthropic API for card generation. Typical costs:
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
 - **Dark & light theme** — cards adapt to your Anki theme
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
+- **Topic filter** (`--topic`) — generate cards only about a specific subject
 - **Auto language detection** with `--lang` override for translation to any language
 - **Progress bar** with per-chapter cost breakdown during generation

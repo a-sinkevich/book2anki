@@ -73,6 +73,10 @@ def _parse_args() -> argparse.Namespace:
              "Use to generate cards in a different language, e.g. --lang ru",
     )
     parser.add_argument(
+        "--topic", default=None,
+        help="Generate cards only about a specific topic, e.g. --topic 'dopamine'",
+    )
+    parser.add_argument(
         "--output", default=None,
         help="Output directory (default: <BookTitle>/)",
     )
@@ -199,6 +203,7 @@ def main() -> None:
     print(f"Parameters: depth={args.depth}"
           f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
           f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
+          f"{', topic=' + args.topic if args.topic else ''}"
           f"{', parallel' if args.parallel else ''}")
 
     chapters_to_generate = _select_chapters(chapters, args.chapters)
@@ -236,6 +241,7 @@ def main() -> None:
             provider, chapters_to_generate, book_title, args.depth, lang,
             total=1, all_cards=[], chapters_dir="", is_article=True,
             source_url=source_url, is_programming=is_prog,
+            topic=args.topic or "",
         )
         if not all_cards:
             print("Error: No cards were generated.", file=sys.stderr)
@@ -274,12 +280,12 @@ def main() -> None:
             if args.parallel:
                 all_cards, total_usage, all_media = _process_parallel(
                     provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
-                    is_programming=is_prog,
+                    is_programming=is_prog, topic=args.topic or "",
                 )
             else:
                 all_cards, total_usage, all_media = _process_sequential(
                     provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
-                    is_programming=is_prog,
+                    is_programming=is_prog, topic=args.topic or "",
                 )
 
         if not all_cards:
@@ -412,6 +418,7 @@ def _process_sequential(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
     is_article: bool = False, source_url: str = "", is_programming: bool = False,
+    topic: str = "",
 ) -> tuple[list[Card], TokenUsage, list[str]]:
     session_cards = 0
     total_usage = TokenUsage(0, 0)
@@ -436,6 +443,7 @@ def _process_sequential(
             is_article=is_article,
             source_url=source_url,
             is_programming=is_programming,
+            topic=topic,
         )
 
         ch_media: list[str] = []
@@ -476,7 +484,7 @@ def _process_sequential(
 def _process_parallel(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
-    is_programming: bool = False,
+    is_programming: bool = False, topic: str = "",
 ) -> tuple[list[Card], TokenUsage, list[str]]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
     session_cards = 0
@@ -501,6 +509,7 @@ def _process_parallel(
                 depth=depth,
                 language=lang,
                 is_programming=is_programming,
+                topic=topic,
             )] = chapter
 
         for future in as_completed(future_to_chapter):
