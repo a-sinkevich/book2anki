@@ -206,16 +206,18 @@ Guidelines:
 - **Context sentence**: use the EXACT sentence from the text where the word appears (or shorten it if too long, but keep the word in context)
 - **Translation**: natural translation to {native_language}, not word-for-word
 - **Definition**: brief explanation in the source language (1 sentence max)
+- **Example**: one additional example sentence (NOT from the text) showing typical usage
+- **Dictionary form**: always use the base/dictionary form in the "word" field (infinitive for verbs, singular for nouns, etc.), even if the text has an inflected form
 - **No proper nouns** (names of people, places, brands) unless they have a general meaning
 - **No numbers, dates, or abbreviations**
-- For phrases/idioms: the "word" field should contain the full phrase
+- For phrases/idioms: the "word" field should contain the full phrase in base form
 
 Output ONLY a JSON array. No markdown, no explanation, no wrapper.
 
 Example format:
 [
-  {{"word": "ubiquitous", "context": "Smartphones have become ubiquitous in modern life.", "translation": "...", "definition": "Present or found everywhere"}},
-  {{"word": "to come to grips with", "context": "She had to come to grips with the new reality.", "translation": "...", "definition": "To begin to understand and deal with something difficult"}}
+  {{"word": "ubiquitous", "context": "Smartphones have become ubiquitous in modern life.", "translation": "...", "definition": "Present or found everywhere", "example": "Coffee shops are ubiquitous in big cities."}},
+  {{"word": "to come to grips with", "context": "She had to come to grips with the new reality.", "translation": "...", "definition": "To begin to understand and deal with something difficult", "example": "It took him months to come to grips with the loss."}}
 ]
 
 {text_label}:

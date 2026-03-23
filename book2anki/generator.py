@@ -176,7 +176,7 @@ def generate_vocab_for_chapter(
             )
             total_usage += usage
             all_cards.extend(chunk_cards)
-        cards = deduplicate(all_cards)
+        cards = deduplicate_vocab(all_cards)
 
     valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
     return valid_cards, total_usage
@@ -218,6 +218,7 @@ def _generate_vocab_with_retries(
                     book_title=book_title,
                     example=item.get("context", ""),
                     image=item.get("definition", ""),
+                    source_url=item.get("example", ""),
                 )
                 for item in cards_data
                 if "word" in item
@@ -375,6 +376,36 @@ def deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
                 is_dup = True
                 break
         if not is_dup:
+            unique.append(card)
+    return unique
+
+
+def deduplicate_vocab(cards: list[Card], threshold: float = 0.8,
+                      max_contexts: int = 3) -> list[Card]:
+    """Merge duplicate vocab cards, combining context sentences up to max_contexts."""
+    unique: list[Card] = []
+    for card in cards:
+        merged = False
+        for existing in unique:
+            similarity = SequenceMatcher(
+                None, card.question.lower(), existing.question.lower(),
+            ).ratio()
+            if similarity >= threshold:
+                # Merge context sentences (stored in example field)
+                if card.example and card.example != existing.example:
+                    contexts = [c for c in existing.example.split("<br>") if c.strip()]
+                    if len(contexts) < max_contexts and card.example not in contexts:
+                        contexts.append(card.example)
+                        existing.example = "<br>".join(contexts)
+                # Merge extra examples (stored in source_url field)
+                if card.source_url and card.source_url != existing.source_url:
+                    examples = [e for e in existing.source_url.split("<br>") if e.strip()]
+                    if len(examples) < max_contexts and card.source_url not in examples:
+                        examples.append(card.source_url)
+                        existing.source_url = "<br>".join(examples)
+                merged = True
+                break
+        if not merged:
             unique.append(card)
     return unique
 

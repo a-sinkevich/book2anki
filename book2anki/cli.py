@@ -14,7 +14,8 @@ from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
 from book2anki.generator import (
     LLMProvider, generate_cards_for_chapter, generate_vocab_for_chapter,
-    estimate_cost, format_cost, deduplicate, consolidate_cards,
+    estimate_cost, format_cost, deduplicate, deduplicate_vocab,
+    consolidate_cards,
 )
 from book2anki.prompts import detect_programming
 from book2anki.diagram_gen import process_book_images
@@ -146,6 +147,27 @@ def _select_chapters(
     return [chapters[n - 1] for n in valid]
 
 
+_LANG_NAMES: dict[str, dict[str, str]] = {
+    "en": {"en": "English", "ru": "Английский", "de": "Englisch", "fr": "Anglais",
+           "es": "Inglés", "it": "Inglese", "pt": "Inglês", "zh": "英语", "ja": "英語", "ko": "영어"},
+    "ru": {"en": "Russian", "ru": "Русский", "de": "Russisch", "fr": "Russe", "es": "Ruso"},
+    "de": {"en": "German", "ru": "Немецкий", "de": "Deutsch", "fr": "Allemand", "es": "Alemán"},
+    "fr": {"en": "French", "ru": "Французский", "de": "Französisch", "fr": "Français", "es": "Francés"},
+    "es": {"en": "Spanish", "ru": "Испанский", "de": "Spanisch", "fr": "Espagnol", "es": "Español"},
+    "it": {"en": "Italian", "ru": "Итальянский", "de": "Italienisch", "fr": "Italien", "es": "Italiano"},
+    "pt": {"en": "Portuguese", "ru": "Португальский"},
+    "zh": {"en": "Chinese", "ru": "Китайский"},
+    "ja": {"en": "Japanese", "ru": "Японский"},
+    "ko": {"en": "Korean", "ru": "Корейский"},
+}
+
+
+def _lang_name(source_lang: str) -> str:
+    """Get the name of a language in that language itself."""
+    names = _LANG_NAMES.get(source_lang, {})
+    return names.get(source_lang) or names.get("en") or source_lang.upper()
+
+
 _MAX_TOPIC_LEN = 40
 
 
@@ -274,7 +296,14 @@ def main() -> None:
     deck_title = _deck_title(book_title, args.topic)
 
     if args.vocab:
-        native_lang = lang  # --lang specifies the translation target
+        # In vocab mode: source language = book's language (auto-detected),
+        # native language = --lang override (translation target)
+        source_lang = detect_language(all_text)  # always auto-detect
+        native_lang = args.lang or source_lang
+        if native_lang == source_lang and not args.lang:
+            print("Hint: use --lang to specify your native language for translations"
+                  " (e.g. --lang ru)", file=sys.stderr)
+
         total = len(chapters_to_generate)
         pbar = _ProgressBar(total=total)
         for chapter in chapters_to_generate:
@@ -293,14 +322,15 @@ def main() -> None:
             print("Error: No vocabulary cards were generated.", file=sys.stderr)
             sys.exit(1)
 
-        # Dedup across chapters (same word may appear in multiple chapters)
+        # Merge duplicates across chapters (same word may appear in multiple chapters)
         before = len(all_cards)
-        all_cards = deduplicate(all_cards)
+        all_cards = deduplicate_vocab(all_cards)
         if len(all_cards) < before:
-            print(f"Removed {before - len(all_cards)} duplicate words"
+            print(f"Merged {before - len(all_cards)} duplicate words"
                   f" ({before} → {len(all_cards)})")
 
-        vocab_deck_title = f"{book_title} — Vocab {args.level}"
+        source_name = _lang_name(source_lang)
+        vocab_deck_title = f"{book_title} — {source_name} {args.level}"
         base_name = re.sub(r'[<>:"/\\|?*]', "", vocab_deck_title).replace(' ', '_')
         output_path = args.output or f"{base_name}.apkg"
         if not output_path.endswith(".apkg"):

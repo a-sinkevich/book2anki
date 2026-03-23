@@ -153,6 +153,7 @@ VOCAB_MODEL = genanki.Model(
         {"name": "Context"},
         {"name": "Translation"},
         {"name": "Definition"},
+        {"name": "Example"},
         {"name": "Book"},
         {"name": "Chapter"},
     ],
@@ -167,6 +168,7 @@ VOCAB_MODEL = genanki.Model(
                 '{{FrontSide}}<hr id="answer">'
                 '<div class="translation">{{Translation}}</div>'
                 '{{#Definition}}<div class="definition">{{Definition}}</div>{{/Definition}}'
+                '{{#Example}}<div class="example">{{Example}}</div>{{/Example}}'
             ),
         },
     ],
@@ -179,7 +181,7 @@ VOCAB_MODEL = genanki.Model(
 .context {
     font-size: 18px;
     color: #555;
-    font-style: italic;
+    font-style: normal;
 }
 .card.night_mode .context {
     color: #aaa;
@@ -346,9 +348,10 @@ def package_vocab_flat(
         context = _escape_field(card.example) if card.example else ""
         translation = _escape_field(card.answer)
         definition = _escape_field(card.image) if card.image else ""
+        example = _escape_field(card.source_url) if card.source_url else ""
         note = genanki.Note(
             model=VOCAB_MODEL,
-            fields=[word, context, translation, definition,
+            fields=[word, context, translation, definition, example,
                     card.book_title, card.chapter_title],
             tags=[tag],
             guid=genanki.guid_for(card.question, deck_name, "vocab"),
