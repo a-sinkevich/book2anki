@@ -56,7 +56,7 @@ In the examples below, replace `book2anki` with how you run it:
 # Basic — generates Anki deck with core-level cards
 book2anki mybook.epub
 
-# Choose depth: 0=summary (2-3 cards), 1=core, 2=detailed, 3=comprehensive
+# Choose depth: 0=summary (2-3 cards/chapter), 1=core, 2=detailed, 3=comprehensive
 book2anki mybook.epub --depth 0   # just the key takeaways
 book2anki mybook.pdf --depth 2
 
@@ -115,6 +115,8 @@ Book-Title/
     media/                  # book images (when EPUB contains figures)
 ```
 
+With `--depth 0` or `--topic`, output is a single flat deck (no chapter subdecks).
+
 ## Development
 
 ```bash
@@ -137,18 +139,19 @@ make install-dev # install dev deps
 
 The tool uses the Anthropic API for card generation. Typical costs:
 
-| Source | Depth 1 (core) | Depth 2 (detailed) | Depth 3 (comprehensive) |
-|--------|:-:|:-:|:-:|
-| YouTube video (1 hour) | ~$0.06 | ~$0.07 | ~$0.13 |
-| Book (full) | $0.50–$2.00 | $1.00–$3.00 | $2.00–$5.00 |
+| Source | Depth 0 (summary) | Depth 1 (core) | Depth 2 (detailed) | Depth 3 (comprehensive) |
+|--------|:-:|:-:|:-:|:-:|
+| YouTube video (1 hour) | ~$0.05 | ~$0.06 | ~$0.07 | ~$0.13 |
+| Book (full) | $0.20–$1.00 | $0.50–$2.00 | $1.00–$3.00 | $2.00–$5.00 |
 
 ## Features
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
-- **Four depth levels**: summary (2-3 cards), core ideas, detailed, or comprehensive
+- **Four depth levels**: summary (2-3 cards/chapter), core ideas, detailed, or comprehensive
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
 - **Dark & light theme** — cards adapt to your Anki theme
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
 - **Topic filter** (`--topic`) — generate cards only about a specific subject
+- **Smart dedup** — removes duplicate cards across chapters in summary and topic modes
 - **Auto language detection** with `--lang` override for translation to any language
 - **Progress bar** with per-chapter cost breakdown during generation
