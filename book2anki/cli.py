@@ -257,8 +257,9 @@ def main() -> None:
     else:
         base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(' ', '_')
         output_dir = args.output or base_name
-        # Depth 0 (summary): single deck, no per-chapter files
-        chapters_dir = "" if args.depth == 0 else str(Path(output_dir) / "chapters")
+        # Summary or topic mode: single deck, no per-chapter files
+        single_deck = args.depth == 0 or bool(args.topic)
+        chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
 
         existing: dict[int, list[Card]] = {}
         if chapters_dir:
