@@ -171,16 +171,20 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
         if not src:
             continue
 
-        # Skip tiny images (icons, spacers)
+        # Skip tiny images (icons, spacers), but allow small images
+        # inside Wikipedia multi-image thumbnails that have captions
         width = str(img_tag.get("width", ""))
         height = str(img_tag.get("height", ""))
         try:
-            if width and int(width) < _MIN_IMAGE_DIMENSION:
-                continue
-            if height and int(height) < _MIN_IMAGE_DIMENSION:
-                continue
+            is_small = (width and int(width) < _MIN_IMAGE_DIMENSION) or \
+                        (height and int(height) < _MIN_IMAGE_DIMENSION)
         except ValueError:
-            pass
+            is_small = False
+        if is_small:
+            # Keep small images in tmulti containers with individual captions
+            tsingle = img_tag.find_parent(class_="tsingle")
+            if not (tsingle and tsingle.find(class_="thumbcaption")):
+                continue
 
         img_url = urljoin(page_url, src)
         if img_url in seen_urls:
@@ -203,7 +207,36 @@ def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
 
 def _find_caption(img_tag: Tag) -> str:
     """Find a caption for an image tag."""
-    # 1. <figcaption> inside parent <figure>
+    # 1. Wikipedia multi-image thumbnail (tmulti/tsingle with thumbcaption)
+    tsingle = img_tag.find_parent(class_="tsingle")
+    if tsingle:
+        cap = tsingle.find(class_="thumbcaption")
+        if cap:
+            text = cap.get_text(separator=" ", strip=True)
+            if text:
+                return text
+        # No individual caption — check for shared caption in tmulti parent
+        tmulti = tsingle.find_parent(class_="tmulti")
+        if tmulti:
+            # Shared caption is in a trow that's NOT the one containing tsingle divs
+            for trow in tmulti.find_all(class_="trow"):
+                if not trow.find(class_="tsingle"):
+                    cap = trow.find(class_="thumbcaption")
+                    if cap:
+                        text = cap.get_text(separator=" ", strip=True)
+                        if text:
+                            return text
+
+    # 2. Wikipedia single-image thumbnail (thumbcaption)
+    thumb = img_tag.find_parent(class_="thumb")
+    if thumb and not thumb.find(class_="tmulti"):
+        cap = thumb.find(class_="thumbcaption")
+        if cap:
+            text = cap.get_text(separator=" ", strip=True)
+            if text:
+                return text
+
+    # 3. <figcaption> inside parent <figure>
     figure = img_tag.find_parent("figure")
     if figure:
         figcaption = figure.find("figcaption")
@@ -212,12 +245,12 @@ def _find_caption(img_tag: Tag) -> str:
             if text:
                 return text
 
-    # 2. alt text (if substantial, not just "image" or filename)
+    # 4. alt text (if substantial, not just "image" or filename)
     alt = str(img_tag.get("alt", "")).strip()
     if alt and len(alt) > 10 and not alt.lower().startswith("image"):
         return alt
 
-    # 3. Adjacent text block (common in blogs/pikabu-style posts
+    # 5. Adjacent text block (common in blogs/pikabu-style posts
     #    where text and images alternate). Walk up parents to find
     #    the block-level container, then check paragraph siblings.
     container = figure or img_tag.find_parent("div")
@@ -234,7 +267,7 @@ def _find_caption(img_tag: Tag) -> str:
             break
         levels += 1
 
-    # 4. Nearest heading above the image (h1-h3) as last resort
+    # 6. Nearest heading above the image (h1-h3) as last resort
     for level in ("h2", "h3", "h1"):
         heading = img_tag.find_previous(level)
         if heading:
