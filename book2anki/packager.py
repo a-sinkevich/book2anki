@@ -344,10 +344,11 @@ def package_cards_flat(
 
 def package_vocab_flat(
     cards: list[Card], deck_name: str, output_path: str,
+    tag_name: str = "",
 ) -> None:
     """Package vocabulary cards into a single flat deck."""
     deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
-    tag = f"vocab::{_slugify(deck_name)}"
+    tag = f"vocab::{_slugify(tag_name or deck_name)}"
 
     for card in cards:
         word = _escape_field(card.question)

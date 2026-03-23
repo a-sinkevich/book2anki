@@ -330,13 +330,18 @@ def main() -> None:
                   f" ({before} → {len(all_cards)})")
 
         source_name = _lang_name(source_lang)
-        vocab_deck_title = f"{book_title} — {source_name} {args.level}"
+        vocab_tag_name = f"{source_name} {args.level} — {book_title}"
+        parts = [f"{source_name} {args.level}", book_title]
+        if args.chapters:
+            parts.append(f"ch.{args.chapters}")
+        vocab_deck_title = " — ".join(parts)
         base_name = re.sub(r'[<>:"/\\|?*]', "", vocab_deck_title).replace(' ', '_')
         output_path = args.output or f"{base_name}.apkg"
         if not output_path.endswith(".apkg"):
             output_path = str(Path(output_path) / f"{base_name}.apkg")
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        package_vocab_flat(all_cards, vocab_deck_title, output_path)
+        package_vocab_flat(all_cards, vocab_deck_title, output_path,
+                           tag_name=vocab_tag_name)
 
         cost = estimate_cost(total_usage, model)
         print(f"\nDone! Generated {len(all_cards)} vocabulary cards. Cost: {format_cost(cost)}")
