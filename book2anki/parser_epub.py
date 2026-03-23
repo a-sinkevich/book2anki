@@ -8,7 +8,7 @@ import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup, Tag
 
-from book2anki.models import BookImage, Chapter, SKIP_TITLES, MIN_CHAPTER_LENGTH, should_skip_chapter
+from book2anki.models import BookImage, Chapter, SKIP_TITLES, MIN_CHAPTER_LENGTH, should_skip_chapter, _is_skip_match
 
 _MIN_IMAGE_BYTES = 5000  # skip icons/spacers smaller than 5KB
 _MIME_TO_EXT: dict[str, str] = {
@@ -101,7 +101,7 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
         if not title:
             return False
         t = title.lower().strip()
-        return any(s in t for s in SKIP_TITLES)
+        return any(_is_skip_match(t, s) for s in SKIP_TITLES)
 
     def walk_toc(
         items: list[Any], group_title: str | None = None, depth: int = 0,

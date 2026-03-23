@@ -46,7 +46,7 @@ SKIP_TITLES = {
     "also by", "title page", "about the author", "about the authors",
     "acknowledgments", "acknowledgements", "bibliography", "notes", "index",
     "credits", "cover", "illustrations", "glossary", "preface", "foreword",
-    "appendix",
+    "appendix", "endnotes",
     "содержание", "оглавление", "предисловие", "вступление",
     "об авторе", "об авторах", "благодарности", "библиография", "словарик",
     "посвящение", "примечания", "алфавитный указатель",
@@ -56,10 +56,16 @@ SKIP_TITLES = {
 MIN_CHAPTER_LENGTH = 3000  # chars — skip very short sections
 
 
+def _is_skip_match(title_lower: str, skip: str) -> bool:
+    """Check if a skip title matches as a whole word in the title."""
+    import re
+    return bool(re.search(r'\b' + re.escape(skip) + r'\b', title_lower))
+
+
 def should_skip_chapter(title: str, text: str, book_title: str = "") -> bool:
     """Skip non-content sections like copyright, bibliography, etc."""
     title_lower = title.lower().strip()
-    if any(skip in title_lower for skip in SKIP_TITLES):
+    if any(_is_skip_match(title_lower, skip) for skip in SKIP_TITLES):
         return True
     if title_lower.startswith("section "):
         return True
