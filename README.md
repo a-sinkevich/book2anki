@@ -77,6 +77,32 @@ book2anki mybook.epub --lang ru    # English book → Russian cards
 # Focus on a specific topic
 book2anki mybook.epub --topic "dopamine"   # only cards about dopamine
 
+# Combine flags
+book2anki mybook.epub --depth 0 --topic "agriculture"  # 2-3 cards about agriculture
+book2anki mybook.epub --depth 2 --topic "memory" --lang ru
+
+```
+
+## Topic mode ideas
+
+The `--topic` flag filters cards to a specific subject — works with books, articles, and YouTube:
+
+```bash
+# Extract a "hidden" topic from a book that isn't specifically about it
+book2anki thinking_fast_and_slow.epub --topic "anchoring"
+
+# Same topic across multiple books for different perspectives
+book2anki sapiens.epub --topic "agriculture"
+book2anki guns_germs_steel.epub --topic "agriculture"
+
+# Grab one angle from a broad Wikipedia article
+book2anki "https://en.wikipedia.org/wiki/Roman_Empire" --topic "military organization"
+
+# Extract just what you need from a long YouTube lecture
+book2anki "https://youtube.com/watch?v=VIDEO_ID" --topic "compound interest"
+
+# Quick summary on a topic: depth 0 + topic = 2-3 cards about X
+book2anki neuroscience.epub --depth 0 --topic "synaptic plasticity"
 ```
 
 ## Output
