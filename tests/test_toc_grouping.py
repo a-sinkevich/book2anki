@@ -94,8 +94,8 @@ class TestHierarchicalGrouping:
 class TestWrappedPartsGrouping:
     """Bauer-style: Book > Parts > Chapters as leaves — chapters group under parts."""
 
-    def test_chapters_grouped_under_parts(self):
-        """Chapters in separate files under Parts group under part title."""
+    def test_chapters_keep_own_titles_under_parts(self):
+        """Chapters in separate files under Parts keep their own titles."""
         book = _book_with_toc([
             _parent("Book Title", "book.html", [
                 _parent("Part I", "p1.html", [
@@ -110,13 +110,11 @@ class TestWrappedPartsGrouping:
             ]),
         ])
         result = _extract_toc_titles(book)
-        assert result["ch1.html"] == "Part I"
-        assert result["ch2.html"] == "Part I"
-        assert result["ch3.html"] == "Part I"
-        assert result["ch4.html"] == "Part II"
-        assert result["ch5.html"] == "Part II"
-        assert result["p1.html"] == "Part I"
-        assert result["p2.html"] == "Part II"
+        assert result["ch1.html"] == "Chapter 1"
+        assert result["ch2.html"] == "Chapter 2"
+        assert result["ch3.html"] == "Chapter 3"
+        assert result["ch4.html"] == "Chapter 4"
+        assert result["ch5.html"] == "Chapter 5"
 
 
 class TestRootLevelNoGrouping:
@@ -152,15 +150,17 @@ class TestRootLevelNoGrouping:
         assert result["ch2.html"] == "Chapter 2"
         assert result["ch3.html"] == "Chapter 3"
 
-    def test_parts_own_hrefs_mapped(self):
-        """Part entries themselves are still mapped."""
+    def test_parts_dont_steal_child_hrefs(self):
+        """Part entries don't register their href, letting children claim it."""
         book = _book_with_toc([
             _parent("Part I", "p1.html", [
                 _link("Chapter 1", "ch1.html"),
             ]),
         ])
         result = _extract_toc_titles(book)
-        assert result["p1.html"] == "Part I"
+        assert result["ch1.html"] == "Chapter 1"
+        # Part's own href (p1.html) is not in the map since no child uses it
+        assert "p1.html" not in result
 
 
 class TestSiblingGrouping:

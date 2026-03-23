@@ -72,6 +72,11 @@ _NUMBERED_CHAPTER_RE = re.compile(
     re.IGNORECASE,
 )
 
+_PART_WRAPPER_RE = re.compile(
+    r"^(part\s|часть\s|teil\s|partie\s|parte\s)",
+    re.IGNORECASE,
+)
+
 
 def _is_numbered_chapter(title: str | None) -> bool:
     """Return True if title looks like a numbered chapter heading.
@@ -135,8 +140,12 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     level_group_href = None if is_chapter else href
                 else:
                     is_skip = _is_skip_title(title)
+                    is_chapter = _is_numbered_chapter(title)
+                    is_part = bool(title and _PART_WRAPPER_RE.match(title.strip()))
                     gt = title if (title and not is_skip) else None
-                    if href and href not in toc_map:
+
+                    # Don't register Part's href — let child chapters claim it
+                    if href and href not in toc_map and not is_part:
                         toc_map[href] = title or ""
 
                     child_hrefs = {
@@ -148,18 +157,16 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
 
                     # Group children under parent when they share the
                     # parent's file (inline sub-headings) or at deep
-                    # nesting (chapter > section).  At depth 0, only
-                    # group if the title looks like a numbered chapter
-                    # (e.g. "1. Title", "Chapter N") — Parts and book
-                    # titles let children keep their own titles.
-                    is_chapter = _is_numbered_chapter(title)
-                    child_gt = gt if (depth > 0 or same_file or is_chapter) else None
+                    # nesting (chapter > section).  Parts ("Часть",
+                    # "Part") always let children keep their own titles.
+                    # At depth 0, only numbered chapters group children.
+                    child_gt = gt if (not is_part and (depth > 0 or same_file or is_chapter)) else None
                     walk_toc(children, group_title=child_gt, depth=depth + 1)
 
                     # Group subsequent leaf siblings under this parent.
                     # Numbered chapters group across files (subsections);
                     # Parts/wrappers only group same-file siblings.
-                    level_group = gt
+                    level_group = None if is_part else gt
                     level_group_href = None if is_chapter else href
             elif hasattr(item, "href"):
                 href = item.href.split("#")[0]
