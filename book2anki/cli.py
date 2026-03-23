@@ -168,6 +168,7 @@ def _write_output(
     book_title: str,
     output_dir: str,
     full_book: bool,
+    flat: bool = False,
     media_files: list[str] | None = None,
 ) -> None:
     """Write final Anki deck output files."""
@@ -175,7 +176,11 @@ def _write_output(
         os.makedirs(output_dir, exist_ok=True)
         base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
         combined_path = str(Path(output_dir) / f"{base_name}.apkg")
-        package_cards(all_cards, book_title, combined_path, media_files=media_files)
+        if flat:
+            package_cards_flat(all_cards, book_title, combined_path,
+                               tag_prefix="book", media_files=media_files)
+        else:
+            package_cards(all_cards, book_title, combined_path, media_files=media_files)
 
 
 def main() -> None:
@@ -308,6 +313,7 @@ def main() -> None:
         _write_output(
             all_cards, deck_title, output_dir,
             full_book=(args.chapters is None),
+            flat=single_deck,
             media_files=all_media,
         )
 
