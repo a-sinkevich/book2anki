@@ -227,7 +227,7 @@ def main() -> None:
     all_text = "\n".join(ch.text for ch in chapters_to_generate)
     lang = detect_language(all_text, override=args.lang)
     is_prog = detect_programming(all_text)
-    total_book_images = sum(len(ch.images) for ch in chapters_to_generate)
+    total_book_images = len({img.id for ch in chapters_to_generate for img in ch.images})
     print(f"Language: {lang}")
     if is_prog:
         print("Content: programming (code-aware cards)")
