@@ -88,7 +88,8 @@ class TestHierarchicalGrouping:
         assert result["s1.html"] == "Chapter 1"
         assert result["s2.html"] == "Chapter 1"
         assert result["s3.html"] == "Chapter 2"
-        assert result["p1.html"] == "Part I"
+        # Parts don't register their own href — children claim it
+        assert "p1.html" not in result
 
 
 class TestWrappedPartsGrouping:

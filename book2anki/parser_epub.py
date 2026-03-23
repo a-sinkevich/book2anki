@@ -110,7 +110,11 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
         # so sibling leaves after it get grouped under the same chapter.
         # level_group_href tracks which file the group applies to — only
         # merge siblings that share the same file.
-        level_group = group_title
+        # Only inherit group_title if it's a numbered chapter or skip-title
+        # (subsections should merge) — book titles and Parts don't group.
+        level_group = group_title if (
+            _is_numbered_chapter(group_title) or _is_skip_title(group_title)
+        ) else None
         level_group_href: str | None = None
 
         for item in items:
@@ -132,10 +136,12 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     continue
 
                 if has_subtree:
-                    if href and href not in toc_map:
+                    is_chapter = _is_numbered_chapter(title)
+                    # Numbered chapters register their href; book titles
+                    # and other wrappers let children claim the file
+                    if href and href not in toc_map and is_chapter:
                         toc_map[href] = title or ""
                     walk_toc(children, group_title=title, depth=depth + 1)
-                    is_chapter = _is_numbered_chapter(title)
                     level_group = title
                     level_group_href = None if is_chapter else href
                 else:
@@ -144,9 +150,13 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     is_part = bool(title and _PART_WRAPPER_RE.match(title.strip()))
                     gt = title if (title and not is_skip) else None
 
-                    # Don't register Part's href — let child chapters claim it
-                    if href and href not in toc_map and not is_part:
-                        toc_map[href] = title or ""
+                    # Don't register Part's href — let child chapters claim it.
+                    # Numbered chapters can overwrite non-chapter entries
+                    # (e.g. Глава 1 overwrites Предисловие when they share a file).
+                    if href and not is_part:
+                        existing = toc_map.get(href)
+                        if existing is None or (is_chapter and not _is_numbered_chapter(existing)):
+                            toc_map[href] = title or ""
 
                     child_hrefs = {
                         c.href.split("#")[0]
@@ -172,7 +182,9 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                 href = item.href.split("#")[0]
                 if href not in toc_map:
                     # level_group_href=None means "apply to any file" (skip section)
-                    if level_group and (level_group_href is None or href == level_group_href):
+                    # Don't group if leaf is itself a numbered chapter
+                    is_leaf_chapter = _is_numbered_chapter(item.title)
+                    if level_group and not is_leaf_chapter and (level_group_href is None or href == level_group_href):
                         toc_map[href] = level_group
                     else:
                         toc_map[href] = item.title
