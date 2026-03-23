@@ -200,6 +200,12 @@ VOCAB_MODEL = genanki.Model(
 .card.night_mode .definition {
     color: #999;
 }
+.example {
+    color: #666;
+}
+.card.night_mode .example {
+    color: #999;
+}
 """,
 )
 
