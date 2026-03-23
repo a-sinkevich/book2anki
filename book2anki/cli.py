@@ -12,7 +12,10 @@ from book2anki.parser_pdf import parse_pdf
 from book2anki.parser_web import parse_url
 from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
-from book2anki.generator import LLMProvider, generate_cards_for_chapter, estimate_cost, format_cost
+from book2anki.generator import (
+    LLMProvider, generate_cards_for_chapter, estimate_cost, format_cost,
+    deduplicate, consolidate_cards,
+)
 from book2anki.prompts import detect_programming
 from book2anki.diagram_gen import process_book_images
 from book2anki.packager import (
@@ -309,6 +312,22 @@ def main() -> None:
         if not all_cards:
             print("Error: No cards were generated.", file=sys.stderr)
             sys.exit(1)
+
+        # Cross-chapter dedup for summary/topic mode
+        if single_deck and len(all_cards) > 3:
+            before = len(all_cards)
+            all_cards = deduplicate(all_cards)
+            if len(all_cards) < before:
+                print(f"Removed {before - len(all_cards)} similar cards"
+                      f" ({before} → {len(all_cards)})")
+            # LLM consolidation — pick best among near-duplicates
+            if args.depth == 0 or args.topic:
+                print("Consolidating cards...")
+                all_cards, cons_usage = consolidate_cards(
+                    provider, all_cards, lang,
+                )
+                total_usage += cons_usage
+                print(f"Final: {len(all_cards)} cards")
 
         _write_output(
             all_cards, deck_title, output_dir,

@@ -1,4 +1,4 @@
-from book2anki.generator import _deduplicate, _parse_json_response, _split_into_chunks
+from book2anki.generator import deduplicate as _deduplicate, _parse_json_response, _split_into_chunks
 from book2anki.models import Card
 
 import pytest

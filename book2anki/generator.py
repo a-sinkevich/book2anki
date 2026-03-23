@@ -119,7 +119,7 @@ def generate_cards_for_chapter(
             total_usage.input_tokens += usage.input_tokens
             total_usage.output_tokens += usage.output_tokens
             all_cards.extend(chunk_cards)
-        cards = _deduplicate(all_cards)
+        cards = deduplicate(all_cards)
 
     valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
     return valid_cards, total_usage
@@ -242,7 +242,7 @@ def _split_into_chunks(text: str, max_chars: int, overlap_chars: int = 2000) -> 
     return chunks
 
 
-def _deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
+def deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
     """Remove duplicate cards based on question similarity."""
     unique: list[Card] = []
     for card in cards:
@@ -255,3 +255,51 @@ def _deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
         if not is_dup:
             unique.append(card)
     return unique
+
+
+def consolidate_cards(
+    provider: LLMProvider,
+    cards: list[Card],
+    language: str,
+) -> tuple[list[Card], TokenUsage]:
+    """Use LLM to remove duplicate/overlapping cards, keeping the best version."""
+    if len(cards) <= 3:
+        return cards, TokenUsage(0, 0)
+
+    cards_json = json.dumps([
+        {"id": i, "question": c.question, "answer": c.answer}
+        for i, c in enumerate(cards)
+    ], ensure_ascii=False, indent=2)
+
+    prompt = f"""You are reviewing a set of Anki flashcards generated from a book.
+
+Some cards may be duplicates or near-duplicates — same concept asked in slightly different ways.
+Your job: remove redundant cards, keeping the best-worded version of each unique concept.
+
+Rules:
+- Return ONLY the IDs of cards to KEEP (not remove)
+- If two cards test the same concept, keep whichever has the better question and answer
+- Do NOT remove cards that test related but distinct concepts
+- Output a JSON array of integer IDs, nothing else
+
+Language: {language}
+
+Cards:
+{cards_json}
+
+Return the JSON array of IDs to keep:"""
+
+    try:
+        response, usage = provider.generate(prompt)
+        text = response.strip()
+        # Parse the ID list
+        match = re.search(r"\[[\d\s,]*]", text)
+        if match:
+            keep_ids = set(json.loads(match.group(0)))
+            kept = [c for i, c in enumerate(cards) if i in keep_ids]
+            if kept:
+                return kept, usage
+    except Exception:
+        pass
+
+    return cards, TokenUsage(0, 0)
