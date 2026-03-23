@@ -117,6 +117,16 @@ Book-Title/
 
 With `--depth 0` or `--topic`, output is a single flat deck (no chapter subdecks).
 
+## How it works
+
+1. **Parse** — EPUB chapters via TOC, PDF via heading detection, web via article extraction + `srcset` for high-res images, YouTube via transcript API
+2. **Chunk** — split chapters into overlapping segments fitting the model's context window (~80% of limit minus output reserve)
+3. **Generate** — each chunk → Claude Sonnet with depth/language/content-type-aware prompt; image captions included so the model can reference figures
+4. **Dedup** — `SequenceMatcher`-based similarity dedup within chunks; LLM consolidation pass across chapters in summary/topic modes
+5. **Package** — `.apkg` via [genanki](https://github.com/kerrickstaley/genanki); per-chapter subdecks for books, flat deck for articles/summary/topic
+
+Chapters are saved individually on completion — interrupt and resume without re-generating.
+
 ## Development
 
 ```bash
