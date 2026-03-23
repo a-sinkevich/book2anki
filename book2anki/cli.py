@@ -134,6 +134,17 @@ def _select_chapters(
     return [chapters[n - 1] for n in valid]
 
 
+_MAX_TOPIC_LEN = 40
+
+
+def _deck_title(book_title: str, topic: str | None) -> str:
+    """Build deck title, appending truncated topic if specified."""
+    if not topic:
+        return book_title
+    short = topic if len(topic) <= _MAX_TOPIC_LEN else topic[:_MAX_TOPIC_LEN].rsplit(" ", 1)[0] + "…"
+    return f"{book_title} — {short}"
+
+
 def _write_single_output(
     all_cards: list[Card], book_title: str, output: str | None,
     is_youtube: bool = False, media_files: list[str] | None = None,
@@ -234,6 +245,7 @@ def main() -> None:
 
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
+    deck_title = _deck_title(book_title, args.topic)
 
     if is_url or is_yt:
         source_url = args.file if is_url else f"https://www.youtube.com/watch?v={args.file}"
@@ -248,7 +260,7 @@ def main() -> None:
             sys.exit(1)
 
         base = _write_single_output(
-            all_cards, book_title, args.output,
+            all_cards, deck_title, args.output,
             is_youtube=is_yt, media_files=all_media,
         )
         cost = estimate_cost(total_usage, model)
@@ -294,7 +306,7 @@ def main() -> None:
             sys.exit(1)
 
         _write_output(
-            all_cards, book_title, output_dir,
+            all_cards, deck_title, output_dir,
             full_book=(args.chapters is None),
             media_files=all_media,
         )
