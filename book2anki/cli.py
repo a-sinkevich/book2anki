@@ -259,6 +259,10 @@ def main() -> None:
     if args.vocab and not args.level:
         print("Error: --vocab requires --level (e.g. --vocab --level B2)", file=sys.stderr)
         sys.exit(1)
+    if args.vocab and not args.lang:
+        print("Error: --vocab requires --lang to specify your native language "
+              "(e.g. --vocab --level B2 --lang ru)", file=sys.stderr)
+        sys.exit(1)
 
     print(f'"{book_title}" — {len(chapters)} chapter(s) extracted.')
     if args.vocab:
@@ -307,10 +311,7 @@ def main() -> None:
         # In vocab mode: source language = book's language (auto-detected),
         # native language = --lang override (translation target)
         source_lang = detect_language(all_text)  # always auto-detect
-        native_lang = args.lang or source_lang
-        if native_lang == source_lang and not args.lang:
-            print("Hint: use --lang to specify your native language for translations"
-                  " (e.g. --lang ru)", file=sys.stderr)
+        native_lang = args.lang
 
         # Check Anki for existing vocab words to skip
         existing_words = read_vocab_words()
