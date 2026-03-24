@@ -168,15 +168,21 @@ def _lang_name(source_lang: str) -> str:
     return names.get(source_lang) or names.get("en") or source_lang.upper()
 
 
-_MAX_TOPIC_LEN = 40
+_MAX_TOPIC_LEN = 25
+
+
+def _short_topic(topic: str) -> str:
+    """Truncate topic for display in deck/file names."""
+    if len(topic) <= _MAX_TOPIC_LEN:
+        return topic
+    return topic[:_MAX_TOPIC_LEN].rsplit(" ", 1)[0] + "…"
 
 
 def _deck_title(book_title: str, topic: str | None) -> str:
     """Build deck title, appending truncated topic if specified."""
     if not topic:
         return book_title
-    short = topic if len(topic) <= _MAX_TOPIC_LEN else topic[:_MAX_TOPIC_LEN].rsplit(" ", 1)[0] + "…"
-    return f"{book_title} — {short}"
+    return f"{book_title} — {_short_topic(topic)}"
 
 
 def _write_single_output(
@@ -332,18 +338,20 @@ def main() -> None:
                   f" ({before} → {len(all_cards)})")
 
         source_name = _lang_name(source_lang)
-        vocab_tag_name = f"{source_name} {args.level} — {book_title}"
-        parts = [f"{source_name} {args.level}", book_title]
+        deck_parts = [f"{source_name} {args.level}", book_title]
+        if args.topic:
+            deck_parts.append(_short_topic(args.topic))
+        vocab_deck_title = " — ".join(deck_parts)
+        file_parts = list(deck_parts)
         if args.chapters:
-            parts.append(f"ch.{args.chapters}")
-        vocab_deck_title = " — ".join(parts)
-        base_name = re.sub(r'[<>:"/\\|?*]', "", vocab_deck_title).replace(' ', '_')
+            file_parts.append(f"ch.{args.chapters}")
+        file_name = " — ".join(file_parts)
+        base_name = re.sub(r'[<>:"/\\|?*]', "", file_name).replace(' ', '_')
         output_path = args.output or f"{base_name}.apkg"
         if not output_path.endswith(".apkg"):
             output_path = str(Path(output_path) / f"{base_name}.apkg")
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        package_vocab_flat(all_cards, vocab_deck_title, output_path,
-                           tag_name=vocab_tag_name)
+        package_vocab_flat(all_cards, vocab_deck_title, output_path)
 
         cost = estimate_cost(total_usage, model)
         print(f"\nDone! Generated {len(all_cards)} vocabulary cards. Cost: {format_cost(cost)}")
