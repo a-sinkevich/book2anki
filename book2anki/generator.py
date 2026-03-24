@@ -216,12 +216,16 @@ def _generate_vocab_with_retries(
             for item in cards_data:
                 if "word" not in item:
                     continue
+                word = item["word"]
+                pronunciation = item.get("pronunciation", "")
+                if pronunciation:
+                    word += f'<div class="ipa">{pronunciation}</div>'
                 definition = item.get("definition", "")
                 etymology = item.get("etymology", "")
                 if etymology:
                     definition += f'<div class="etymology">Origin: {etymology}</div>'
                 cards.append(Card(
-                    question=item["word"],
+                    question=word,
                     answer=item.get("translation", ""),
                     chapter_title=chapter_title,
                     book_title=book_title,
@@ -387,6 +391,11 @@ def deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
     return unique
 
 
+def vocab_word(question: str) -> str:
+    """Extract just the word from a vocab question field (strip IPA div)."""
+    return question.split("<div", 1)[0].strip().lower()
+
+
 def deduplicate_vocab(cards: list[Card], threshold: float = 0.8,
                       max_contexts: int = 3) -> list[Card]:
     """Merge duplicate vocab cards, combining context sentences up to max_contexts."""
@@ -395,7 +404,7 @@ def deduplicate_vocab(cards: list[Card], threshold: float = 0.8,
         merged = False
         for existing in unique:
             similarity = SequenceMatcher(
-                None, card.question.lower(), existing.question.lower(),
+                None, vocab_word(card.question), vocab_word(existing.question),
             ).ratio()
             if similarity >= threshold:
                 # Move extra contexts to answer side (source_url = examples)

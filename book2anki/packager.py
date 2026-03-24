@@ -178,6 +178,15 @@ VOCAB_MODEL = genanki.Model(
     font-weight: bold;
     margin-bottom: 8px;
 }
+.ipa {
+    font-size: 16px;
+    font-weight: normal;
+    color: #888;
+    margin-top: 2px;
+}
+.card.night_mode .ipa {
+    color: #777;
+}
 .context {
     font-size: 18px;
     color: #555;

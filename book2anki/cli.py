@@ -15,7 +15,7 @@ from book2anki.language import detect_language
 from book2anki.generator import (
     LLMProvider, generate_cards_for_chapter, generate_vocab_for_chapter,
     estimate_cost, format_cost, deduplicate, deduplicate_vocab,
-    consolidate_cards,
+    consolidate_cards, vocab_word,
 )
 from book2anki.anki_reader import read_vocab_words
 from book2anki.prompts import detect_programming
@@ -347,7 +347,10 @@ def main() -> None:
         # Skip words already in Anki
         if existing_words:
             before = len(all_cards)
-            all_cards = [c for c in all_cards if c.question.lower() not in existing_words]
+            all_cards = [
+                c for c in all_cards
+                if vocab_word(c.question) not in existing_words
+            ]
             skipped = before - len(all_cards)
             if skipped:
                 print(f"Skipped {skipped} words already in Anki"

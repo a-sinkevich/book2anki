@@ -83,8 +83,10 @@ def read_vocab_words(tag_prefix: str = "vocab::") -> set[str]:
 
     words: set[str] = set()
     for (flds,) in rows:
-        # First field is the word (may contain HTML entities)
-        word = html.unescape(flds.split("\x1f", 1)[0].strip())
+        # First field is the word (may contain HTML like IPA div)
+        word = flds.split("\x1f", 1)[0]
+        word = word.split("<div", 1)[0]  # strip embedded IPA/HTML
+        word = html.unescape(word).strip()
         if word:
             words.add(word.lower())
 
