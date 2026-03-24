@@ -17,6 +17,7 @@ from book2anki.generator import (
     estimate_cost, format_cost, deduplicate, deduplicate_vocab,
     consolidate_cards,
 )
+from book2anki.anki_reader import read_vocab_words
 from book2anki.prompts import detect_programming
 from book2anki.diagram_gen import process_book_images
 from book2anki.packager import (
@@ -311,6 +312,12 @@ def main() -> None:
             print("Hint: use --lang to specify your native language for translations"
                   " (e.g. --lang ru)", file=sys.stderr)
 
+        # Check Anki for existing vocab words to skip
+        existing_words = read_vocab_words()
+        if existing_words:
+            print(f"Existing Anki collection: {len(existing_words)} vocab words found, "
+                  "will skip duplicates")
+
         total = len(chapters_to_generate)
         pbar = _ProgressBar(total=total)
         for chapter in chapters_to_generate:
@@ -336,6 +343,15 @@ def main() -> None:
         if len(all_cards) < before:
             print(f"Merged {before - len(all_cards)} duplicate words"
                   f" ({before} → {len(all_cards)})")
+
+        # Skip words already in Anki
+        if existing_words:
+            before = len(all_cards)
+            all_cards = [c for c in all_cards if c.question.lower() not in existing_words]
+            skipped = before - len(all_cards)
+            if skipped:
+                print(f"Skipped {skipped} words already in Anki"
+                      f" ({before} → {len(all_cards)})")
 
         source_name = _lang_name(source_lang)
         deck_parts = [f"{source_name} {args.level}", book_title]
