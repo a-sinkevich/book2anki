@@ -1,6 +1,6 @@
 # book2anki
 
-AI-powered tool to convert books (EPUB/PDF), web articles, and YouTube videos into Anki flashcards for spaced repetition learning. Uses Claude to generate high-quality question-answer cards from any content.
+AI-powered tool to convert books (EPUB/PDF), web articles, and YouTube videos into Anki flashcards for spaced repetition learning. Also supports vocabulary extraction for language learners. Uses Claude to generate high-quality cards from any content.
 
 ## Quick start
 
@@ -79,7 +79,7 @@ book2anki mybook.epub --topic "dopamine"   # only cards about dopamine
 
 # Vocabulary mode — extract words above your level for language learning
 book2anki mybook.epub --vocab --level B2 --lang ru    # English book, B2 learner, translate to Russian
-book2anki "https://example.com/article" --vocab --level C1 --lang en
+book2anki "https://example.com/article" --vocab --level C1 --lang ru
 book2anki mybook.epub --vocab --level B2 --lang ru --chapters 1-3   # specific chapters
 book2anki mybook.epub --vocab --level C1 --lang ru --topic "medicine"  # only medical vocabulary
 
@@ -122,6 +122,8 @@ Book-Title/
 ```
 
 With `--depth 0` or `--topic`, output is a single flat deck (no chapter subdecks).
+
+Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` (e.g. `English B2 — The Great Gatsby`). Running for different chapter ranges produces files that merge into the same Anki deck on import.
 
 ## How it works
 
@@ -166,11 +168,12 @@ Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. T
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Four depth levels**: summary (2-3 cards/chapter), core ideas, detailed, or comprehensive
+- **Vocabulary mode** (`--vocab --level B2 --lang ru`) — extract words/phrases above your CEFR level with IPA pronunciation, etymology, example sentences, and translation
+- **Anki-aware dedup** — reads your existing Anki collection to skip words you already have
+- **Topic filter** (`--topic`) — generate cards only about a specific subject (works with both regular and vocab modes)
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
+- **Smart dedup** — similarity-based dedup within chunks; LLM consolidation across chapters in summary/topic modes; vocab duplicates merged with multiple contexts
 - **Dark & light theme** — cards adapt to your Anki theme
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
-- **Vocabulary mode** (`--vocab --level B2`) — extract words/phrases above your CEFR level for language learning
-- **Topic filter** (`--topic`) — generate cards only about a specific subject
-- **Smart dedup** — removes duplicate cards across chapters in summary and topic modes
-- **Auto language detection** with `--lang` override for translation to any language
+- **Auto language detection** with `--lang` override
 - **Progress bar** with per-chapter cost breakdown during generation
