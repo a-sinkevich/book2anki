@@ -407,7 +407,7 @@ def _bold_word_in_context(context: str, word: str) -> str:
     return pattern.sub(lambda m: f"<b>{m.group(0)}</b>", context, count=1)
 
 
-def deduplicate_vocab(cards: list[Card], threshold: float = 0.8,
+def deduplicate_vocab(cards: list[Card],
                       max_contexts: int = 3) -> list[Card]:
     """Merge duplicate vocab cards, combining context sentences up to max_contexts."""
     unique: list[Card] = []
@@ -415,12 +415,12 @@ def deduplicate_vocab(cards: list[Card], threshold: float = 0.8,
         merged = False
         for existing in unique:
             word = vocab_word(existing.question)
-            similarity = SequenceMatcher(
-                None, vocab_word(card.question), word,
-            ).ratio()
-            if similarity >= threshold:
+            if vocab_word(card.question) == word:
                 # Move extra contexts to answer side (source_url = examples)
-                all_examples = [e for e in existing.source_url.split(_SEP) if e.strip()]
+                all_examples = [
+                    _bold_word_in_context(e, word)
+                    for e in existing.source_url.split(_SEP) if e.strip()
+                ]
                 if card.example and card.example != existing.example:
                     bolded = _bold_word_in_context(card.example, word)
                     if len(all_examples) < max_contexts and bolded not in all_examples:
@@ -428,8 +428,11 @@ def deduplicate_vocab(cards: list[Card], threshold: float = 0.8,
                 if card.source_url:
                     for ex in card.source_url.split(_SEP):
                         ex = ex.strip()
-                        if ex and ex not in all_examples and len(all_examples) < max_contexts:
-                            all_examples.append(ex)
+                        if not ex or len(all_examples) >= max_contexts:
+                            continue
+                        bolded = _bold_word_in_context(ex, word)
+                        if bolded not in all_examples:
+                            all_examples.append(bolded)
                 existing.source_url = _SEP.join(all_examples)
                 merged = True
                 break
