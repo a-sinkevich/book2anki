@@ -1,5 +1,6 @@
 import json
 import re
+import sys
 import time
 from abc import ABC, abstractmethod
 from difflib import SequenceMatcher
@@ -154,6 +155,10 @@ def generate_vocab_for_chapter(
     available_tokens = max_text_tokens - prompt_overhead - output_reserve
     max_chars = available_tokens * CHARS_PER_TOKEN
 
+    # Vocab generates many fields per word — use smaller chunks
+    # to avoid output truncation at max_tokens
+    max_chars = min(max_chars, 20000)
+
     total_usage = TokenUsage(0, 0)
 
     if len(chapter.text) <= max_chars:
@@ -234,9 +239,12 @@ def _generate_vocab_with_retries(
                     source_url=item.get("example", ""),
                 ))
             return cards, cumulative
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
             if attempt < max_retries - 1:
-                _report(f"\"{short}\" parse error, retry {attempt + 2}/{max_retries}")
+                preview = response[:500] if response else "(empty)"
+                print(f"\n\"{short}\" parse error: {e}", file=sys.stderr)
+                print(f"\"{short}\" response preview: {preview}", file=sys.stderr)
+                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
                 time.sleep(1)
                 continue
             _report(f"\"{short}\" failed after {max_retries} attempts")
@@ -249,11 +257,14 @@ def _generate_vocab_with_retries(
                     _report(f"\"{short}\" rate limited, waiting {wait}s...")
                 else:
                     wait = 5 * (2 ** attempt)
-                    _report(f"\"{short}\" error, retry in {wait}s...")
+                    print(f"\n\"{short}\" error: {type(e).__name__}: {str(e)[:300]}",
+                          file=sys.stderr)
+                    _report(f"\"{short}\" retry in {wait}s...")
                 time.sleep(wait)
                 _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
                 continue
-            _report(f"\"{short}\" failed after {max_retries} attempts")
+            print(f"\n\"{short}\" failed: {type(e).__name__}: {str(e)[:300]}",
+                  file=sys.stderr)
             return [], cumulative
 
     return [], cumulative

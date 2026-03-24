@@ -71,6 +71,6 @@ def should_skip_chapter(title: str, text: str, book_title: str = "") -> bool:
         return True
     if len(text) < MIN_CHAPTER_LENGTH:
         return True
-    if book_title and book_title.strip() in title.strip():
+    if book_title and title.strip().lower() == book_title.strip().lower():
         return True
     return False

@@ -58,7 +58,7 @@ def parse_epub(filepath: str) -> tuple[str, list[Chapter]]:
         full_text = _extract_all_text(book)
         if full_text.strip():
             chapters = [Chapter(title=book_title, text=full_text, index=0)]
-            print("Warning: No chapter structure found, treating entire book as one chapter.")
+            print("\n⚠️  No chapter structure found — treating entire book as one chapter.\n")
 
     return book_title, chapters
 
@@ -131,8 +131,11 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     if href and href not in toc_map:
                         toc_map[href] = title or ""
                     walk_toc(children, group_title=title, depth=depth + 1)
+                    # Only group subsequent siblings in the same file,
+                    # not across all files (e.g. "Contents" shouldn't
+                    # swallow all following chapter entries).
                     level_group = title
-                    level_group_href = None  # apply to any file
+                    level_group_href = href
                     continue
 
                 if has_subtree:

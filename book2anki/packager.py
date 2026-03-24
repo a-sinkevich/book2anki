@@ -335,6 +335,33 @@ def package_cards(
     package.write_to_file(output_path)
 
 
+def package_book_flat(
+    cards: list[Card], book_title: str, output_path: str,
+    media_files: list[str] | None = None,
+) -> None:
+    """Package book cards into a single flat deck (no subdecks), using CARD_MODEL."""
+    deck = genanki.Deck(deck_id=_stable_id(book_title), name=book_title)
+    tag = f"book::{_slugify(book_title)}"
+
+    for card in cards:
+        q = _escape_field(card.question)
+        a = _escape_field(card.answer)
+        ex = _escape_field(card.example) if card.example else ""
+        dg = _escape_field(card.image) if card.image else ""
+        note = genanki.Note(
+            model=CARD_MODEL,
+            fields=[q, a, ex, dg, card.chapter_title, card.book_title],
+            tags=[tag],
+            guid=genanki.guid_for(card.question, card.book_title, card.chapter_title),
+        )
+        deck.add_note(note)
+
+    package = genanki.Package([deck])
+    if media_files:
+        package.media_files = media_files
+    package.write_to_file(output_path)
+
+
 def package_cards_flat(
     cards: list[Card], deck_name: str, output_path: str,
     tag_prefix: str = "article", model: genanki.Model = ARTICLE_MODEL,

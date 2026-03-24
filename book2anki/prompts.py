@@ -215,7 +215,7 @@ Guidelines:
 - **Context sentence**: use the EXACT sentence from the text where the word appears (or shorten it if too long, but keep the word in context). Wrap the target word/phrase in **&lt;b&gt;** tags to highlight it
 - **Translation**: natural translation to {native_language}, not word-for-word
 - **Definition**: brief explanation in the source language (1 sentence max)
-- **Example**: one additional example sentence (NOT from the text) showing typical usage
+- **Example**: one additional example sentence (NOT from the text) showing typical usage. Wrap the target word/phrase in **&lt;b&gt;** tags
 - **Pronunciation**: IPA transcription (e.g. "/juːˈbɪkwɪtəs/") — skip for phrases and idioms
 - **Etymology**: brief word origin in the source language, starting with a label in that language (e.g. "Origin: Latin ubique = everywhere" for English, "Herkunft: Latein ubique = überall" for German). Skip for common roots or phrases
 - **Dictionary form**: always use the base/dictionary form in the "word" field (infinitive for verbs, singular for nouns, etc.), even if the text has an inflected form
@@ -227,8 +227,8 @@ Output ONLY a JSON array. No markdown, no explanation, no wrapper.
 
 Example format:
 [
-  {{"word": "ubiquitous", "pronunciation": "/juːˈbɪkwɪtəs/", "context": "Smartphones have become <b>ubiquitous</b> in modern life.", "translation": "...", "definition": "Present or found everywhere", "example": "Coffee shops are ubiquitous in big cities.", "etymology": "Latin ubique = everywhere"}},
-  {{"word": "to come to grips with", "pronunciation": "", "context": "She had to <b>come to grips with</b> the new reality.", "translation": "...", "definition": "To begin to understand and deal with something difficult", "example": "It took him months to come to grips with the loss.", "etymology": ""}}
+  {{"word": "ubiquitous", "pronunciation": "/juːˈbɪkwɪtəs/", "context": "Smartphones have become <b>ubiquitous</b> in modern life.", "translation": "...", "definition": "Present or found everywhere", "example": "Coffee shops are <b>ubiquitous</b> in big cities.", "etymology": "Latin ubique = everywhere"}},
+  {{"word": "to come to grips with", "pronunciation": "", "context": "She had to <b>come to grips with</b> the new reality.", "translation": "...", "definition": "To begin to understand and deal with something difficult", "example": "It took him months to <b>come to grips with</b> the loss.", "etymology": ""}}
 ]
 
 {text_label}:

@@ -45,8 +45,8 @@ def parse_pdf(filepath: str) -> tuple[str, list[Chapter]]:
         chapters = _from_heuristics(doc)
     if not chapters:
         chapters = _from_fixed_chunks(doc)
-        print("Warning: No chapter structure detected, splitting by page chunks. "
-              "Try the EPUB version if available.")
+        print("\n⚠️  No chapter structure detected — splitting by page chunks."
+              "\n    Try the EPUB version if available.\n")
 
     doc.close()
     return book_title, chapters
@@ -101,13 +101,67 @@ def _from_outline(doc: fitz.Document) -> list[Chapter]:
     return chapters
 
 
+def _detect_body_size(doc: fitz.Document) -> float:
+    """Detect the most common (body) font size from a sample of pages."""
+    from collections import Counter
+    sizes: Counter[float] = Counter()
+    sample_pages = range(min(10, len(doc)), min(30, len(doc)))
+    for page_num in sample_pages:
+        for block in doc[page_num].get_text("dict")["blocks"]:
+            if "lines" not in block:
+                continue
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    if len(span["text"].strip()) > 20:
+                        sizes[round(span["size"], 1)] += 1
+    return sizes.most_common(1)[0][0] if sizes else 10.0
+
+
+def _collapse_spaced(text: str) -> str:
+    """Collapse spaced-out text like 'R E W I R E D' -> 'REWIRED'."""
+    if len(text) < 5:
+        return text
+    # Check if most chars are followed by a space
+    spaced = sum(1 for i in range(0, len(text) - 1, 2) if text[i] != " " and (i + 1 >= len(text) or text[i + 1] == " "))
+    non_space = sum(1 for c in text if c != " ")
+    if non_space >= 2 and spaced >= non_space * 0.6:
+        return text.replace(" ", "")
+    return text
+
+
 def _from_heuristics(doc: fitz.Document) -> list[Chapter]:
-    """Detect chapters by scanning for large/bold text matching chapter patterns."""
+    """Detect chapters by scanning for large/bold text that stands out from body text."""
+    body_size = _detect_body_size(doc)
+    heading_min = body_size * 1.25
     boundaries: list[tuple[int, str]] = []
+
+    # Collect page header text (small bold text repeated across many pages)
+    header_counts: dict[str, int] = {}
+    for page_num in range(len(doc)):
+        seen_on_page: set[str] = set()
+        for block in doc[page_num].get_text("dict")["blocks"]:
+            if "lines" not in block:
+                continue
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    text = span["text"].strip()
+                    if not text or span["size"] >= heading_min:
+                        continue
+                    collapsed = _collapse_spaced(text).lower()
+                    # Only track multi-word or long spans as potential headers
+                    # to avoid catching common words like "the", "of"
+                    if len(collapsed) >= 5 and collapsed not in seen_on_page:
+                        seen_on_page.add(collapsed)
+                        header_counts[collapsed] = header_counts.get(collapsed, 0) + 1
+
+    # Text appearing on 10%+ of pages is a running header
+    page_count = len(doc)
+    headers = {t for t, c in header_counts.items() if c >= max(3, page_count * 0.1)}
 
     for page_num in range(len(doc)):
         page = doc[page_num]
         blocks = page.get_text("dict")["blocks"]
+        page_headings: list[str] = []
 
         for block in blocks:
             if "lines" not in block:
@@ -118,26 +172,51 @@ def _from_heuristics(doc: fitz.Document) -> list[Chapter]:
                     if not text or len(text) > 100:
                         continue
 
-                    is_large = span["size"] >= 16
+                    size = span["size"]
                     is_bold = "bold" in span["font"].lower()
 
-                    if (is_large or is_bold) and _matches_chapter_pattern(text):
+                    # Skip running headers
+                    collapsed = _collapse_spaced(text).lower()
+                    if collapsed in headers:
+                        continue
+
+                    # Pattern match (works at any size if bold)
+                    if (size >= 16 or is_bold) and _matches_chapter_pattern(text):
                         if not boundaries or boundaries[-1][0] != page_num:
                             boundaries.append((page_num, text))
+                            page_headings = []
                         break
+
+                    # Size-based detection: large bold text
+                    if size >= heading_min and is_bold:
+                        page_headings.append(text)
+
+        # If we found large heading text but no pattern match,
+        # use it as a chapter boundary
+        if page_headings and (not boundaries or boundaries[-1][0] != page_num):
+            title = " ".join(page_headings)
+            # Clean up soft hyphens and extra whitespace
+            title = title.replace("\xad", "").replace("  ", " ").strip()
+            if len(title) >= 3:
+                boundaries.append((page_num, title))
 
     if len(boundaries) < 2:
         return []
 
     chapters = []
+    index = 0
     for i, (start_page, title) in enumerate(boundaries):
         end_page = boundaries[i + 1][0] if i + 1 < len(boundaries) else len(doc)
         text = _extract_page_range(doc, start_page, end_page)
-        if text.strip():
-            images = _extract_images_from_pages(doc, start_page, end_page)
-            chapters.append(Chapter(
-                title=title, text=text, index=i, images=images,
-            ))
+        if not text.strip():
+            continue
+        if should_skip_chapter(title, text):
+            continue
+        images = _extract_images_from_pages(doc, start_page, end_page)
+        chapters.append(Chapter(
+            title=title, text=text, index=index, images=images,
+        ))
+        index += 1
 
     return chapters
 

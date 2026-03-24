@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -21,7 +22,7 @@ from book2anki.anki_reader import read_vocab_words
 from book2anki.prompts import detect_programming
 from book2anki.diagram_gen import process_book_images
 from book2anki.packager import (
-    package_cards, package_cards_flat, package_vocab_flat,
+    package_cards, package_cards_flat, package_book_flat, package_vocab_flat,
     package_single_chapter, load_existing_chapters, YOUTUBE_MODEL,
 )
 
@@ -198,6 +199,22 @@ def _deck_title(book_title: str, topic: str | None) -> str:
     return f"{book_title} — {_short_topic(topic)}"
 
 
+def _cleanup_media(media_files: list[str]) -> None:
+    """Remove temporary media files and their parent dir if empty."""
+    dirs: set[str] = set()
+    for path in media_files:
+        dirs.add(os.path.dirname(path))
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    for d in dirs:
+        try:
+            os.rmdir(d)  # only removes if empty
+        except OSError:
+            pass
+
+
 def _write_single_output(
     all_cards: list[Card], book_title: str, output: str | None,
     is_youtube: bool = False, media_files: list[str] | None = None,
@@ -228,15 +245,15 @@ def _write_output(
     media_files: list[str] | None = None,
 ) -> None:
     """Write final Anki deck output files."""
-    if full_book:
+    if flat:
+        # Single flat deck — write .apkg directly, no folder needed
+        path = f"{output_dir}.apkg"
+        package_book_flat(all_cards, book_title, path, media_files=media_files)
+    elif full_book:
         os.makedirs(output_dir, exist_ok=True)
         base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
         combined_path = str(Path(output_dir) / f"{base_name}.apkg")
-        if flat:
-            package_cards_flat(all_cards, book_title, combined_path,
-                               tag_prefix="book", media_files=media_files)
-        else:
-            package_cards(all_cards, book_title, combined_path, media_files=media_files)
+        package_cards(all_cards, book_title, combined_path, media_files=media_files)
 
 
 def main() -> None:
@@ -353,7 +370,9 @@ def main() -> None:
         pbar.close()
 
         if not all_cards:
-            print("Error: No vocabulary cards were generated.", file=sys.stderr)
+            cost = estimate_cost(total_usage, model)
+            print(f"Error: No vocabulary cards were generated. Cost: {format_cost(cost)}",
+                  file=sys.stderr)
             sys.exit(1)
 
         # Merge duplicates across chapters (same word may appear in multiple chapters)
@@ -405,7 +424,9 @@ def main() -> None:
             topic=args.topic or "",
         )
         if not all_cards:
-            print("Error: No cards were generated.", file=sys.stderr)
+            cost = estimate_cost(total_usage, model)
+            print(f"Error: No cards were generated. Cost: {format_cost(cost)}",
+                  file=sys.stderr)
             sys.exit(1)
 
         base = _write_single_output(
@@ -413,6 +434,10 @@ def main() -> None:
             is_youtube=is_yt, media_files=all_media,
             depth=args.depth,
         )
+
+        # Clean up temporary media files (already embedded in .apkg)
+        _cleanup_media(all_media)
+
         cost = estimate_cost(total_usage, model)
         print(f"\nDone! Generated {len(all_cards)} cards. Cost: {format_cost(cost)}")
         print(f"Output: {base}.apkg\n")
@@ -455,7 +480,9 @@ def main() -> None:
                 )
 
         if not all_cards:
-            print("Error: No cards were generated.", file=sys.stderr)
+            cost = estimate_cost(total_usage, model)
+            print(f"Error: No cards were generated. Cost: {format_cost(cost)}",
+                  file=sys.stderr)
             sys.exit(1)
 
         # Cross-chapter dedup for summary/topic mode
@@ -481,11 +508,17 @@ def main() -> None:
             media_files=all_media,
         )
 
+        # Clean up temporary media files (already embedded in .apkg)
+        _cleanup_media(all_media)
+
         cost = estimate_cost(total_usage, model)
         cost_str = f" Cost: {format_cost(cost)}" if cost > 0 else ""
         n_ch = len(chapters_to_generate)
         print(f"\nDone! Generated {len(all_cards)} cards across {n_ch} chapter(s).{cost_str}")
-        print(f"Output: {output_dir}/\n")
+        if single_deck:
+            print(f"Output: {output_dir}.apkg\n")
+        else:
+            print(f"Output: {output_dir}/\n")
 
 
 def _fmt_elapsed(seconds: float) -> str:
