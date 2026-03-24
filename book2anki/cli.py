@@ -201,9 +201,12 @@ def _deck_title(book_title: str, topic: str | None) -> str:
 def _write_single_output(
     all_cards: list[Card], book_title: str, output: str | None,
     is_youtube: bool = False, media_files: list[str] | None = None,
+    depth: int = 1,
 ) -> str:
     """Write a single .apkg file for a URL source. Returns output path."""
     base_name = output or re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
+    if not output and depth != 1:
+        base_name = f"{base_name}_d{depth}"
     path = f"{base_name}.apkg"
     if is_youtube:
         package_cards_flat(
@@ -276,7 +279,10 @@ def main() -> None:
               "(e.g. --vocab --level B2 --lang ru)", file=sys.stderr)
         sys.exit(1)
 
-    print(f'"{book_title}" — {len(chapters)} chapter(s) extracted.')
+    if is_url or is_yt:
+        print(f'"{book_title}"')
+    else:
+        print(f'"{book_title}" — {len(chapters)} chapter(s) extracted.')
     if args.vocab:
         print(f"Mode: vocabulary extraction (level {args.level})"
               f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
@@ -405,12 +411,16 @@ def main() -> None:
         base = _write_single_output(
             all_cards, deck_title, args.output,
             is_youtube=is_yt, media_files=all_media,
+            depth=args.depth,
         )
         cost = estimate_cost(total_usage, model)
         print(f"\nDone! Generated {len(all_cards)} cards. Cost: {format_cost(cost)}")
         print(f"Output: {base}.apkg\n")
     else:
+        depth_label = f"d{args.depth}" if args.depth != 1 else ""
         base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(' ', '_')
+        if depth_label:
+            base_name = f"{base_name}_{depth_label}"
         output_dir = args.output or base_name
         # Summary or topic mode: single deck, no per-chapter files
         single_deck = args.depth == 0 or bool(args.topic)
