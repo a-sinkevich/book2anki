@@ -217,7 +217,7 @@ Guidelines:
 - **Definition**: brief explanation in the source language (1 sentence max)
 - **Example**: one additional example sentence (NOT from the text) showing typical usage
 - **Pronunciation**: IPA transcription (e.g. "/juːˈbɪkwɪtəs/") — skip for phrases and idioms
-- **Etymology**: brief word origin (e.g. "Latin ubique = everywhere") — skip for common roots or phrases
+- **Etymology**: brief word origin in the source language, starting with a label in that language (e.g. "Origin: Latin ubique = everywhere" for English, "Herkunft: Latein ubique = überall" for German). Skip for common roots or phrases
 - **Dictionary form**: always use the base/dictionary form in the "word" field (infinitive for verbs, singular for nouns, etc.), even if the text has an inflected form
 - **No proper nouns** (names of people, places, brands) unless they have a general meaning
 - **No numbers, dates, or abbreviations**

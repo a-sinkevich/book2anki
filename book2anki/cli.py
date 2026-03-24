@@ -160,6 +160,18 @@ _LANG_NAMES: dict[str, dict[str, str]] = {
     "zh": {"en": "Chinese", "ru": "Китайский"},
     "ja": {"en": "Japanese", "ru": "Японский"},
     "ko": {"en": "Korean", "ru": "Корейский"},
+    "no": {"en": "Norwegian", "ru": "Норвежский", "no": "Norsk"},
+    "nb": {"en": "Norwegian", "ru": "Норвежский", "nb": "Norsk"},
+    "sv": {"en": "Swedish", "ru": "Шведский", "sv": "Svenska"},
+    "da": {"en": "Danish", "ru": "Датский", "da": "Dansk"},
+    "nl": {"en": "Dutch", "ru": "Нидерландский", "nl": "Nederlands"},
+    "pl": {"en": "Polish", "ru": "Польский", "pl": "Polski"},
+    "tr": {"en": "Turkish", "ru": "Турецкий", "tr": "Türkçe"},
+    "ar": {"en": "Arabic", "ru": "Арабский"},
+    "he": {"en": "Hebrew", "ru": "Иврит"},
+    "uk": {"en": "Ukrainian", "ru": "Украинский", "uk": "Українська"},
+    "cs": {"en": "Czech", "ru": "Чешский", "cs": "Čeština"},
+    "fi": {"en": "Finnish", "ru": "Финский", "fi": "Suomi"},
 }
 
 

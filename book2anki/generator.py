@@ -223,7 +223,7 @@ def _generate_vocab_with_retries(
                 definition = item.get("definition", "")
                 etymology = item.get("etymology", "")
                 if etymology:
-                    definition += f'<div class="etymology">Origin: {etymology}</div>'
+                    definition += f'<div class="etymology">{etymology}</div>'
                 cards.append(Card(
                     question=word,
                     answer=item.get("translation", ""),
@@ -396,6 +396,17 @@ def vocab_word(question: str) -> str:
     return question.split("<div", 1)[0].strip().lower()
 
 
+_SEP = '<div class="sep"></div>'
+
+
+def _bold_word_in_context(context: str, word: str) -> str:
+    """Bold the target word in a context sentence if not already bolded."""
+    if "<b>" in context:
+        return context
+    pattern = re.compile(re.escape(word), re.IGNORECASE)
+    return pattern.sub(lambda m: f"<b>{m.group(0)}</b>", context, count=1)
+
+
 def deduplicate_vocab(cards: list[Card], threshold: float = 0.8,
                       max_contexts: int = 3) -> list[Card]:
     """Merge duplicate vocab cards, combining context sentences up to max_contexts."""
@@ -403,19 +414,23 @@ def deduplicate_vocab(cards: list[Card], threshold: float = 0.8,
     for card in cards:
         merged = False
         for existing in unique:
+            word = vocab_word(existing.question)
             similarity = SequenceMatcher(
-                None, vocab_word(card.question), vocab_word(existing.question),
+                None, vocab_word(card.question), word,
             ).ratio()
             if similarity >= threshold:
                 # Move extra contexts to answer side (source_url = examples)
-                all_examples = [e for e in existing.source_url.split("<br>") if e.strip()]
+                all_examples = [e for e in existing.source_url.split(_SEP) if e.strip()]
                 if card.example and card.example != existing.example:
-                    if len(all_examples) < max_contexts and card.example not in all_examples:
-                        all_examples.append(card.example)
-                if card.source_url and card.source_url not in all_examples:
-                    if len(all_examples) < max_contexts:
-                        all_examples.append(card.source_url)
-                existing.source_url = "<br>".join(all_examples)
+                    bolded = _bold_word_in_context(card.example, word)
+                    if len(all_examples) < max_contexts and bolded not in all_examples:
+                        all_examples.append(bolded)
+                if card.source_url:
+                    for ex in card.source_url.split(_SEP):
+                        ex = ex.strip()
+                        if ex and ex not in all_examples and len(all_examples) < max_contexts:
+                            all_examples.append(ex)
+                existing.source_url = _SEP.join(all_examples)
                 merged = True
                 break
         if not merged:

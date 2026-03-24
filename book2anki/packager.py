@@ -220,6 +220,11 @@ VOCAB_MODEL = genanki.Model(
     color: #888;
     margin-top: 4px;
 }
+.sep {
+    height: 1px;
+    background: rgba(128, 128, 128, 0.3);
+    margin: 6px 0;
+}
 .card.night_mode .etymology {
     color: #777;
 }
