@@ -13,6 +13,7 @@ CHARS_PER_TOKEN = 4
 
 PRICING: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-opus-4-6": (15.0, 75.0),
 }
 
 
@@ -359,10 +360,40 @@ def _parse_json_response(response: str) -> list[dict[str, Any]]:
 
     match = re.search(r"\[.*]", text, re.DOTALL)
     if match:
-        result = json.loads(match.group(0))
-        return list(result)
+        try:
+            result = json.loads(match.group(0))
+            return list(result)
+        except json.JSONDecodeError:
+            pass
+
+    # Try to salvage truncated JSON — find the last complete object
+    result = _salvage_truncated_json(text)
+    if result:
+        return result
 
     raise json.JSONDecodeError("No JSON array found in response", text, 0)
+
+
+def _salvage_truncated_json(text: str) -> list[dict[str, Any]]:
+    """Try to recover complete objects from a truncated JSON array."""
+    start = text.find("[")
+    if start == -1:
+        return []
+    text = text[start:]
+
+    # Find the last complete "}, " or "}," and close the array
+    last = text.rfind("}")
+    while last > 0:
+        candidate = text[:last + 1] + "]"
+        try:
+            result = json.loads(candidate)
+            if isinstance(result, list) and result:
+                return list(result)
+        except json.JSONDecodeError:
+            pass
+        last = text.rfind("}", 0, last)
+
+    return []
 
 
 def _split_into_chunks(text: str, max_chars: int, overlap_chars: int = 2000) -> list[str]:

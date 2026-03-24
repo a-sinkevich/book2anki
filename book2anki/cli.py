@@ -57,9 +57,12 @@ def parse_chapters(spec: str) -> list[int]:
     return sorted(result)
 
 
-def _create_provider() -> LLMProvider:
+def _create_provider(model: str | None = None) -> LLMProvider:
     from book2anki.provider_claude import ClaudeProvider
-    return ClaudeProvider()
+    provider = ClaudeProvider()
+    if model:
+        provider.set_model(model)
+    return provider
 
 
 def _parse_args() -> argparse.Namespace:
@@ -101,6 +104,11 @@ def _parse_args() -> argparse.Namespace:
         "--level", default=None,
         choices=["A1", "A2", "B1", "B2", "C1", "C2"],
         help="Your CEFR language level (used with --vocab), e.g. --level B2",
+    )
+    parser.add_argument(
+        "--model", default=None,
+        choices=["sonnet", "opus"],
+        help="Model to use: sonnet (default, fast/cheap) or opus (higher quality, ~15x cost)",
     )
     return parser.parse_args()
 
@@ -326,7 +334,7 @@ def main() -> None:
     print()
 
     try:
-        provider = _create_provider()
+        provider = _create_provider(args.model)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

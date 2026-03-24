@@ -37,6 +37,14 @@ class ClaudeProvider(LLMProvider):
 
         self.model = "claude-sonnet-4-6"
 
+    def set_model(self, model_name: str) -> None:
+        """Switch to a different model."""
+        models = {
+            "sonnet": "claude-sonnet-4-6",
+            "opus": "claude-opus-4-6",
+        }
+        self.model = models.get(model_name, model_name)
+
     def generate(self, prompt: str) -> tuple[str, TokenUsage]:
         response = self.client.messages.create(
             model=self.model,
