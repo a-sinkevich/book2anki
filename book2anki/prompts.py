@@ -181,6 +181,7 @@ def build_vocab_prompt(
     level: str,
     native_language: str,
     is_article: bool = False,
+    topic: str = "",
 ) -> str:
     """Build a prompt to extract vocabulary above the reader's level."""
     if is_article:
@@ -190,6 +191,14 @@ def build_vocab_prompt(
         source_header = f'Book: "{book_title}"\nChapter: "{chapter_title}"'
         text_label = "Chapter text"
 
+    topic_instruction = ""
+    if topic:
+        topic_instruction = (
+            f"\n\nIMPORTANT: Extract vocabulary ONLY related to: {topic}. "
+            "Skip words unrelated to this topic. "
+            "If the text contains nothing relevant, return an empty JSON array []."
+        )
+
     return f"""You are an expert language teacher creating Anki vocabulary cards.
 
 {source_header}
@@ -198,15 +207,16 @@ Translate to: {native_language}
 
 Extract words and phrases from the text that a {level}-level reader would NOT already know. \
 These are words above {level} — uncommon, literary, domain-specific, or idiomatic expressions \
-that a learner at this level would benefit from studying.
+that a learner at this level would benefit from studying.{topic_instruction}
 
 Guidelines:
 - **Skip common words** that any {level} reader would know
 - **Include**: uncommon single words, idiomatic phrases, phrasal verbs, collocations, literary/formal vocabulary
-- **Context sentence**: use the EXACT sentence from the text where the word appears (or shorten it if too long, but keep the word in context)
+- **Context sentence**: use the EXACT sentence from the text where the word appears (or shorten it if too long, but keep the word in context). Wrap the target word/phrase in **&lt;b&gt;** tags to highlight it
 - **Translation**: natural translation to {native_language}, not word-for-word
 - **Definition**: brief explanation in the source language (1 sentence max)
 - **Example**: one additional example sentence (NOT from the text) showing typical usage
+- **Etymology**: brief word origin (e.g. "Latin ubique = everywhere") — skip for common roots or phrases
 - **Dictionary form**: always use the base/dictionary form in the "word" field (infinitive for verbs, singular for nouns, etc.), even if the text has an inflected form
 - **No proper nouns** (names of people, places, brands) unless they have a general meaning
 - **No numbers, dates, or abbreviations**
@@ -216,8 +226,8 @@ Output ONLY a JSON array. No markdown, no explanation, no wrapper.
 
 Example format:
 [
-  {{"word": "ubiquitous", "context": "Smartphones have become ubiquitous in modern life.", "translation": "...", "definition": "Present or found everywhere", "example": "Coffee shops are ubiquitous in big cities."}},
-  {{"word": "to come to grips with", "context": "She had to come to grips with the new reality.", "translation": "...", "definition": "To begin to understand and deal with something difficult", "example": "It took him months to come to grips with the loss."}}
+  {{"word": "ubiquitous", "context": "Smartphones have become <b>ubiquitous</b> in modern life.", "translation": "...", "definition": "Present or found everywhere", "example": "Coffee shops are ubiquitous in big cities.", "etymology": "Latin ubique = everywhere"}},
+  {{"word": "to come to grips with", "context": "She had to <b>come to grips with</b> the new reality.", "translation": "...", "definition": "To begin to understand and deal with something difficult", "example": "It took him months to come to grips with the loss.", "etymology": ""}}
 ]
 
 {text_label}:

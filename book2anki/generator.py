@@ -133,6 +133,7 @@ def generate_vocab_for_chapter(
     native_language: str,
     progress_bar: Any = None,
     is_article: bool = False,
+    topic: str = "",
 ) -> tuple[list[Card], TokenUsage]:
     """Extract vocabulary cards for a single chapter. Returns (cards, token_usage)."""
     def _status(msg: str) -> None:
@@ -159,7 +160,7 @@ def generate_vocab_for_chapter(
         cards, usage = _generate_vocab_with_retries(
             provider, chapter.text, book_title, chapter.title,
             level, native_language,
-            status_fn=_status, is_article=is_article,
+            status_fn=_status, is_article=is_article, topic=topic,
         )
         total_usage += usage
     else:
@@ -172,7 +173,7 @@ def generate_vocab_for_chapter(
             chunk_cards, usage = _generate_vocab_with_retries(
                 provider, chunk, book_title, chapter.title,
                 level, native_language,
-                status_fn=_status, is_article=is_article,
+                status_fn=_status, is_article=is_article, topic=topic,
             )
             total_usage += usage
             all_cards.extend(chunk_cards)
@@ -192,11 +193,12 @@ def _generate_vocab_with_retries(
     max_retries: int = 3,
     status_fn: Callable[[str], None] | None = None,
     is_article: bool = False,
+    topic: str = "",
 ) -> tuple[list[Card], TokenUsage]:
     """Call LLM with vocab prompt and parse response, with retries."""
     prompt = build_vocab_prompt(
         book_title, chapter_title, text, level, native_language,
-        is_article=is_article,
+        is_article=is_article, topic=topic,
     )
     short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title
     cumulative = TokenUsage(0, 0)
@@ -210,19 +212,24 @@ def _generate_vocab_with_retries(
             response, usage = provider.generate(prompt)
             cumulative += usage
             cards_data = _parse_json_response(response)
-            return [
-                Card(
+            cards = []
+            for item in cards_data:
+                if "word" not in item:
+                    continue
+                definition = item.get("definition", "")
+                etymology = item.get("etymology", "")
+                if etymology:
+                    definition += f'<div class="etymology">Origin: {etymology}</div>'
+                cards.append(Card(
                     question=item["word"],
                     answer=item.get("translation", ""),
                     chapter_title=chapter_title,
                     book_title=book_title,
                     example=item.get("context", ""),
-                    image=item.get("definition", ""),
+                    image=definition,
                     source_url=item.get("example", ""),
-                )
-                for item in cards_data
-                if "word" in item
-            ], cumulative
+                ))
+            return cards, cumulative
         except (json.JSONDecodeError, KeyError, ValueError):
             if attempt < max_retries - 1:
                 _report(f"\"{short}\" parse error, retry {attempt + 2}/{max_retries}")
@@ -391,18 +398,15 @@ def deduplicate_vocab(cards: list[Card], threshold: float = 0.8,
                 None, card.question.lower(), existing.question.lower(),
             ).ratio()
             if similarity >= threshold:
-                # Merge context sentences (stored in example field)
+                # Move extra contexts to answer side (source_url = examples)
+                all_examples = [e for e in existing.source_url.split("<br>") if e.strip()]
                 if card.example and card.example != existing.example:
-                    contexts = [c for c in existing.example.split("<br>") if c.strip()]
-                    if len(contexts) < max_contexts and card.example not in contexts:
-                        contexts.append(card.example)
-                        existing.example = "<br>".join(contexts)
-                # Merge extra examples (stored in source_url field)
-                if card.source_url and card.source_url != existing.source_url:
-                    examples = [e for e in existing.source_url.split("<br>") if e.strip()]
-                    if len(examples) < max_contexts and card.source_url not in examples:
-                        examples.append(card.source_url)
-                        existing.source_url = "<br>".join(examples)
+                    if len(all_examples) < max_contexts and card.example not in all_examples:
+                        all_examples.append(card.example)
+                if card.source_url and card.source_url not in all_examples:
+                    if len(all_examples) < max_contexts:
+                        all_examples.append(card.source_url)
+                existing.source_url = "<br>".join(all_examples)
                 merged = True
                 break
         if not merged:

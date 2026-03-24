@@ -206,6 +206,14 @@ VOCAB_MODEL = genanki.Model(
 .card.night_mode .example {
     color: #999;
 }
+.etymology {
+    font-size: 14px;
+    color: #888;
+    margin-top: 4px;
+}
+.card.night_mode .etymology {
+    color: #777;
+}
 """,
 )
 

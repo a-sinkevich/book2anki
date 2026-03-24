@@ -80,6 +80,8 @@ book2anki mybook.epub --topic "dopamine"   # only cards about dopamine
 # Vocabulary mode — extract words above your level for language learning
 book2anki mybook.epub --vocab --level B2 --lang ru    # English book, B2 learner, translate to Russian
 book2anki "https://example.com/article" --vocab --level C1 --lang en
+book2anki mybook.epub --vocab --level B2 --lang ru --chapters 1-3   # specific chapters
+book2anki mybook.epub --vocab --level C1 --lang ru --topic "medicine"  # only medical vocabulary
 
 # Combine flags
 book2anki mybook.epub --depth 0 --topic "agriculture"  # 2-3 cards about agriculture
@@ -157,6 +159,8 @@ The tool uses the Anthropic API for card generation. Typical costs:
 |--------|:-:|:-:|:-:|:-:|
 | YouTube video (1 hour) | ~$0.05 | ~$0.06 | ~$0.07 | ~$0.13 |
 | Book (full) | $0.20–$1.00 | $0.50–$2.00 | $1.00–$3.00 | $2.00–$5.00 |
+
+Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. Tip: use `--chapters` to process specific chapters instead of the whole book.
 
 ## Features
 

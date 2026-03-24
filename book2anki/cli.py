@@ -257,7 +257,8 @@ def main() -> None:
     if args.vocab:
         print(f"Mode: vocabulary extraction (level {args.level})"
               f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
-              f"{', lang=' + args.lang if args.lang else ', lang=auto'}")
+              f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
+              f"{', topic=' + args.topic if args.topic else ''}")
     else:
         print(f"Parameters: depth={args.depth}"
               f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
@@ -312,6 +313,7 @@ def main() -> None:
                 level=args.level, native_language=native_lang,
                 progress_bar=pbar,
                 is_article=(is_url or is_yt),
+                topic=args.topic or "",
             )
             all_cards.extend(cards)
             total_usage += usage
