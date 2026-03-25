@@ -774,11 +774,10 @@ def _wait_futures(
             f.cancel()
         # 2. Kill running subprocesses
         _kill_active_procs()
-        # 3. Shut down executor without waiting
-        if executor and hasattr(executor, 'shutdown'):
-            executor.shutdown(wait=False, cancel_futures=True)  # type: ignore[union-attr]
-        print("\nInterrupted.", file=sys.stderr)
-        sys.exit(1)
+        # 3. Force exit — sys.exit() would go through ThreadPoolExecutor.__exit__
+        #    which calls shutdown(wait=True) and blocks on worker threads
+        sys.stderr.write("\nInterrupted.\n")
+        os._exit(1)
 
 
 def _process_vocab_parallel(
