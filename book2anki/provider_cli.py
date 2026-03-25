@@ -18,15 +18,16 @@ _original_sigint = signal.getsignal(signal.SIGINT)
 
 
 def _kill_all_children(signum: int, frame: object) -> None:
-    """Kill all active claude subprocesses and exit."""
-    with _active_lock:
-        for proc in _active_procs:
-            try:
-                proc.terminate()
-            except OSError:
-                pass
-    print("\nInterrupted.", file=sys.stderr)
-    sys.exit(1)
+    """Kill all active claude subprocesses and force-exit."""
+    # Don't acquire lock — signal handler can deadlock if a worker holds it.
+    # Reading the list without lock is safe enough for cleanup.
+    for proc in list(_active_procs):
+        try:
+            proc.kill()  # SIGKILL — terminate() may be ignored
+        except OSError:
+            pass
+    sys.stderr.write("\nInterrupted.\n")
+    os._exit(1)  # Force exit — sys.exit() raises SystemExit which ThreadPoolExecutor catches
 
 
 class CLIProvider(LLMProvider):
