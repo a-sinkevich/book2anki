@@ -79,6 +79,7 @@ class CLIProvider(LLMProvider):
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
+                start_new_session=True,  # isolate from terminal SIGINT
             )
 
             with _active_lock:
