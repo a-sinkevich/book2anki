@@ -58,6 +58,18 @@ def parse_chapters(spec: str) -> list[int]:
 
 
 def _create_provider(model: str | None = None) -> LLMProvider:
+    if model == "cli":
+        from book2anki.provider_cli import CLIProvider
+        return CLIProvider("opus")
+
+    # Default: try CLI first, fall back to API
+    if model is None:
+        from book2anki.provider_cli import CLIProvider
+        if CLIProvider.is_available():
+            print("Using claude CLI (opus)\n")
+            return CLIProvider("opus")
+        # Fall through to API
+
     from book2anki.provider_claude import ClaudeProvider
     provider = ClaudeProvider()
     if model:
@@ -107,8 +119,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model", default=None,
-        choices=["sonnet", "opus"],
-        help="Model to use: sonnet (default, fast/cheap) or opus (higher quality, ~15x cost)",
+        choices=["sonnet", "opus", "cli"],
+        help="Model to use: sonnet (default), opus (~15x cost), cli (use claude CLI)",
     )
     return parser.parse_args()
 
@@ -362,19 +374,27 @@ def main() -> None:
                   "will skip duplicates")
 
         total = len(chapters_to_generate)
-        pbar = _ProgressBar(total=total)
-        for chapter in chapters_to_generate:
-            cards, usage = generate_vocab_for_chapter(
-                provider, chapter, book_title,
+        if args.parallel and total > 1:
+            all_cards, total_usage = _process_vocab_parallel(
+                provider, chapters_to_generate, book_title,
                 level=args.level, native_language=native_lang,
-                progress_bar=pbar,
-                is_article=(is_url or is_yt),
+                total=total, is_article=(is_url or is_yt),
                 topic=args.topic or "",
             )
-            all_cards.extend(cards)
-            total_usage += usage
-            pbar.update(1)
-        pbar.close()
+        else:
+            pbar = _ProgressBar(total=total)
+            for chapter in chapters_to_generate:
+                cards, usage = generate_vocab_for_chapter(
+                    provider, chapter, book_title,
+                    level=args.level, native_language=native_lang,
+                    progress_bar=pbar,
+                    is_article=(is_url or is_yt),
+                    topic=args.topic or "",
+                )
+                all_cards.extend(cards)
+                total_usage += usage
+                pbar.update(1)
+            pbar.close()
 
         if not all_cards:
             cost = estimate_cost(total_usage, model)
@@ -550,6 +570,15 @@ def _tbl_row(title: str, cards: int, elapsed: float, cost: str) -> str:
     return f"{short:<45} {cards:>5}  {_fmt_elapsed(elapsed):>7}  {cost:>8}"
 
 
+_VOCAB_TBL_HEADER = f"{'Chapter':<45} {'Words':>5}  {'Time':>7}  {'Cost':>8}"
+_VOCAB_TBL_SEP = _TBL_SEP
+
+
+def _vocab_tbl_row(title: str, words: int, elapsed: float, cost: str) -> str:
+    short = title[:43] + "…" if len(title) > 44 else title
+    return f"{short:<45} {words:>5}  {_fmt_elapsed(elapsed):>7}  {cost:>8}"
+
+
 class _ProgressBar:
     """Progress bar that stays at top, with content printed below."""
 
@@ -704,6 +733,71 @@ def _process_sequential(
     return all_cards, total_usage, all_media
 
 
+class _QuietBar:
+    """No-op progress bar to suppress per-chunk status in parallel mode."""
+
+    def set_postfix_str(self, msg: str, refresh: bool = False) -> None:
+        pass
+
+
+def _process_vocab_parallel(
+    provider: LLMProvider, chapters: list[Chapter], book_title: str,
+    level: str, native_language: str, total: int,
+    is_article: bool = False, topic: str = "",
+) -> tuple[list[Card], TokenUsage]:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    all_cards: list[Card] = []
+    total_usage = TokenUsage(0, 0)
+    total_time = 0.0
+    model = provider.model_name()
+    session_words = 0
+    chapter_start: dict[int, float] = {}
+    quiet = _QuietBar()
+
+    pbar = _ProgressBar(total=total)
+    pbar.write(_VOCAB_TBL_HEADER)
+    pbar.write(_VOCAB_TBL_SEP)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        future_to_chapter = {}
+        for chapter in chapters:
+            chapter_start[chapter.index] = time.monotonic()
+            future_to_chapter[executor.submit(
+                generate_vocab_for_chapter,
+                provider=provider,
+                chapter=chapter,
+                book_title=book_title,
+                level=level,
+                native_language=native_language,
+                progress_bar=quiet,
+                is_article=is_article,
+                topic=topic,
+            )] = chapter
+
+        for future in as_completed(future_to_chapter):
+            chapter = future_to_chapter[future]
+            ch_elapsed = time.monotonic() - chapter_start[chapter.index]
+            try:
+                cards, usage = future.result()
+                all_cards.extend(cards)
+                session_words += len(cards)
+                total_usage += usage
+                total_time += ch_elapsed
+
+                ch_cost = format_cost(estimate_cost(usage, model))
+                pbar.write(_vocab_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
+                pbar.update(1)
+                pbar.set_postfix_str(f"{session_words} words")
+            except Exception as e:
+                pbar.write(f"Warning: Failed to process \"{chapter.title}\": {e}")
+                pbar.update(1)
+
+    pbar.close()
+    text_cost = estimate_cost(total_usage, model)
+    print(_VOCAB_TBL_SEP, file=sys.stderr)
+    print(_vocab_tbl_row("Total", session_words, total_time, format_cost(text_cost)), file=sys.stderr)
+    return all_cards, total_usage
+
+
 def _process_parallel(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
@@ -717,6 +811,7 @@ def _process_parallel(
     chapter_start: dict[int, float] = {}
     all_media: list[str] = []
 
+    quiet = _QuietBar()
     pbar = _ProgressBar(total=total, initial=total - len(chapters))
     pbar.write(_TBL_HEADER)
     pbar.write(_TBL_SEP)
@@ -731,6 +826,7 @@ def _process_parallel(
                 book_title=book_title,
                 depth=depth,
                 language=lang,
+                progress_bar=quiet,
                 is_programming=is_programming,
                 topic=topic,
             )] = chapter
@@ -742,7 +838,7 @@ def _process_parallel(
                 cards, usage = future.result()
 
                 ch_media: list[str] = []
-                media_dir = os.path.join(chapters_dir, "media")
+                media_dir = os.path.join(chapters_dir or ".", "media")
                 if cards and chapter.images:
                     book_media = process_book_images(
                         cards, chapter.images, media_dir,
@@ -756,7 +852,7 @@ def _process_parallel(
                 total_usage.output_tokens += usage.output_tokens
                 total_time += ch_elapsed
 
-                if cards:
+                if cards and chapters_dir:
                     package_single_chapter(
                         cards, book_title, chapter.index, chapters_dir,
                         media_files=ch_media,
