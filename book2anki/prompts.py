@@ -151,6 +151,7 @@ Guidelines:
 - **No trivial cards**: every card should test something genuinely worth remembering
 - **No cards about page numbers, chapter structure, or meta-information**
 {context_rule}
+- **Logical order**: arrange cards so foundational concepts come first — definitions before applications, causes before effects
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
 - **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{example_rule}{image_rule}
