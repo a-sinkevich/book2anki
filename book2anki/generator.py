@@ -438,6 +438,20 @@ def vocab_word(question: str) -> str:
     return question.split("<div", 1)[0].strip().lower()
 
 
+def _vocab_base(word: str) -> str:
+    """Normalize a vocab word for dedup: strip 'to ' prefix and reflexive suffixes."""
+    w = word.lower().strip()
+    if w.startswith("to "):
+        w = w[3:]
+    # Strip reflexive: "ensconce oneself" → "ensconce"
+    for suffix in (" oneself", " itself", " himself", " herself",
+                   " themselves", " myself", " yourself", " ourselves"):
+        if w.endswith(suffix):
+            w = w[:-len(suffix)]
+            break
+    return w.strip()
+
+
 _SEP = '<div class="sep"></div>'
 
 
@@ -457,7 +471,7 @@ def deduplicate_vocab(cards: list[Card],
         merged = False
         for existing in unique:
             word = vocab_word(existing.question)
-            if vocab_word(card.question) == word:
+            if _vocab_base(card.question) == _vocab_base(word):
                 # Move extra contexts to answer side (source_url = examples)
                 all_examples = [
                     _bold_word_in_context(e, word)

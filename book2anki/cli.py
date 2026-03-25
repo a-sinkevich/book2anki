@@ -15,7 +15,7 @@ from book2anki.language import detect_language
 from book2anki.generator import (
     LLMProvider, generate_cards_for_chapter, generate_vocab_for_chapter,
     estimate_cost, format_cost, deduplicate, deduplicate_vocab,
-    consolidate_cards, vocab_word,
+    consolidate_cards, vocab_word, _vocab_base,
 )
 from book2anki.anki_reader import read_vocab_words
 from book2anki.prompts import detect_programming
@@ -367,10 +367,11 @@ def main() -> None:
         source_lang = detect_language(all_text)  # always auto-detect
         native_lang = args.lang
 
-        # Check Anki for existing vocab words to skip
-        existing_words = read_vocab_words()
+        # Check Anki for existing vocab words to skip (normalized base forms)
+        existing_raw = read_vocab_words()
+        existing_words = {_vocab_base(w) for w in existing_raw}
         if existing_words:
-            print(f"Existing Anki collection: {len(existing_words)} vocab words found, "
+            print(f"Existing Anki collection: {len(existing_raw)} vocab words found, "
                   "will skip duplicates")
 
         total = len(chapters_to_generate)
@@ -414,7 +415,7 @@ def main() -> None:
             before = len(all_cards)
             all_cards = [
                 c for c in all_cards
-                if vocab_word(c.question) not in existing_words
+                if _vocab_base(vocab_word(c.question)) not in existing_words
             ]
             skipped = before - len(all_cards)
             if skipped:
