@@ -77,6 +77,14 @@ _PART_WRAPPER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# "1. - Title" or "1. — Title" → "1. Title"
+_NUM_DASH_RE = re.compile(r"^(\d+\.\s*)[-–—]\s*")
+
+
+def _clean_title(title: str) -> str:
+    """Clean up TOC title artifacts."""
+    return _NUM_DASH_RE.sub(r"\1", title).strip()
+
 
 def _is_numbered_chapter(title: str | None) -> bool:
     """Return True if title looks like a numbered chapter heading.
@@ -433,7 +441,7 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
             continue
         combined = _strip_references(combined)
         chapters.append(Chapter(
-            title=title, text=combined, index=index, images=all_images,
+            title=_clean_title(title), text=combined, index=index, images=all_images,
         ))
         index += 1
 
