@@ -376,7 +376,11 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
     pending_title: str | None = None
     empty_toc_titles: list[str] = []
 
-    for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+    # Iterate spine (reading order), not manifest (can be random)
+    for item_id, _linear in book.spine:
+        item = book.get_item_with_id(item_id)
+        if item is None:
+            continue
         content = item.get_content()
         text = _html_to_text(content)
         href = item.get_name()
@@ -466,7 +470,10 @@ def _strip_references(text: str) -> str:
 def _extract_all_text(book: epub.EpubBook) -> str:
     """Extract all text from the book as a single string."""
     parts = []
-    for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+    for item_id, _linear in book.spine:
+        item = book.get_item_with_id(item_id)
+        if item is None:
+            continue
         text = _html_to_text(item.get_content())
         if text.strip():
             parts.append(text)
