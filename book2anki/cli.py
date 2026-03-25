@@ -740,52 +740,12 @@ class _QuietBar:
         pass
 
 
-def _kill_active_procs() -> None:
-    """Kill all active CLI subprocesses (if using CLI provider)."""
-    try:
-        from book2anki.provider_cli import kill_all
-        kill_all()
-    except ImportError:
-        pass
-
-
-def _wait_futures(
-    futures: dict,  # type: ignore[type-arg]
-    on_done: object,
-    executor: object = None,
-) -> None:
-    """Poll futures until all complete, calling on_done(future) for each.
-
-    On KeyboardInterrupt: cancels pending futures, kills subprocesses, exits.
-    Uses short sleeps so the main thread stays interruptible.
-    """
-    pending = set(futures)
-    try:
-        while pending:
-            done = {f for f in pending if f.done()}
-            for f in done:
-                on_done(f)  # type: ignore[operator]
-            pending -= done
-            if pending:
-                time.sleep(0.2)
-    except KeyboardInterrupt:
-        # 1. Cancel pending futures (not yet started)
-        for f in pending:
-            f.cancel()
-        # 2. Kill running subprocesses
-        _kill_active_procs()
-        # 3. Force exit — sys.exit() would go through ThreadPoolExecutor.__exit__
-        #    which calls shutdown(wait=True) and blocks on worker threads
-        sys.stderr.write("\nInterrupted.\n")
-        os._exit(1)
-
-
 def _process_vocab_parallel(
     provider: LLMProvider, chapters: list[Chapter], book_title: str,
     level: str, native_language: str, total: int,
     is_article: bool = False, topic: str = "",
 ) -> tuple[list[Card], TokenUsage]:
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
     session_words = 0
@@ -814,8 +774,7 @@ def _process_vocab_parallel(
                 topic=topic,
             )] = chapter
 
-        def _handle_vocab(future):  # type: ignore[no-untyped-def]
-            nonlocal session_words, total_usage
+        for future in as_completed(future_to_chapter):
             chapter = future_to_chapter[future]
             ch_elapsed = time.monotonic() - chapter_start[chapter.index]
             try:
@@ -831,8 +790,6 @@ def _process_vocab_parallel(
             except Exception as e:
                 pbar.write(f"Warning: Failed to process \"{chapter.title}\": {e}")
                 pbar.update(1)
-
-        _wait_futures(future_to_chapter, _handle_vocab, executor)
 
     pbar.close()
     # Collect cards in chapter order
@@ -851,7 +808,7 @@ def _process_parallel(
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
     is_programming: bool = False, topic: str = "",
 ) -> tuple[list[Card], TokenUsage, list[str]]:
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     session_cards = 0
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
@@ -881,8 +838,7 @@ def _process_parallel(
                 topic=topic,
             )] = chapter
 
-        def _handle_card(future):  # type: ignore[no-untyped-def]
-            nonlocal session_cards
+        for future in as_completed(future_to_chapter):
             chapter = future_to_chapter[future]
             ch_elapsed = time.monotonic() - chapter_start[chapter.index]
             try:
@@ -915,8 +871,6 @@ def _process_parallel(
             except Exception as e:
                 pbar.write(f"Warning: Failed to process \"{chapter.title}\": {e}")
                 pbar.update(1)
-
-        _wait_futures(future_to_chapter, _handle_card, executor)
 
     pbar.close()
     # Append cards in chapter order

@@ -4,25 +4,9 @@ import os
 import shutil
 import subprocess
 import tempfile
-import threading
 
 from book2anki.generator import LLMProvider
 from book2anki.models import TokenUsage
-
-# Track all active child processes for cleanup on interrupt
-_active_procs: list[subprocess.Popen] = []  # type: ignore[type-arg]
-_active_lock = threading.Lock()
-
-
-def kill_all() -> None:
-    """Kill all active claude subprocesses."""
-    with _active_lock:
-        for proc in list(_active_procs):
-            try:
-                proc.kill()
-            except OSError:
-                pass
-        _active_procs.clear()
 
 
 class CLIProvider(LLMProvider):
@@ -62,22 +46,9 @@ class CLIProvider(LLMProvider):
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
-                start_new_session=True,  # isolate from terminal SIGINT
             )
 
-            with _active_lock:
-                _active_procs.append(proc)
-
-            try:
-                stdout, stderr = proc.communicate(timeout=600)
-            except KeyboardInterrupt:
-                proc.kill()
-                proc.wait()
-                raise
-            finally:
-                with _active_lock:
-                    if proc in _active_procs:
-                        _active_procs.remove(proc)
+            stdout, stderr = proc.communicate(timeout=600)
 
             if proc.returncode != 0:
                 raise RuntimeError(
