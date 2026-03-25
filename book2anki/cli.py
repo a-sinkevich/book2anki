@@ -740,22 +740,11 @@ class _QuietBar:
         pass
 
 
-def _install_parallel_sigint(provider: LLMProvider) -> None:
-    """Install force-exit SIGINT handler if using CLI provider (threads can't KeyboardInterrupt)."""
+def _kill_active_procs() -> None:
+    """Kill all active CLI subprocesses (if using CLI provider)."""
     try:
-        from book2anki.provider_cli import CLIProvider, install_parallel_handler
-        if isinstance(provider, CLIProvider):
-            install_parallel_handler()
-    except ImportError:
-        pass
-
-
-def _restore_sigint(provider: LLMProvider) -> None:
-    """Restore default SIGINT handler after parallel processing."""
-    try:
-        from book2anki.provider_cli import CLIProvider, restore_default_handler
-        if isinstance(provider, CLIProvider):
-            restore_default_handler()
+        from book2anki.provider_cli import kill_all
+        kill_all()
     except ImportError:
         pass
 
@@ -763,20 +752,33 @@ def _restore_sigint(provider: LLMProvider) -> None:
 def _wait_futures(
     futures: dict,  # type: ignore[type-arg]
     on_done: object,
+    executor: object = None,
 ) -> None:
     """Poll futures until all complete, calling on_done(future) for each.
 
-    Uses short sleeps so the main thread stays interruptible by signals
-    (as_completed blocks in C-level Event.wait which may ignore SIGINT).
+    On KeyboardInterrupt: cancels pending futures, kills subprocesses, exits.
+    Uses short sleeps so the main thread stays interruptible.
     """
     pending = set(futures)
-    while pending:
-        done = {f for f in pending if f.done()}
-        for f in done:
-            on_done(f)  # type: ignore[operator]
-        pending -= done
-        if pending:
-            time.sleep(0.2)
+    try:
+        while pending:
+            done = {f for f in pending if f.done()}
+            for f in done:
+                on_done(f)  # type: ignore[operator]
+            pending -= done
+            if pending:
+                time.sleep(0.2)
+    except KeyboardInterrupt:
+        # 1. Cancel pending futures (not yet started)
+        for f in pending:
+            f.cancel()
+        # 2. Kill running subprocesses
+        _kill_active_procs()
+        # 3. Shut down executor without waiting
+        if executor and hasattr(executor, 'shutdown'):
+            executor.shutdown(wait=False, cancel_futures=True)  # type: ignore[union-attr]
+        print("\nInterrupted.", file=sys.stderr)
+        sys.exit(1)
 
 
 def _process_vocab_parallel(
@@ -785,7 +787,6 @@ def _process_vocab_parallel(
     is_article: bool = False, topic: str = "",
 ) -> tuple[list[Card], TokenUsage]:
     from concurrent.futures import ThreadPoolExecutor
-    _install_parallel_sigint(provider)
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
     session_words = 0
@@ -832,7 +833,7 @@ def _process_vocab_parallel(
                 pbar.write(f"Warning: Failed to process \"{chapter.title}\": {e}")
                 pbar.update(1)
 
-        _wait_futures(future_to_chapter, _handle_vocab)
+        _wait_futures(future_to_chapter, _handle_vocab, executor)
 
     pbar.close()
     # Collect cards in chapter order
@@ -843,7 +844,6 @@ def _process_vocab_parallel(
     text_cost = estimate_cost(total_usage, model)
     print(_VOCAB_TBL_SEP, file=sys.stderr)
     print(_vocab_tbl_row("Total", session_words, wall_elapsed, format_cost(text_cost)), file=sys.stderr)
-    _restore_sigint(provider)
     return all_cards, total_usage
 
 
@@ -853,7 +853,6 @@ def _process_parallel(
     is_programming: bool = False, topic: str = "",
 ) -> tuple[list[Card], TokenUsage, list[str]]:
     from concurrent.futures import ThreadPoolExecutor
-    _install_parallel_sigint(provider)
     session_cards = 0
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
@@ -918,7 +917,7 @@ def _process_parallel(
                 pbar.write(f"Warning: Failed to process \"{chapter.title}\": {e}")
                 pbar.update(1)
 
-        _wait_futures(future_to_chapter, _handle_card)
+        _wait_futures(future_to_chapter, _handle_card, executor)
 
     pbar.close()
     # Append cards in chapter order
@@ -928,7 +927,6 @@ def _process_parallel(
     text_cost = estimate_cost(total_usage, model)
     print(_TBL_SEP, file=sys.stderr)
     print(_tbl_row("Total", session_cards, wall_elapsed, format_cost(text_cost)), file=sys.stderr)
-    _restore_sigint(provider)
     return all_cards, total_usage, all_media
 
 

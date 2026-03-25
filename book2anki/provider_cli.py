@@ -2,12 +2,9 @@
 
 import os
 import shutil
-import signal
 import subprocess
-import sys
 import tempfile
 import threading
-from types import FrameType
 
 from book2anki.generator import LLMProvider
 from book2anki.models import TokenUsage
@@ -17,29 +14,15 @@ _active_procs: list[subprocess.Popen] = []  # type: ignore[type-arg]
 _active_lock = threading.Lock()
 
 
-def _kill_all_children(signum: int, frame: FrameType | None) -> None:
-    """Kill all active claude subprocesses and force-exit.
-
-    Used only in parallel mode where worker threads block in communicate()
-    and can't receive KeyboardInterrupt.
-    """
-    for proc in list(_active_procs):
-        try:
-            proc.kill()
-        except OSError:
-            pass
-    sys.stderr.write("\nInterrupted.\n")
-    os._exit(1)
-
-
-def install_parallel_handler() -> None:
-    """Install SIGINT handler for parallel mode. Call before spawning threads."""
-    signal.signal(signal.SIGINT, _kill_all_children)
-
-
-def restore_default_handler() -> None:
-    """Restore default SIGINT handler after parallel processing."""
-    signal.signal(signal.SIGINT, signal.default_int_handler)
+def kill_all() -> None:
+    """Kill all active claude subprocesses."""
+    with _active_lock:
+        for proc in list(_active_procs):
+            try:
+                proc.kill()
+            except OSError:
+                pass
+        _active_procs.clear()
 
 
 class CLIProvider(LLMProvider):
