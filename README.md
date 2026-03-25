@@ -8,19 +8,20 @@ AI-powered tool to convert books (EPUB/PDF), web articles, and YouTube videos in
    - **macOS (Apple Silicon)**: `book2anki-macos-arm64`
    - **Linux**: `book2anki-linux-amd64`
    - **Windows**: `book2anki-windows-amd64.exe`
-2. Get an API key from [Anthropic](https://console.anthropic.com/settings/keys) and [add credit](https://console.anthropic.com/settings/billing) (the API is prepaid, see [costs](#costs) below). If you already have `ANTHROPIC_API_KEY` set in your environment, skip to step 4.
-3. Create `~/.book2anki.env` (on Windows: `C:\Users\<YourName>\.book2anki.env`):
-   ```
-   ANTHROPIC_API_KEY=your-key
-   ```
-4. Open a terminal (macOS: Terminal.app, Windows: PowerShell, Linux: any terminal) and make the binary executable (once, macOS/Linux only):
+2. Set up an LLM provider (choose one):
+   - **Claude CLI** (recommended if you have [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed): no extra setup needed — book2anki auto-detects and uses it with Opus
+   - **Anthropic API**: get a key from [Anthropic](https://console.anthropic.com/settings/keys), [add credit](https://console.anthropic.com/settings/billing) (prepaid, see [costs](#costs)), and save it in `~/.book2anki.env` (Windows: `C:\Users\<YourName>\.book2anki.env`):
+     ```
+     ANTHROPIC_API_KEY=your-key
+     ```
+3. Open a terminal (macOS: Terminal.app, Windows: PowerShell, Linux: any terminal) and make the binary executable (once, macOS/Linux only):
    ```bash
    chmod +x book2anki-macos-arm64    # or book2anki-linux-amd64
    ```
    > **macOS**: if you get "cannot be opened because the developer cannot be verified", run:
    > `xattr -d com.apple.quarantine book2anki-macos-arm64`
 
-5. Run (examples for macOS, replace binary name for your platform):
+4. Run (examples for macOS, replace binary name for your platform):
    ```bash
    ./book2anki-macos-arm64 mybook.epub
    ./book2anki-macos-arm64 mybook.pdf --depth 2   # more detailed cards
@@ -83,6 +84,15 @@ book2anki "https://example.com/article" --vocab --level C1 --lang ru
 book2anki mybook.epub --vocab --level B2 --lang ru --chapters 1-3   # specific chapters
 book2anki mybook.epub --vocab --level C1 --lang ru --topic "medicine"  # only medical vocabulary
 
+# Parallel processing — faster for multi-chapter books
+book2anki mybook.epub --parallel
+book2anki mybook.epub --vocab --level B2 --lang ru --parallel
+
+# Model selection
+book2anki mybook.epub --model sonnet   # Sonnet (faster, cheaper via API)
+book2anki mybook.epub --model opus     # Opus via API (~15x cost)
+book2anki mybook.epub --model cli      # Force claude CLI
+
 # Combine flags
 book2anki mybook.epub --depth 0 --topic "agriculture"  # 2-3 cards about agriculture
 book2anki mybook.epub --depth 2 --topic "memory" --lang ru
@@ -129,7 +139,7 @@ Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` 
 
 1. **Parse** — EPUB chapters via TOC, PDF via heading detection, web via article extraction + `srcset` for high-res images, YouTube via transcript API
 2. **Chunk** — split chapters into overlapping segments fitting the model's context window (~80% of limit minus output reserve)
-3. **Generate** — each chunk → Claude Sonnet with depth/language/content-type-aware prompt; image captions included so the model can reference figures
+3. **Generate** — each chunk → Claude (Opus via CLI or Sonnet via API) with depth/language/content-type-aware prompt; image captions included so the model can reference figures
 4. **Dedup** — `SequenceMatcher`-based similarity dedup within chunks; LLM consolidation pass across chapters in summary/topic modes
 5. **Package** — `.apkg` via [genanki](https://github.com/kerrickstaley/genanki); per-chapter subdecks for books, flat deck for articles/summary/topic
 
@@ -155,14 +165,16 @@ make install-dev # install dev deps
 
 ## Costs
 
-The tool uses the Anthropic API for card generation. Typical costs:
+If you use the **Claude CLI** (default when available), there is no direct API cost — usage goes through your Claude Code subscription.
+
+When using the **Anthropic API**, typical costs:
 
 | Source | Depth 0 (summary) | Depth 1 (core) | Depth 2 (detailed) | Depth 3 (comprehensive) |
 |--------|:-:|:-:|:-:|:-:|
 | YouTube video (1 hour) | ~$0.05 | ~$0.06 | ~$0.07 | ~$0.13 |
 | Book (full) | $0.20–$1.00 | $0.50–$2.00 | $1.00–$3.00 | $2.00–$5.00 |
 
-Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. Tip: use `--chapters` to process specific chapters instead of the whole book.
+Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. Using `--model opus` via API is ~15x more expensive than Sonnet. Tip: use `--chapters` to process specific chapters instead of the whole book.
 
 ## Features
 
@@ -174,6 +186,9 @@ Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. T
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
 - **Smart dedup** — similarity-based dedup within chunks; LLM consolidation across chapters in summary/topic modes; vocab duplicates merged with multiple contexts
 - **Dark & light theme** — cards adapt to your Anki theme
+- **Parallel processing** (`--parallel`) — process multiple chapters simultaneously
+- **Claude CLI support** — auto-detects `claude` CLI for zero-cost generation, falls back to API
+- **Model selection** (`--model`) — choose between Sonnet (fast/cheap), Opus (highest quality), or CLI
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
 - **Auto language detection** with `--lang` override
 - **Progress bar** with per-chapter cost breakdown during generation
