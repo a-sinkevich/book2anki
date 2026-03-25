@@ -471,7 +471,7 @@ def deduplicate_vocab(cards: list[Card],
         merged = False
         for existing in unique:
             word = vocab_word(existing.question)
-            if _vocab_base(card.question) == _vocab_base(word):
+            if _vocab_base(vocab_word(card.question)) == _vocab_base(word):
                 # Move extra contexts to answer side (source_url = examples)
                 all_examples = [
                     _bold_word_in_context(e, word)
