@@ -384,17 +384,29 @@ def main() -> None:
             )
         else:
             pbar = _ProgressBar(total=total)
+            is_single = (is_url or is_yt)
+
+            def _vocab_chunk_cb(done: int, total_chunks: int) -> None:
+                if done == 0:
+                    pbar.total = total_chunks
+                    pbar.n = 0
+                else:
+                    pbar.n = done
+                pbar.refresh()
+
             for chapter in chapters_to_generate:
                 cards, usage = generate_vocab_for_chapter(
                     provider, chapter, book_title,
                     level=args.level, native_language=native_lang,
                     progress_bar=pbar,
-                    is_article=(is_url or is_yt),
+                    is_article=is_single,
                     topic=args.topic or "",
+                    on_chunk_done=_vocab_chunk_cb if is_single else None,
                 )
                 all_cards.extend(cards)
                 total_usage += usage
-                pbar.update(1)
+                if not is_single:
+                    pbar.update(1)
             pbar.close()
 
         if not all_cards:
@@ -684,8 +696,20 @@ def _process_sequential(
     if show_table:
         pbar.write(_TBL_HEADER)
         pbar.write(_TBL_SEP)
+
+    def _chunk_cb(done: int, total_chunks: int) -> None:
+        """Update progress bar based on chunk progress (for single-chapter sources)."""
+        if done == 0:
+            # First call: set total to number of chunks
+            pbar.total = total_chunks
+            pbar.n = 0
+        else:
+            pbar.n = done
+        pbar.refresh()
+
     for chapter in chapters:
         ch_start = time.monotonic()
+        chunk_cb = _chunk_cb if is_article else None
         cards, usage = generate_cards_for_chapter(
             provider=provider,
             chapter=chapter,
@@ -697,6 +721,7 @@ def _process_sequential(
             source_url=source_url,
             is_programming=is_programming,
             topic=topic,
+            on_chunk_done=chunk_cb,
         )
 
         ch_media: list[str] = []
@@ -723,7 +748,8 @@ def _process_sequential(
         if show_table:
             ch_cost = format_cost(estimate_cost(usage, model))
             pbar.write(_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
-        pbar.update(1)
+        if not is_article:
+            pbar.update(1)
         pbar.set_postfix_str(f"{session_cards} cards")
 
     pbar.close()

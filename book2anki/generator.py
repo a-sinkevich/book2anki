@@ -64,6 +64,7 @@ def generate_cards_for_chapter(
     source_url: str = "",
     is_programming: bool = False,
     topic: str = "",
+    on_chunk_done: Callable[[int, int], None] | None = None,
 ) -> tuple[list[Card], TokenUsage]:
     """Generate flashcards for a single chapter. Returns (cards, token_usage)."""
     def _status(msg: str) -> None:
@@ -105,8 +106,12 @@ def generate_cards_for_chapter(
             book_image_captions=book_image_captions, topic=topic,
         )
         total_usage += usage
+        if on_chunk_done:
+            on_chunk_done(1, 1)
     else:
         chunks = _split_into_chunks(chapter.text, max_chars)
+        if on_chunk_done:
+            on_chunk_done(0, len(chunks))
         all_cards: list[Card] = []
         for i, chunk in enumerate(chunks):
             _status(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
@@ -121,6 +126,8 @@ def generate_cards_for_chapter(
             total_usage.input_tokens += usage.input_tokens
             total_usage.output_tokens += usage.output_tokens
             all_cards.extend(chunk_cards)
+            if on_chunk_done:
+                on_chunk_done(i + 1, len(chunks))
         cards = deduplicate(all_cards)
 
     valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
@@ -136,6 +143,7 @@ def generate_vocab_for_chapter(
     progress_bar: Any = None,
     is_article: bool = False,
     topic: str = "",
+    on_chunk_done: Callable[[int, int], None] | None = None,
 ) -> tuple[list[Card], TokenUsage]:
     """Extract vocabulary cards for a single chapter. Returns (cards, token_usage)."""
     def _status(msg: str) -> None:
@@ -169,8 +177,12 @@ def generate_vocab_for_chapter(
             status_fn=_status, is_article=is_article, topic=topic,
         )
         total_usage += usage
+        if on_chunk_done:
+            on_chunk_done(1, 1)
     else:
         chunks = _split_into_chunks(chapter.text, max_chars)
+        if on_chunk_done:
+            on_chunk_done(0, len(chunks))
         all_cards: list[Card] = []
         for i, chunk in enumerate(chunks):
             _status(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
@@ -183,6 +195,8 @@ def generate_vocab_for_chapter(
             )
             total_usage += usage
             all_cards.extend(chunk_cards)
+            if on_chunk_done:
+                on_chunk_done(i + 1, len(chunks))
         cards = deduplicate_vocab(all_cards)
 
     valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
