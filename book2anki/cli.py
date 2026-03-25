@@ -747,7 +747,6 @@ def _process_vocab_parallel(
 ) -> tuple[list[Card], TokenUsage]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
     total_usage = TokenUsage(0, 0)
-    total_time = 0.0
     model = provider.model_name()
     session_words = 0
     chapter_start: dict[int, float] = {}
@@ -755,6 +754,7 @@ def _process_vocab_parallel(
     # Collect cards per chapter, sort by chapter index at the end
     cards_by_chapter: dict[int, list[Card]] = {}
 
+    wall_start = time.monotonic()
     pbar = _ProgressBar(total=total)
     pbar.write(_VOCAB_TBL_HEADER)
     pbar.write(_VOCAB_TBL_SEP)
@@ -782,7 +782,6 @@ def _process_vocab_parallel(
                 cards_by_chapter[chapter.index] = cards
                 session_words += len(cards)
                 total_usage += usage
-                total_time += ch_elapsed
 
                 ch_cost = format_cost(estimate_cost(usage, model))
                 pbar.write(_vocab_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
@@ -797,9 +796,10 @@ def _process_vocab_parallel(
     all_cards: list[Card] = []
     for idx in sorted(cards_by_chapter):
         all_cards.extend(cards_by_chapter[idx])
+    wall_elapsed = time.monotonic() - wall_start
     text_cost = estimate_cost(total_usage, model)
     print(_VOCAB_TBL_SEP, file=sys.stderr)
-    print(_vocab_tbl_row("Total", session_words, total_time, format_cost(text_cost)), file=sys.stderr)
+    print(_vocab_tbl_row("Total", session_words, wall_elapsed, format_cost(text_cost)), file=sys.stderr)
     return all_cards, total_usage
 
 
@@ -811,7 +811,6 @@ def _process_parallel(
     from concurrent.futures import ThreadPoolExecutor, as_completed
     session_cards = 0
     total_usage = TokenUsage(0, 0)
-    total_time = 0.0
     model = provider.model_name()
     chapter_start: dict[int, float] = {}
     all_media: list[str] = []
@@ -819,6 +818,7 @@ def _process_parallel(
     cards_by_chapter: dict[int, list[Card]] = {}
 
     quiet = _QuietBar()
+    wall_start = time.monotonic()
     pbar = _ProgressBar(total=total, initial=total - len(chapters))
     pbar.write(_TBL_HEADER)
     pbar.write(_TBL_SEP)
@@ -857,7 +857,6 @@ def _process_parallel(
                 session_cards += len(cards)
                 total_usage.input_tokens += usage.input_tokens
                 total_usage.output_tokens += usage.output_tokens
-                total_time += ch_elapsed
 
                 if cards and chapters_dir:
                     package_single_chapter(
@@ -877,9 +876,10 @@ def _process_parallel(
     # Append cards in chapter order
     for idx in sorted(cards_by_chapter):
         all_cards.extend(cards_by_chapter[idx])
+    wall_elapsed = time.monotonic() - wall_start
     text_cost = estimate_cost(total_usage, model)
     print(_TBL_SEP, file=sys.stderr)
-    print(_tbl_row("Total", session_cards, total_time, format_cost(text_cost)), file=sys.stderr)
+    print(_tbl_row("Total", session_cards, wall_elapsed, format_cost(text_cost)), file=sys.stderr)
     return all_cards, total_usage, all_media
 
 
