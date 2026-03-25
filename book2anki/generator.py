@@ -65,6 +65,7 @@ def generate_cards_for_chapter(
     is_programming: bool = False,
     topic: str = "",
     on_chunk_done: Callable[[int, int], None] | None = None,
+    parallel_chunks: bool = False,
 ) -> tuple[list[Card], TokenUsage]:
     """Generate flashcards for a single chapter. Returns (cards, token_usage)."""
     def _status(msg: str) -> None:
@@ -112,26 +113,110 @@ def generate_cards_for_chapter(
         chunks = _split_into_chunks(chapter.text, max_chars)
         if on_chunk_done:
             on_chunk_done(0, len(chunks))
-        all_cards: list[Card] = []
-        for i, chunk in enumerate(chunks):
-            _status(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
-            if i > 0:
-                time.sleep(5)
-            chunk_cards, usage = _generate_with_retries(
-                provider, chunk, book_title, chapter.title, depth, language,
-                status_fn=_status, is_article=is_article, source_url=source_url,
+
+        if parallel_chunks:
+            all_cards = _process_chunks_parallel(
+                chunks, provider, book_title, chapter.title, depth, language,
+                total_usage, short, _status, on_chunk_done,
+                is_article=is_article, source_url=source_url,
                 is_programming=is_programming,
                 book_image_captions=book_image_captions, topic=topic,
             )
-            total_usage.input_tokens += usage.input_tokens
-            total_usage.output_tokens += usage.output_tokens
-            all_cards.extend(chunk_cards)
-            if on_chunk_done:
-                on_chunk_done(i + 1, len(chunks))
+        else:
+            all_cards = _process_chunks_sequential(
+                chunks, provider, book_title, chapter.title, depth, language,
+                total_usage, short, _status, on_chunk_done,
+                is_article=is_article, source_url=source_url,
+                is_programming=is_programming,
+                book_image_captions=book_image_captions, topic=topic,
+            )
         cards = deduplicate(all_cards)
 
     valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
     return valid_cards, total_usage
+
+
+def _process_chunks_sequential(
+    chunks: list[str],
+    provider: LLMProvider,
+    book_title: str,
+    chapter_title: str,
+    depth: int,
+    language: str,
+    total_usage: TokenUsage,
+    short: str,
+    status_fn: Callable[[str], None],
+    on_chunk_done: Callable[[int, int], None] | None,
+    **kwargs: Any,
+) -> list[Card]:
+    all_cards: list[Card] = []
+    for i, chunk in enumerate(chunks):
+        status_fn(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
+        if i > 0:
+            time.sleep(5)
+        chunk_cards, usage = _generate_with_retries(
+            provider, chunk, book_title, chapter_title, depth, language,
+            status_fn=status_fn, **kwargs,
+        )
+        total_usage.input_tokens += usage.input_tokens
+        total_usage.output_tokens += usage.output_tokens
+        all_cards.extend(chunk_cards)
+        if on_chunk_done:
+            on_chunk_done(i + 1, len(chunks))
+    return all_cards
+
+
+def _process_chunks_parallel(
+    chunks: list[str],
+    provider: LLMProvider,
+    book_title: str,
+    chapter_title: str,
+    depth: int,
+    language: str,
+    total_usage: TokenUsage,
+    short: str,
+    status_fn: Callable[[str], None],
+    on_chunk_done: Callable[[int, int], None] | None,
+    **kwargs: Any,
+) -> list[Card]:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # cards_by_index preserves chunk order
+    cards_by_index: dict[int, list[Card]] = {}
+    futures = {}
+    done_count = 0
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for i, chunk in enumerate(chunks):
+            futures[executor.submit(
+                _generate_with_retries,
+                provider, chunk, book_title, chapter_title, depth, language,
+                status_fn=lambda _msg: None,  # suppress per-chunk status in parallel
+                **kwargs,
+            )] = i
+
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                chunk_cards, usage = future.result()
+                cards_by_index[idx] = chunk_cards
+                total_usage.input_tokens += usage.input_tokens
+                total_usage.output_tokens += usage.output_tokens
+                done_count += 1
+                status_fn(f"\"{short}\" chunks {done_count}/{len(chunks)}")
+                if on_chunk_done:
+                    on_chunk_done(done_count, len(chunks))
+            except Exception as e:
+                print(f"  chunk {idx + 1} failed: {e}", file=sys.stderr)
+                done_count += 1
+                if on_chunk_done:
+                    on_chunk_done(done_count, len(chunks))
+
+    # Return cards in chunk order
+    all_cards: list[Card] = []
+    for idx in sorted(cards_by_index):
+        all_cards.extend(cards_by_index[idx])
+    return all_cards
 
 
 def generate_vocab_for_chapter(
@@ -144,6 +229,7 @@ def generate_vocab_for_chapter(
     is_article: bool = False,
     topic: str = "",
     on_chunk_done: Callable[[int, int], None] | None = None,
+    parallel_chunks: bool = False,
 ) -> tuple[list[Card], TokenUsage]:
     """Extract vocabulary cards for a single chapter. Returns (cards, token_usage)."""
     def _status(msg: str) -> None:
@@ -183,24 +269,84 @@ def generate_vocab_for_chapter(
         chunks = _split_into_chunks(chapter.text, max_chars)
         if on_chunk_done:
             on_chunk_done(0, len(chunks))
-        all_cards: list[Card] = []
-        for i, chunk in enumerate(chunks):
-            _status(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
-            if i > 0:
-                time.sleep(5)
-            chunk_cards, usage = _generate_vocab_with_retries(
-                provider, chunk, book_title, chapter.title,
-                level, native_language,
-                status_fn=_status, is_article=is_article, topic=topic,
+
+        if parallel_chunks:
+            all_cards = _process_vocab_chunks_parallel(
+                chunks, provider, book_title, chapter.title,
+                level, native_language, total_usage, short, _status, on_chunk_done,
+                is_article=is_article, topic=topic,
             )
-            total_usage += usage
-            all_cards.extend(chunk_cards)
-            if on_chunk_done:
-                on_chunk_done(i + 1, len(chunks))
+        else:
+            all_cards = []
+            for i, chunk in enumerate(chunks):
+                _status(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
+                if i > 0:
+                    time.sleep(5)
+                chunk_cards, usage = _generate_vocab_with_retries(
+                    provider, chunk, book_title, chapter.title,
+                    level, native_language,
+                    status_fn=_status, is_article=is_article, topic=topic,
+                )
+                total_usage += usage
+                all_cards.extend(chunk_cards)
+                if on_chunk_done:
+                    on_chunk_done(i + 1, len(chunks))
         cards = deduplicate_vocab(all_cards)
 
     valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
     return valid_cards, total_usage
+
+
+def _process_vocab_chunks_parallel(
+    chunks: list[str],
+    provider: LLMProvider,
+    book_title: str,
+    chapter_title: str,
+    level: str,
+    native_language: str,
+    total_usage: TokenUsage,
+    short: str,
+    status_fn: Callable[[str], None],
+    on_chunk_done: Callable[[int, int], None] | None,
+    **kwargs: Any,
+) -> list[Card]:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    cards_by_index: dict[int, list[Card]] = {}
+    futures = {}
+    done_count = 0
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for i, chunk in enumerate(chunks):
+            futures[executor.submit(
+                _generate_vocab_with_retries,
+                provider, chunk, book_title, chapter_title,
+                level, native_language,
+                status_fn=lambda _msg: None,
+                **kwargs,
+            )] = i
+
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                chunk_cards, usage = future.result()
+                cards_by_index[idx] = chunk_cards
+                total_usage.input_tokens += usage.input_tokens
+                total_usage.output_tokens += usage.output_tokens
+                done_count += 1
+                status_fn(f"\"{short}\" chunks {done_count}/{len(chunks)}")
+                if on_chunk_done:
+                    on_chunk_done(done_count, len(chunks))
+            except Exception as e:
+                print(f"  chunk {idx + 1} failed: {e}", file=sys.stderr)
+                done_count += 1
+                if on_chunk_done:
+                    on_chunk_done(done_count, len(chunks))
+
+    all_cards: list[Card] = []
+    for idx in sorted(cards_by_index):
+        all_cards.extend(cards_by_index[idx])
+    return all_cards
 
 
 def _generate_vocab_with_retries(

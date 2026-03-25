@@ -402,6 +402,7 @@ def main() -> None:
                     is_article=is_single,
                     topic=args.topic or "",
                     on_chunk_done=_vocab_chunk_cb if is_single else None,
+                    parallel_chunks=args.parallel,
                 )
                 all_cards.extend(cards)
                 total_usage += usage
@@ -461,7 +462,7 @@ def main() -> None:
             provider, chapters_to_generate, book_title, args.depth, lang,
             total=1, all_cards=[], chapters_dir="", is_article=True,
             source_url=source_url, is_programming=is_prog,
-            topic=args.topic or "",
+            topic=args.topic or "", parallel_chunks=args.parallel,
         )
         if not all_cards:
             cost = estimate_cost(total_usage, model)
@@ -517,6 +518,7 @@ def main() -> None:
                 all_cards, total_usage, all_media = _process_sequential(
                     provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
                     is_programming=is_prog, topic=args.topic or "",
+                    parallel_chunks=args.parallel,
                 )
 
         if not all_cards:
@@ -683,7 +685,7 @@ def _process_sequential(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
     is_article: bool = False, source_url: str = "", is_programming: bool = False,
-    topic: str = "",
+    topic: str = "", parallel_chunks: bool = False,
 ) -> tuple[list[Card], TokenUsage, list[str]]:
     session_cards = 0
     total_usage = TokenUsage(0, 0)
@@ -722,6 +724,7 @@ def _process_sequential(
             is_programming=is_programming,
             topic=topic,
             on_chunk_done=chunk_cb,
+            parallel_chunks=parallel_chunks,
         )
 
         ch_media: list[str] = []
@@ -799,6 +802,7 @@ def _process_vocab_parallel(
                 progress_bar=quiet,
                 is_article=is_article,
                 topic=topic,
+                parallel_chunks=True,
             )] = chapter
 
         for future in as_completed(future_to_chapter):
@@ -863,6 +867,7 @@ def _process_parallel(
                 progress_bar=quiet,
                 is_programming=is_programming,
                 topic=topic,
+                parallel_chunks=True,
             )] = chapter
 
         for future in as_completed(future_to_chapter):
