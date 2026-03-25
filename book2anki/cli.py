@@ -760,12 +760,31 @@ def _restore_sigint(provider: LLMProvider) -> None:
         pass
 
 
+def _wait_futures(
+    futures: dict,  # type: ignore[type-arg]
+    on_done: object,
+) -> None:
+    """Poll futures until all complete, calling on_done(future) for each.
+
+    Uses short sleeps so the main thread stays interruptible by signals
+    (as_completed blocks in C-level Event.wait which may ignore SIGINT).
+    """
+    pending = set(futures)
+    while pending:
+        done = {f for f in pending if f.done()}
+        for f in done:
+            on_done(f)  # type: ignore[operator]
+        pending -= done
+        if pending:
+            time.sleep(0.2)
+
+
 def _process_vocab_parallel(
     provider: LLMProvider, chapters: list[Chapter], book_title: str,
     level: str, native_language: str, total: int,
     is_article: bool = False, topic: str = "",
 ) -> tuple[list[Card], TokenUsage]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor
     _install_parallel_sigint(provider)
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
@@ -795,7 +814,8 @@ def _process_vocab_parallel(
                 topic=topic,
             )] = chapter
 
-        for future in as_completed(future_to_chapter):
+        def _handle_vocab(future):  # type: ignore[no-untyped-def]
+            nonlocal session_words, total_usage
             chapter = future_to_chapter[future]
             ch_elapsed = time.monotonic() - chapter_start[chapter.index]
             try:
@@ -811,6 +831,8 @@ def _process_vocab_parallel(
             except Exception as e:
                 pbar.write(f"Warning: Failed to process \"{chapter.title}\": {e}")
                 pbar.update(1)
+
+        _wait_futures(future_to_chapter, _handle_vocab)
 
     pbar.close()
     # Collect cards in chapter order
@@ -830,7 +852,7 @@ def _process_parallel(
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
     is_programming: bool = False, topic: str = "",
 ) -> tuple[list[Card], TokenUsage, list[str]]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor
     _install_parallel_sigint(provider)
     session_cards = 0
     total_usage = TokenUsage(0, 0)
@@ -861,7 +883,8 @@ def _process_parallel(
                 topic=topic,
             )] = chapter
 
-        for future in as_completed(future_to_chapter):
+        def _handle_card(future):  # type: ignore[no-untyped-def]
+            nonlocal session_cards
             chapter = future_to_chapter[future]
             ch_elapsed = time.monotonic() - chapter_start[chapter.index]
             try:
@@ -894,6 +917,8 @@ def _process_parallel(
             except Exception as e:
                 pbar.write(f"Warning: Failed to process \"{chapter.title}\": {e}")
                 pbar.update(1)
+
+        _wait_futures(future_to_chapter, _handle_card)
 
     pbar.close()
     # Append cards in chapter order
