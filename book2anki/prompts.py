@@ -220,6 +220,7 @@ Guidelines:
 - **Pronunciation**: IPA transcription (e.g. "/juːˈbɪkwɪtəs/") — skip for phrases and idioms
 - **Etymology**: brief word origin in the source language, starting with a label in that language (e.g. "Origin: Latin ubique = everywhere" for English, "Herkunft: Latein ubique = überall" for German). Skip for common roots or phrases
 - **Dictionary form**: always use the base/dictionary form in the "word" field (infinitive for verbs, singular for nouns, etc.), even if the text has an inflected form
+- **Grammar notes**: for languages where it helps learners, include essential grammatical info in the "word" field after the word — e.g. gender for nouns (der/die/das in German, м/ж/ср in Russian, le/la in French), plural forms, verb aspect, irregular patterns. Skip for English and when not useful
 - **No proper nouns** (names of people, places, brands) unless they have a general meaning
 - **No numbers, dates, or abbreviations**
 - For phrases/idioms: the "word" field should contain the full phrase in base form
