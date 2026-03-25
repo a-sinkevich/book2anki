@@ -740,12 +740,33 @@ class _QuietBar:
         pass
 
 
+def _install_parallel_sigint(provider: LLMProvider) -> None:
+    """Install force-exit SIGINT handler if using CLI provider (threads can't KeyboardInterrupt)."""
+    try:
+        from book2anki.provider_cli import CLIProvider, install_parallel_handler
+        if isinstance(provider, CLIProvider):
+            install_parallel_handler()
+    except ImportError:
+        pass
+
+
+def _restore_sigint(provider: LLMProvider) -> None:
+    """Restore default SIGINT handler after parallel processing."""
+    try:
+        from book2anki.provider_cli import CLIProvider, restore_default_handler
+        if isinstance(provider, CLIProvider):
+            restore_default_handler()
+    except ImportError:
+        pass
+
+
 def _process_vocab_parallel(
     provider: LLMProvider, chapters: list[Chapter], book_title: str,
     level: str, native_language: str, total: int,
     is_article: bool = False, topic: str = "",
 ) -> tuple[list[Card], TokenUsage]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    _install_parallel_sigint(provider)
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
     session_words = 0
@@ -800,6 +821,7 @@ def _process_vocab_parallel(
     text_cost = estimate_cost(total_usage, model)
     print(_VOCAB_TBL_SEP, file=sys.stderr)
     print(_vocab_tbl_row("Total", session_words, wall_elapsed, format_cost(text_cost)), file=sys.stderr)
+    _restore_sigint(provider)
     return all_cards, total_usage
 
 
@@ -809,6 +831,7 @@ def _process_parallel(
     is_programming: bool = False, topic: str = "",
 ) -> tuple[list[Card], TokenUsage, list[str]]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    _install_parallel_sigint(provider)
     session_cards = 0
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
@@ -880,6 +903,7 @@ def _process_parallel(
     text_cost = estimate_cost(total_usage, model)
     print(_TBL_SEP, file=sys.stderr)
     print(_tbl_row("Total", session_cards, wall_elapsed, format_cost(text_cost)), file=sys.stderr)
+    _restore_sigint(provider)
     return all_cards, total_usage, all_media
 
 

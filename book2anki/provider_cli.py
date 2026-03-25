@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from types import FrameType
 
 from book2anki.generator import LLMProvider
 from book2anki.models import TokenUsage
@@ -14,27 +15,36 @@ from book2anki.models import TokenUsage
 # Track all active child processes for cleanup on interrupt
 _active_procs: list[subprocess.Popen] = []  # type: ignore[type-arg]
 _active_lock = threading.Lock()
-_original_sigint = signal.getsignal(signal.SIGINT)
 
 
-def _kill_all_children(signum: int, frame: object) -> None:
-    """Kill all active claude subprocesses and force-exit."""
-    # Don't acquire lock — signal handler can deadlock if a worker holds it.
-    # Reading the list without lock is safe enough for cleanup.
+def _kill_all_children(signum: int, frame: FrameType | None) -> None:
+    """Kill all active claude subprocesses and force-exit.
+
+    Used only in parallel mode where worker threads block in communicate()
+    and can't receive KeyboardInterrupt.
+    """
     for proc in list(_active_procs):
         try:
-            proc.kill()  # SIGKILL — terminate() may be ignored
+            proc.kill()
         except OSError:
             pass
     sys.stderr.write("\nInterrupted.\n")
-    os._exit(1)  # Force exit — sys.exit() raises SystemExit which ThreadPoolExecutor catches
+    os._exit(1)
+
+
+def install_parallel_handler() -> None:
+    """Install SIGINT handler for parallel mode. Call before spawning threads."""
+    signal.signal(signal.SIGINT, _kill_all_children)
+
+
+def restore_default_handler() -> None:
+    """Restore default SIGINT handler after parallel processing."""
+    signal.signal(signal.SIGINT, signal.default_int_handler)
 
 
 class CLIProvider(LLMProvider):
     def __init__(self, model: str = "opus") -> None:
         self.model = model
-        # Install signal handler to kill children on Ctrl-C
-        signal.signal(signal.SIGINT, _kill_all_children)
 
     @staticmethod
     def is_available() -> bool:
@@ -76,6 +86,10 @@ class CLIProvider(LLMProvider):
 
             try:
                 stdout, stderr = proc.communicate(timeout=600)
+            except KeyboardInterrupt:
+                proc.kill()
+                proc.wait()
+                raise
             finally:
                 with _active_lock:
                     if proc in _active_procs:
