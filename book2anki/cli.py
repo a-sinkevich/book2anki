@@ -58,17 +58,16 @@ def parse_chapters(spec: str) -> list[int]:
 
 
 def _create_provider(model: str | None = None) -> LLMProvider:
+    from book2anki.provider_cli import CLIProvider
+
     if model == "cli":
-        from book2anki.provider_cli import CLIProvider
         return CLIProvider("opus")
 
-    # Default: try CLI first, fall back to API
-    if model is None:
-        from book2anki.provider_cli import CLIProvider
-        if CLIProvider.is_available():
-            print("Using claude CLI (opus)\n")
-            return CLIProvider("opus")
-        # Fall through to API
+    # Default or explicit model: try CLI first, fall back to API
+    cli_model = model or "opus"
+    if CLIProvider.is_available():
+        print(f"Using claude CLI ({cli_model})\n")
+        return CLIProvider(cli_model)
 
     from book2anki.provider_claude import ClaudeProvider
     provider = ClaudeProvider()
@@ -351,7 +350,11 @@ def main() -> None:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Cards model: {provider.model_name()}")
+    model_name = provider.model_name()
+    print(f"Cards model: {model_name}")
+    if "opus" in model_name:
+        print("⚠  Opus uses ~5x more tokens than Sonnet. "
+              "Use --model sonnet to reduce usage.")
     print()
 
     all_cards: list[Card] = []

@@ -23,7 +23,12 @@ class CLIProvider(LLMProvider):
     def generate(self, prompt: str) -> tuple[str, TokenUsage]:
         # Write prompt to temp file to avoid ARG_MAX limits.
         # Then ask claude to read the file (claude -p doesn't read from stdin).
-        fd, prompt_path = tempfile.mkstemp(suffix=".txt", prefix="book2anki_")
+        # Use current directory so claude CLI has read permission (system
+        # temp dirs like /var/folders may be sandboxed on macOS).
+        fd, prompt_path = tempfile.mkstemp(
+            suffix=".txt", prefix=".book2anki_", dir=".",
+        )
+        prompt_abs = os.path.abspath(prompt_path)
         try:
             with os.fdopen(fd, "w") as f:
                 f.write(prompt)
@@ -32,7 +37,7 @@ class CLIProvider(LLMProvider):
             env.pop("CLAUDECODE", None)
 
             meta_prompt = (
-                f"Read the file at {prompt_path} and follow the instructions inside it exactly. "
+                f"Read the file at {prompt_abs} and follow the instructions inside it exactly. "
                 f"Output only what the instructions ask for — no extra commentary."
             )
 
