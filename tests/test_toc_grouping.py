@@ -285,3 +285,62 @@ class TestFragmentHandling:
         ])
         result = _extract_toc_titles(book)
         assert result["ch.html"] == "Chapter 1"
+
+
+class TestSectionDisambiguation:
+    """When multiple sections contain chapters with identical titles,
+    prefix them with the section name to avoid collisions."""
+
+    def test_duplicate_chapter_titles_across_sections(self):
+        """Seneca-style: two sections with 'Глава I', 'Глава II' etc."""
+        book = _book_with_toc([
+            _parent("Section A", "sa.html", [
+                _link("Глава I", "a1.html"),
+                _link("Глава II", "a2.html"),
+            ]),
+            _parent("Section B", "sb.html", [
+                _link("Глава I", "b1.html"),
+                _link("Глава II", "b2.html"),
+            ]),
+        ])
+        result = _extract_toc_titles(book)
+        assert result["a1.html"] == "Section A — Глава I"
+        assert result["a2.html"] == "Section A — Глава II"
+        assert result["b1.html"] == "Section B — Глава I"
+        assert result["b2.html"] == "Section B — Глава II"
+
+    def test_unique_titles_not_prefixed(self):
+        """Sections with unique chapter titles should not be prefixed."""
+        book = _book_with_toc([
+            _parent("Section A", "sa.html", [
+                _link("Chapter 1", "a1.html"),
+                _link("Chapter 2", "a2.html"),
+            ]),
+            _parent("Section B", "sb.html", [
+                _link("Chapter 3", "b1.html"),
+                _link("Chapter 4", "b2.html"),
+            ]),
+        ])
+        result = _extract_toc_titles(book)
+        assert result["a1.html"] == "Chapter 1"
+        assert result["a2.html"] == "Chapter 2"
+        assert result["b1.html"] == "Chapter 3"
+        assert result["b2.html"] == "Chapter 4"
+
+    def test_partial_overlap_only_duplicates_prefixed(self):
+        """Only colliding titles get prefixed, unique ones stay as-is."""
+        book = _book_with_toc([
+            _parent("Section A", "sa.html", [
+                _link("Глава I", "a1.html"),
+                _link("Unique Chapter", "a2.html"),
+            ]),
+            _parent("Section B", "sb.html", [
+                _link("Глава I", "b1.html"),
+                _link("Another Chapter", "b2.html"),
+            ]),
+        ])
+        result = _extract_toc_titles(book)
+        assert result["a1.html"] == "Section A — Глава I"
+        assert result["b1.html"] == "Section B — Глава I"
+        assert result["a2.html"] == "Unique Chapter"
+        assert result["b2.html"] == "Another Chapter"

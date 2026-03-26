@@ -55,6 +55,21 @@ SKIP_TITLES = {
 
 MIN_CHAPTER_LENGTH = 3000  # chars — skip very short sections
 
+_NUMBERED_TITLE_RE = None
+
+
+def _is_numbered_title(title: str) -> bool:
+    """Return True if title looks like a numbered chapter (Глава I, Chapter 3, etc.)."""
+    import re
+    global _NUMBERED_TITLE_RE
+    if _NUMBERED_TITLE_RE is None:
+        _NUMBERED_TITLE_RE = re.compile(
+            r"(?:^|\s—\s)"  # start or "Section — " prefix
+            r"(\d+[\.\s:]|chapter\s|глава\s|раздел\s|лекция\s|книга\s|book\s)",
+            re.IGNORECASE,
+        )
+    return bool(_NUMBERED_TITLE_RE.search(title.strip()))
+
 
 def _is_skip_match(title_lower: str, skip: str) -> bool:
     """Check if a skip title matches as a whole word in the title."""
@@ -69,7 +84,7 @@ def should_skip_chapter(title: str, text: str, book_title: str = "") -> bool:
         return True
     if title_lower.startswith("section "):
         return True
-    if len(text) < MIN_CHAPTER_LENGTH:
+    if len(text) < MIN_CHAPTER_LENGTH and not _is_numbered_title(title):
         return True
     if book_title and title.strip().lower() == book_title.strip().lower():
         return True

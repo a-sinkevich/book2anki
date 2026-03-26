@@ -102,8 +102,13 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
 
     When the TOC has hierarchy (chapters with sub-sections), sub-section
     hrefs are mapped to their parent chapter title so they get merged.
+    When multiple sections contain chapters with the same title (e.g.
+    "Глава I" in two different treatises), titles are prefixed with
+    their section name to avoid collisions.
     """
     toc_map: dict[str, str] = {}
+    # Track which section each href belongs to, for disambiguating duplicates
+    href_section: dict[str, str] = {}
 
     def _is_skip_title(title: str | None) -> bool:
         if not title:
@@ -113,6 +118,7 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
 
     def walk_toc(
         items: list[Any], group_title: str | None = None, depth: int = 0,
+        section_name: str | None = None,
     ) -> None:
         # level_group tracks the most recent PARENT at this level,
         # so sibling leaves after it get grouped under the same chapter.
@@ -125,6 +131,11 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
         ) else None
         level_group_href: str | None = None
 
+        def _store(href: str, title: str) -> None:
+            toc_map[href] = title
+            if section_name:
+                href_section[href] = section_name
+
         for item in items:
             if isinstance(item, tuple):
                 section, children = item
@@ -133,12 +144,21 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
 
                 has_subtree = any(isinstance(c, tuple) for c in children)
 
+                # Determine section context for children:
+                # Non-Part, non-skip, non-chapter sections propagate
+                # their name so children can be disambiguated later.
+                is_part = bool(title and _PART_WRAPPER_RE.match(title.strip()))
+                child_section = section_name
+                if title and not is_part and not _is_skip_title(title) and not _is_numbered_chapter(title):
+                    child_section = title
+
                 if _is_skip_title(title):
                     # Skip-titled section — group children under it
                     # so they all get skipped together.
                     if href and href not in toc_map:
-                        toc_map[href] = title or ""
-                    walk_toc(children, group_title=title, depth=depth + 1)
+                        _store(href, title or "")
+                    walk_toc(children, group_title=title, depth=depth + 1,
+                             section_name=section_name)
                     # Only group subsequent siblings in the same file,
                     # not across all files (e.g. "Contents" shouldn't
                     # swallow all following chapter entries).
@@ -151,14 +171,14 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     # Numbered chapters register their href; book titles
                     # and other wrappers let children claim the file
                     if href and href not in toc_map and is_chapter:
-                        toc_map[href] = title or ""
-                    walk_toc(children, group_title=title, depth=depth + 1)
+                        _store(href, title or "")
+                    walk_toc(children, group_title=title, depth=depth + 1,
+                             section_name=child_section)
                     level_group = title
                     level_group_href = None if is_chapter else href
                 else:
                     is_skip = _is_skip_title(title)
                     is_chapter = _is_numbered_chapter(title)
-                    is_part = bool(title and _PART_WRAPPER_RE.match(title.strip()))
                     gt = title if (title and not is_skip) else None
 
                     # Don't register Part's href — let child chapters claim it.
@@ -167,7 +187,7 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     if href and not is_part:
                         existing = toc_map.get(href)
                         if existing is None or (is_chapter and not _is_numbered_chapter(existing)):
-                            toc_map[href] = title or ""
+                            _store(href, title or "")
 
                     child_hrefs = {
                         c.href.split("#")[0]
@@ -182,7 +202,8 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     # "Part") always let children keep their own titles.
                     # At depth 0, only numbered chapters group children.
                     child_gt = gt if (not is_part and (depth > 0 or same_file or is_chapter)) else None
-                    walk_toc(children, group_title=child_gt, depth=depth + 1)
+                    walk_toc(children, group_title=child_gt, depth=depth + 1,
+                             section_name=child_section)
 
                     # Group subsequent leaf siblings under this parent.
                     # Numbered chapters group across files (subsections);
@@ -196,13 +217,29 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     # Don't group if leaf is itself a numbered chapter
                     is_leaf_chapter = _is_numbered_chapter(item.title)
                     if level_group and not is_leaf_chapter and (level_group_href is None or href == level_group_href):
-                        toc_map[href] = level_group
+                        _store(href, level_group)
                     else:
-                        toc_map[href] = item.title
+                        _store(href, item.title)
                         level_group = None
                         level_group_href = None
 
     walk_toc(book.toc)
+
+    # Post-process: disambiguate duplicate titles by prefixing with section name.
+    # Only prefix when the same title appears under different sections
+    # (not when sub-sections are intentionally grouped under a parent).
+    title_hrefs: dict[str, list[str]] = {}
+    for href, title in toc_map.items():
+        title_hrefs.setdefault(title, []).append(href)
+    for title, hrefs in title_hrefs.items():
+        if len(hrefs) > 1:
+            sections = {href_section.get(h) for h in hrefs}
+            if len(sections - {None}) > 1:
+                for href in hrefs:
+                    section = href_section.get(href)
+                    if section:
+                        toc_map[href] = f"{section} — {title}"
+
     return toc_map
 
 
