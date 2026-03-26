@@ -117,6 +117,10 @@ def _parse_args() -> argparse.Namespace:
         help="Your CEFR language level (used with --vocab), e.g. --level B2",
     )
     parser.add_argument(
+        "--flat", action="store_true",
+        help="Output a single .apkg file instead of per-chapter files",
+    )
+    parser.add_argument(
         "--model", default=None,
         choices=["sonnet", "opus", "cli"],
         help="Model to use: sonnet (default), opus (~15x cost), cli (use claude CLI)",
@@ -491,8 +495,8 @@ def main() -> None:
         if depth_label:
             base_name = f"{base_name}_{depth_label}"
         output_dir = args.output or base_name
-        # Summary or topic mode: single deck, no per-chapter files
-        single_deck = args.depth == 0 or bool(args.topic)
+        # Single flat deck: summary, topic, or explicit --flat
+        single_deck = args.depth == 0 or bool(args.topic) or args.flat
         chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
 
         existing: dict[int, list[Card]] = {}
