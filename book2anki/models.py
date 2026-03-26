@@ -43,17 +43,21 @@ class Card:
 
 SKIP_TITLES = {
     "copyright", "dedication", "epigraph", "contents", "table of contents",
-    "also by", "title page", "about the author", "about the authors",
+    "also by", "title page", "titlepage", "about the author", "about the authors",
+    "about the publisher", "about this ebook",
     "acknowledgments", "acknowledgements", "bibliography", "notes", "index",
     "credits", "cover", "illustrations", "glossary", "preface", "foreword",
-    "appendix", "endnotes",
+    "appendix", "endnotes", "praise", "annotation", "maps",
+    "works by", "other books by",
     "содержание", "оглавление", "предисловие", "вступление",
     "об авторе", "об авторах", "благодарности", "библиография", "словарик",
     "посвящение", "примечания", "алфавитный указатель",
-    "приложение",
+    "приложение", "сноски", "комментарии", "иллюстрации",
+    "список литературы", "дисклеймер", "карты",
+    "источники иллюстраций", "аннотация", "от автора",
 }
 
-MIN_CHAPTER_LENGTH = 3000  # chars — skip very short sections
+MIN_CHAPTER_LENGTH = 500  # chars — skip trivially short pages (title pages, separators)
 
 _NUMBERED_TITLE_RE = None
 
@@ -84,8 +88,12 @@ def should_skip_chapter(title: str, text: str, book_title: str = "") -> bool:
         return True
     if title_lower.startswith("section "):
         return True
+    if title_lower.isdigit():
+        return True
     if len(text) < MIN_CHAPTER_LENGTH and not _is_numbered_title(title):
         return True
     if book_title and title.strip().lower() == book_title.strip().lower():
-        return True
+        # Only skip short title-page entries, not real content chapters
+        if len(text) < MIN_CHAPTER_LENGTH:
+            return True
     return False
