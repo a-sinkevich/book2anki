@@ -149,7 +149,7 @@ Guidelines:
 - **Mix question types**: factual recall, conceptual understanding, and application
 - **Write cards in {language}**
 - **No trivial cards**: every card should test something genuinely worth remembering
-- **No cards about page numbers, chapter structure, or meta-information**
+- **No meta-cards**: never create cards about the book's structure, what a chapter covers, the author's approach, or how the book is organized. Only test the actual subject matter — the ideas, facts, and concepts themselves. If a chapter is mostly introductory or structural with little substantive content, generate fewer cards
 {context_rule}
 - **Logical order**: arrange cards so foundational concepts come first — definitions before applications, causes before effects
 - **Answers should be concise but complete** — typically 1-3 sentences

@@ -357,8 +357,8 @@ def main() -> None:
     model_name = provider.model_name()
     print(f"Cards model: {model_name}")
     if "opus" in model_name:
-        print("⚠  Opus uses ~5x more tokens than Sonnet. "
-              "Use --model sonnet to reduce usage.")
+        print("\033[33m⚠  Opus uses ~5x more tokens than Sonnet. "
+              "Use --model sonnet to reduce usage.\033[0m")
     print()
 
     all_cards: list[Card] = []
