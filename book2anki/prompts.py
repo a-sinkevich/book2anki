@@ -95,9 +95,10 @@ def build_prompt(
         text_label = "Chapter text"
 
     example_rule = (
-        '\n- **Example field**: include an optional "example" field with a concrete illustration '
+        '\n- **Example field**: include an optional "example" field with 1-2 concrete illustrations '
         "when it helps understand the concept — a real-world scenario, a classic case, "
         "an analogy, or a brief demonstration. Can go beyond the book's own examples. "
+        "Use <br><br> to separate multiple examples. "
         'Leave "example" as empty string when not needed — not every card needs one'
     )
 
@@ -109,9 +110,10 @@ def build_prompt(
 - **Trade-off cards**: when the text compares approaches, create cards that test understanding of trade-offs
 - **No trivial syntax cards**: don't create cards for basic language syntax that any developer would know"""
         example_rule = (
-            '\n- **Example field**: include an optional "example" field with an illustrative code snippet '
+            '\n- **Example field**: include an optional "example" field with 1-2 illustrative code snippets '
             "when it helps understand the concept. Use <pre><code> tags for code. "
             "Can go beyond the book's own examples. "
+            "Use <br><br> to separate multiple examples. "
             'Leave "example" as empty string when not needed — not every card needs one. '
             "Good candidates: patterns, techniques, refactorings, before/after transformations"
         )
