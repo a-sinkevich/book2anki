@@ -81,9 +81,24 @@ _PART_WRAPPER_RE = re.compile(
 _NUM_DASH_RE = re.compile(r"^(\d+\.\s*)[-–—]\s*")
 
 
+_DUP_SUFFIX_RE = re.compile(r"^(.{15,?})(\1)$")
+
+
 def _clean_title(title: str) -> str:
     """Clean up TOC title artifacts."""
-    return _NUM_DASH_RE.sub(r"\1", title).strip()
+    import html
+    title = html.unescape(title)
+    # Normalize whitespace (nbsp → space)
+    title = re.sub(r"\s+", " ", title).strip()
+    title = _NUM_DASH_RE.sub(r"\1", title).strip()
+    # Remove duplicated suffix (e.g. "2. Foo BarFoo Bar" → "2. Foo Bar")
+    for i in range(10, len(title) // 2 + 1):
+        suffix = title[-i:]
+        prefix = title[:-i]
+        if prefix.endswith(suffix):
+            title = prefix
+            break
+    return title.strip()
 
 
 def _is_numbered_chapter(title: str | None) -> bool:
@@ -220,8 +235,16 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                         _store(href, level_group)
                     else:
                         _store(href, item.title)
-                        level_group = None
-                        level_group_href = None
+                        # Numbered chapter leaves group subsequent
+                        # non-chapter siblings (flat TOC merging).
+                        # Only at root level — inside sections the
+                        # hierarchy already provides structure.
+                        if is_leaf_chapter and depth == 0:
+                            level_group = item.title
+                            level_group_href = None
+                        else:
+                            level_group = None
+                            level_group_href = None
 
     walk_toc(book.toc)
 

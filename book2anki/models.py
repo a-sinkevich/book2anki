@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 
 
@@ -59,12 +60,13 @@ SKIP_TITLES = {
 
 MIN_CHAPTER_LENGTH = 500  # chars — skip trivially short pages (title pages, separators)
 
+_ROMAN_RE = re.compile(r"^[IVXLCDM]+$", re.IGNORECASE)
+
 _NUMBERED_TITLE_RE = None
 
 
 def _is_numbered_title(title: str) -> bool:
     """Return True if title looks like a numbered chapter (Глава I, Chapter 3, etc.)."""
-    import re
     global _NUMBERED_TITLE_RE
     if _NUMBERED_TITLE_RE is None:
         _NUMBERED_TITLE_RE = re.compile(
@@ -77,7 +79,6 @@ def _is_numbered_title(title: str) -> bool:
 
 def _is_skip_match(title_lower: str, skip: str) -> bool:
     """Check if a skip title matches as a whole word in the title."""
-    import re
     return bool(re.search(r'\b' + re.escape(skip) + r'\b', title_lower))
 
 
@@ -90,7 +91,7 @@ def should_skip_chapter(title: str, text: str, book_title: str = "") -> bool:
         return True
     if title_lower.isdigit():
         return True
-    if len(title_lower) <= 2:
+    if len(title_lower) <= 2 and not _ROMAN_RE.match(title_lower):
         return True
     if len(text) < MIN_CHAPTER_LENGTH and not _is_numbered_title(title):
         return True
