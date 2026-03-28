@@ -599,16 +599,36 @@ def vocab_word(question: str) -> str:
 
 
 def _vocab_base(word: str) -> str:
-    """Normalize a vocab word for dedup: strip 'to ' prefix and reflexive suffixes."""
+    """Normalize a vocab word for dedup comparison.
+
+    Strips articles, 'to ' prefix, reflexive suffixes, and
+    parenthetical notes like (n.), (der), (м/ж) etc.
+    """
     w = word.lower().strip()
-    if w.startswith("to "):
-        w = w[3:]
+    # Strip IPA transcription: /ˈkɒk.ər.əl/ or [ˈkɒk.ər.əl]
+    w = re.sub(r"\s*/[^/]+/\s*", " ", w).strip()
+    w = re.sub(r"\s*\[.*?\]\s*", " ", w).strip()
+    # Strip parenthetical grammar notes: "cockerel (n.)" → "cockerel"
+    w = re.sub(r"\s*\(.*?\)\s*", " ", w).strip()
+    # Strip articles
+    for article in ("a ", "an ", "the ", "der ", "die ", "das ",
+                    "le ", "la ", "les ", "un ", "une "):
+        if w.startswith(article):
+            w = w[len(article):]
+            break
+    for prefix in ("to ", "sich "):
+        if w.startswith(prefix):
+            w = w[len(prefix):]
+            break
     # Strip reflexive: "ensconce oneself" → "ensconce"
     for suffix in (" oneself", " itself", " himself", " herself",
-                   " themselves", " myself", " yourself", " ourselves"):
+                   " themselves", " myself", " yourself", " ourselves",
+                   " sich", " se"):
         if w.endswith(suffix):
             w = w[:-len(suffix)]
             break
+    # Strip trailing gender markers: "cockerel, m" or "петух м"
+    w = re.sub(r"[,\s]+(m|f|n|м|ж|ср)\.?$", "", w)
     return w.strip()
 
 
