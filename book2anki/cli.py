@@ -390,8 +390,13 @@ def main() -> None:
                 topic=args.topic or "",
             )
         else:
-            pbar = _ProgressBar(total=total)
             is_single = (is_url or is_yt)
+            is_book_vocab = not is_single and total > 1
+
+            if is_book_vocab:
+                cp = _ChapterProgress(chapters_to_generate)
+            else:
+                pbar = _ProgressBar(total=total)
 
             def _vocab_chunk_cb(done: int, total_chunks: int) -> None:
                 if done == 0:
@@ -401,21 +406,36 @@ def main() -> None:
                     pbar.n = done
                 pbar.refresh()
 
+            vocab_time = 0.0
             for chapter in chapters_to_generate:
+                if is_book_vocab:
+                    cp.start_chapter(chapter.index)
+                ch_start = time.monotonic()
+                progress = cp if is_book_vocab else pbar  # type: ignore[assignment]
                 cards, usage = generate_vocab_for_chapter(
                     provider, chapter, book_title,
                     level=args.level, native_language=native_lang,
-                    progress_bar=pbar,
+                    progress_bar=progress,
                     is_article=is_single,
                     topic=args.topic or "",
                     on_chunk_done=_vocab_chunk_cb if is_single else None,
                     parallel_chunks=args.parallel,
                 )
+                ch_elapsed = time.monotonic() - ch_start
+                vocab_time += ch_elapsed
                 all_cards.extend(cards)
                 total_usage += usage
-                if not is_single:
+                if is_book_vocab:
+                    ch_cost = format_cost(estimate_cost(usage, model))
+                    cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
+                elif not is_single:
                     pbar.update(1)
-            pbar.close()
+
+            if is_book_vocab:
+                cp.close()
+                _print_summary(len(all_cards), vocab_time, total_usage, model)
+            else:
+                pbar.close()
 
         if not all_cards:
             cost = estimate_cost(total_usage, model)
@@ -515,17 +535,23 @@ def main() -> None:
         pending = [ch for ch in chapters_to_generate if ch.index not in existing]
         total = len(chapters_to_generate)
 
+        existing_counts: dict[int, int] | None = None
+        if existing:
+            existing_counts = {idx: len(cards) for idx, cards in existing.items()}
+
         if pending:
             if args.parallel:
                 all_cards, total_usage, all_media = _process_parallel(
                     provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
                     is_programming=is_prog, topic=args.topic or "",
+                    all_chapters=chapters_to_generate, existing_counts=existing_counts,
                 )
             else:
                 all_cards, total_usage, all_media = _process_sequential(
                     provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
                     is_programming=is_prog, topic=args.topic or "",
                     parallel_chunks=args.parallel,
+                    all_chapters=chapters_to_generate, existing_counts=existing_counts,
                 )
 
         if not all_cards:
@@ -581,24 +607,6 @@ def _fmt_elapsed(seconds: float) -> str:
 def _fmt_mm_ss(seconds: float) -> str:
     m, s = divmod(int(seconds), 60)
     return f"{m:02d}:{s:02d}"
-
-
-_TBL_HEADER = f"{'Chapter':<45} {'Cards':>5}  {'Time':>7}  {'Cost':>8}"
-_TBL_SEP = "-" * 45 + " " + "-" * 5 + "  " + "-" * 7 + "  " + "-" * 8
-
-
-def _tbl_row(title: str, cards: int, elapsed: float, cost: str) -> str:
-    short = title[:43] + "…" if len(title) > 44 else title
-    return f"{short:<45} {cards:>5}  {_fmt_elapsed(elapsed):>7}  {cost:>8}"
-
-
-_VOCAB_TBL_HEADER = f"{'Chapter':<45} {'Words':>5}  {'Time':>7}  {'Cost':>8}"
-_VOCAB_TBL_SEP = _TBL_SEP
-
-
-def _vocab_tbl_row(title: str, words: int, elapsed: float, cost: str) -> str:
-    short = title[:43] + "…" if len(title) > 44 else title
-    return f"{short:<45} {words:>5}  {_fmt_elapsed(elapsed):>7}  {cost:>8}"
 
 
 class _ProgressBar:
@@ -688,11 +696,155 @@ class _ProgressBar:
             self._out.flush()
 
 
+_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+_TBL_HEADER = f"{'Chapter':<45} {'Cards':>5}  {'Time':>7}  {'Cost':>8}"
+_TBL_SEP = "-" * 45 + " " + "-" * 5 + "  " + "-" * 7 + "  " + "-" * 8
+
+
+def _tbl_row(title: str, cards: str, time_s: str, cost: str) -> str:
+    short = title[:43] + "…" if len(title) > 44 else title
+    return f"{short:<45} {cards:>5}  {time_s:>7}  {cost:>8}"
+
+
+class _ChapterProgress:
+    """Live table showing all chapters with in-place updates."""
+
+    def __init__(
+        self, chapters: list[Chapter],
+        existing: dict[int, int] | None = None,
+    ):
+        self._chapters = chapters
+        self._n = len(chapters)
+        self._pos = {ch.index: i for i, ch in enumerate(chapters)}
+        self._out = sys.stderr
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._spin = 0
+        # +2 for header + separator
+        self._total_lines = self._n + 2
+
+        self._state: list[str] = []
+        self._cards: list[int] = [0] * self._n
+        self._elapsed: list[float] = [0.0] * self._n
+        self._cost: list[str] = [""] * self._n
+        self._ch_start: list[float] = [0.0] * self._n
+
+        for ch in chapters:
+            if existing and ch.index in existing:
+                self._state.append("cached")
+                pos = self._pos[ch.index]
+                self._cards[pos] = existing[ch.index]
+            else:
+                self._state.append("pending")
+
+        try:
+            self._cols = os.get_terminal_size(self._out.fileno()).columns
+        except (OSError, ValueError):
+            self._cols = 120
+
+        self._out.write(_TBL_HEADER + "\n" + _TBL_SEP + "\n")
+        for i in range(self._n):
+            self._out.write(self._fmt(i) + "\n")
+        self._out.flush()
+        threading.Thread(target=self._tick_loop, daemon=True).start()
+
+    def _tick_loop(self) -> None:
+        while not self._stop.wait(0.15):
+            with self._lock:
+                self._spin = (self._spin + 1) % len(_SPINNER)
+                for i in range(self._n):
+                    if self._state[i] == "active":
+                        self._redraw(i)
+
+    def _fmt(self, i: int) -> str:
+        st = self._state[i]
+        title = self._chapters[i].title
+        if st == "done":
+            return _tbl_row(
+                title, str(self._cards[i]),
+                _fmt_elapsed(self._elapsed[i]), self._cost[i],
+            )
+        if st == "cached":
+            return _tbl_row(title, str(self._cards[i]), "—", "—")
+        if st == "active":
+            s = _SPINNER[self._spin]
+            elapsed = time.monotonic() - self._ch_start[i]
+            return _tbl_row(title, s, _fmt_elapsed(elapsed), "")
+        # pending
+        return _tbl_row(title, "", "", "")
+
+    def _redraw(self, i: int) -> None:
+        up = self._n - i
+        line = self._fmt(i)[:self._cols]
+        self._out.write(f"\033[{up}A\r\033[K{line}\033[{up}B\r")
+        self._out.flush()
+
+    def start_chapter(self, chapter_index: int) -> None:
+        with self._lock:
+            pos = self._pos.get(chapter_index)
+            if pos is not None:
+                self._state[pos] = "active"
+                self._ch_start[pos] = time.monotonic()
+                self._redraw(pos)
+
+    def complete_chapter(
+        self, chapter_index: int, cards: int, elapsed: float, cost: str,
+    ) -> None:
+        with self._lock:
+            pos = self._pos.get(chapter_index)
+            if pos is not None:
+                self._state[pos] = "done"
+                self._cards[pos] = cards
+                self._elapsed[pos] = elapsed
+                self._cost[pos] = cost
+                self._redraw(pos)
+
+    # ProgressBar-compatible interface for generator callbacks
+    def set_postfix_str(self, s: str, refresh: bool = True) -> None:
+        pass
+
+    def write(self, text: str) -> None:
+        pass
+
+    def update(self, n: int = 1) -> None:
+        pass
+
+    def refresh(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self._stop.set()
+        with self._lock:
+            for i in range(self._n):
+                if self._state[i] == "active":
+                    self._redraw(i)
+        self._out.write("\n")
+        self._out.flush()
+
+
+def _print_summary(
+    total_cards: int, total_time: float, total_usage: TokenUsage, model: str,
+    cached_cards: int = 0,
+) -> None:
+    cost = estimate_cost(total_usage, model)
+    cost_str = format_cost(cost)
+    cards_str = str(total_cards + cached_cards)
+    if cached_cards:
+        cards_str = f"{cards_str}"
+    print(
+        _TBL_SEP + "\n" +
+        _tbl_row("Total", cards_str, _fmt_elapsed(total_time), cost_str),
+        file=sys.stderr,
+    )
+
+
 def _process_sequential(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
     is_article: bool = False, source_url: str = "", is_programming: bool = False,
     topic: str = "", parallel_chunks: bool = False,
+    all_chapters: list[Chapter] | None = None, existing_counts: dict[int, int] | None = None,
 ) -> tuple[list[Card], TokenUsage, list[str]]:
     session_cards = 0
     total_usage = TokenUsage(0, 0)
@@ -700,16 +852,16 @@ def _process_sequential(
     model = provider.model_name()
     all_media: list[str] = []
 
-    show_table = not is_article
-    pbar = _ProgressBar(total=total, initial=total - len(chapters))
-    if show_table:
-        pbar.write(_TBL_HEADER)
-        pbar.write(_TBL_SEP)
+    is_book = not is_article
+
+    if is_book:
+        cp = _ChapterProgress(all_chapters or chapters, existing=existing_counts)
+    else:
+        pbar = _ProgressBar(total=total)
 
     def _chunk_cb(done: int, total_chunks: int) -> None:
         """Update progress bar based on chunk progress (for single-chapter sources)."""
         if done == 0:
-            # First call: set total to number of chunks
             pbar.total = total_chunks
             pbar.n = 0
         else:
@@ -717,15 +869,19 @@ def _process_sequential(
         pbar.refresh()
 
     for chapter in chapters:
+        if is_book:
+            cp.start_chapter(chapter.index)
+
         ch_start = time.monotonic()
         chunk_cb = _chunk_cb if is_article else None
+        progress = cp if is_book else pbar  # type: ignore[assignment]
         cards, usage = generate_cards_for_chapter(
             provider=provider,
             chapter=chapter,
             book_title=book_title,
             depth=depth,
             language=lang,
-            progress_bar=pbar,
+            progress_bar=progress,
             is_article=is_article,
             source_url=source_url,
             is_programming=is_programming,
@@ -755,18 +911,19 @@ def _process_sequential(
                 media_files=ch_media,
             )
 
-        if show_table:
+        if is_book:
             ch_cost = format_cost(estimate_cost(usage, model))
-            pbar.write(_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
-        if not is_article:
+            cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
+        else:
             pbar.update(1)
-        pbar.set_postfix_str(f"{session_cards} cards")
+            pbar.set_postfix_str(f"{session_cards} cards")
 
-    pbar.close()
-    if show_table:
-        text_cost = estimate_cost(total_usage, model)
-        print(_TBL_SEP, file=sys.stderr)
-        print(_tbl_row("Total", session_cards, total_time, format_cost(text_cost)), file=sys.stderr)
+    if is_book:
+        cp.close()
+        cached = sum(existing_counts.values()) if existing_counts else 0
+        _print_summary(session_cards, total_time, total_usage, model, cached_cards=cached)
+    else:
+        pbar.close()
     return all_cards, total_usage, all_media
 
 
@@ -788,29 +945,31 @@ def _process_vocab_parallel(
     session_words = 0
     chapter_start: dict[int, float] = {}
     quiet = _QuietBar()
-    # Collect cards per chapter, sort by chapter index at the end
     cards_by_chapter: dict[int, list[Card]] = {}
 
     wall_start = time.monotonic()
-    pbar = _ProgressBar(total=total)
-    pbar.write(_VOCAB_TBL_HEADER)
-    pbar.write(_VOCAB_TBL_SEP)
+    cp = _ChapterProgress(chapters)
+
+    def _run_vocab(ch: Chapter) -> tuple[list[Card], TokenUsage]:
+        cp.start_chapter(ch.index)
+        chapter_start[ch.index] = time.monotonic()
+        return generate_vocab_for_chapter(
+            provider=provider,
+            chapter=ch,
+            book_title=book_title,
+            level=level,
+            native_language=native_language,
+            progress_bar=quiet,
+            is_article=is_article,
+            topic=topic,
+            parallel_chunks=True,
+        )
+
     with ThreadPoolExecutor(max_workers=4) as executor:
-        future_to_chapter = {}
-        for chapter in chapters:
-            chapter_start[chapter.index] = time.monotonic()
-            future_to_chapter[executor.submit(
-                generate_vocab_for_chapter,
-                provider=provider,
-                chapter=chapter,
-                book_title=book_title,
-                level=level,
-                native_language=native_language,
-                progress_bar=quiet,
-                is_article=is_article,
-                topic=topic,
-                parallel_chunks=True,
-            )] = chapter
+        future_to_chapter = {
+            executor.submit(_run_vocab, chapter): chapter
+            for chapter in chapters
+        }
 
         for future in as_completed(future_to_chapter):
             chapter = future_to_chapter[future]
@@ -822,22 +981,18 @@ def _process_vocab_parallel(
                 total_usage += usage
 
                 ch_cost = format_cost(estimate_cost(usage, model))
-                pbar.write(_vocab_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
-                pbar.update(1)
-                pbar.set_postfix_str(f"{session_words} words")
+                cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
             except Exception as e:
-                pbar.write(f"Warning: Failed to process \"{chapter.title}\": {e}")
-                pbar.update(1)
+                cp.complete_chapter(chapter.index, 0, ch_elapsed, "error")
+                print(f"Warning: Failed to process \"{chapter.title}\": {e}",
+                      file=sys.stderr)
 
-    pbar.close()
-    # Collect cards in chapter order
+    cp.close()
     all_cards: list[Card] = []
     for idx in sorted(cards_by_chapter):
         all_cards.extend(cards_by_chapter[idx])
     wall_elapsed = time.monotonic() - wall_start
-    text_cost = estimate_cost(total_usage, model)
-    print(_VOCAB_TBL_SEP, file=sys.stderr)
-    print(_vocab_tbl_row("Total", session_words, wall_elapsed, format_cost(text_cost)), file=sys.stderr)
+    _print_summary(session_words, wall_elapsed, total_usage, model)
     return all_cards, total_usage
 
 
@@ -845,6 +1000,7 @@ def _process_parallel(
     provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
     lang: str, total: int, all_cards: list[Card], chapters_dir: str,
     is_programming: bool = False, topic: str = "",
+    all_chapters: list[Chapter] | None = None, existing_counts: dict[int, int] | None = None,
 ) -> tuple[list[Card], TokenUsage, list[str]]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
     session_cards = 0
@@ -852,30 +1008,32 @@ def _process_parallel(
     model = provider.model_name()
     chapter_start: dict[int, float] = {}
     all_media: list[str] = []
-    # Collect cards per chapter, sort by chapter index at the end
     cards_by_chapter: dict[int, list[Card]] = {}
 
     quiet = _QuietBar()
     wall_start = time.monotonic()
-    pbar = _ProgressBar(total=total, initial=total - len(chapters))
-    pbar.write(_TBL_HEADER)
-    pbar.write(_TBL_SEP)
+    cp = _ChapterProgress(all_chapters or chapters, existing=existing_counts)
+
+    def _run_chapter(ch: Chapter) -> tuple[list[Card], TokenUsage]:
+        cp.start_chapter(ch.index)
+        chapter_start[ch.index] = time.monotonic()
+        return generate_cards_for_chapter(
+            provider=provider,
+            chapter=ch,
+            book_title=book_title,
+            depth=depth,
+            language=lang,
+            progress_bar=quiet,
+            is_programming=is_programming,
+            topic=topic,
+            parallel_chunks=True,
+        )
+
     with ThreadPoolExecutor(max_workers=4) as executor:
-        future_to_chapter = {}
-        for chapter in chapters:
-            chapter_start[chapter.index] = time.monotonic()
-            future_to_chapter[executor.submit(
-                generate_cards_for_chapter,
-                provider=provider,
-                chapter=chapter,
-                book_title=book_title,
-                depth=depth,
-                language=lang,
-                progress_bar=quiet,
-                is_programming=is_programming,
-                topic=topic,
-                parallel_chunks=True,
-            )] = chapter
+        future_to_chapter = {
+            executor.submit(_run_chapter, chapter): chapter
+            for chapter in chapters
+        }
 
         for future in as_completed(future_to_chapter):
             chapter = future_to_chapter[future]
@@ -904,21 +1062,18 @@ def _process_parallel(
                     )
 
                 ch_cost = format_cost(estimate_cost(usage, model))
-                pbar.write(_tbl_row(chapter.title, len(cards), ch_elapsed, ch_cost))
-                pbar.update(1)
-                pbar.set_postfix_str(f"{session_cards} cards")
+                cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
             except Exception as e:
-                pbar.write(f"Warning: Failed to process \"{chapter.title}\": {e}")
-                pbar.update(1)
+                cp.complete_chapter(chapter.index, 0, ch_elapsed, "error")
+                print(f"Warning: Failed to process \"{chapter.title}\": {e}",
+                      file=sys.stderr)
 
-    pbar.close()
-    # Append cards in chapter order
+    cp.close()
     for idx in sorted(cards_by_chapter):
         all_cards.extend(cards_by_chapter[idx])
     wall_elapsed = time.monotonic() - wall_start
-    text_cost = estimate_cost(total_usage, model)
-    print(_TBL_SEP, file=sys.stderr)
-    print(_tbl_row("Total", session_cards, wall_elapsed, format_cost(text_cost)), file=sys.stderr)
+    cached = sum(existing_counts.values()) if existing_counts else 0
+    _print_summary(session_cards, wall_elapsed, total_usage, model, cached_cards=cached)
     return all_cards, total_usage, all_media
 
 
