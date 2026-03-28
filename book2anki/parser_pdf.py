@@ -24,6 +24,8 @@ CHAPTER_PATTERNS = [
 
 def parse_pdf(filepath: str) -> tuple[str, list[Chapter]]:
     """Parse a PDF file and return (book_title, chapters)."""
+    # Suppress MuPDF warnings about malformed PDF internals
+    fitz.TOOLS.mupdf_display_errors(False)
     doc = fitz.open(filepath)
 
     if doc.is_encrypted:

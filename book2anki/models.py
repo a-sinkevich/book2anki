@@ -90,6 +90,8 @@ def should_skip_chapter(title: str, text: str, book_title: str = "") -> bool:
         return True
     if title_lower.isdigit():
         return True
+    if len(title_lower) <= 2:
+        return True
     if len(text) < MIN_CHAPTER_LENGTH and not _is_numbered_title(title):
         return True
     if book_title and title.strip().lower() == book_title.strip().lower():
