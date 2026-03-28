@@ -73,7 +73,10 @@ def _from_outline(doc: fitz.Document) -> list[Chapter]:
 
     has_parts = any(re.match(r"^part\s+", t, re.IGNORECASE) for t, _ in level1)
     has_chapter_l2 = any(re.match(r"^chapter\s+", t, re.IGNORECASE) for t, _ in level2)
-    if level2 and (has_parts or has_chapter_l2):
+    if has_chapter_l2:
+        # Use only "Chapter N" entries — skip preface/appendix sub-sections
+        entries = [(t, p) for t, p in level2 if re.match(r"^chapter\s+", t, re.IGNORECASE)]
+    elif level2 and has_parts:
         entries = level2
     elif len(level1) >= 2:
         entries = level1
