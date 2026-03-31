@@ -177,6 +177,16 @@ Generate the flashcards now as a JSON array:"""
 VALID_LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2")
 
 
+_LANG_NAMES: dict[str, str] = {
+    "en": "English", "ru": "Russian", "de": "German", "fr": "French",
+    "es": "Spanish", "it": "Italian", "pt": "Portuguese", "zh": "Chinese",
+    "ja": "Japanese", "ko": "Korean", "no": "Norwegian", "nb": "Norwegian",
+    "sv": "Swedish", "da": "Danish", "nl": "Dutch", "pl": "Polish",
+    "tr": "Turkish", "ar": "Arabic", "he": "Hebrew", "uk": "Ukrainian",
+    "cs": "Czech", "fi": "Finnish",
+}
+
+
 def build_vocab_prompt(
     book_title: str,
     chapter_title: str,
@@ -187,6 +197,7 @@ def build_vocab_prompt(
     topic: str = "",
 ) -> str:
     """Build a prompt to extract vocabulary above the reader's level."""
+    native_name = _LANG_NAMES.get(native_language, native_language)
     if is_article:
         source_header = f'Article: "{book_title}"'
         text_label = "Article text"
@@ -206,7 +217,8 @@ def build_vocab_prompt(
 
 {source_header}
 Reader's level: {level} (CEFR)
-Translate to: {native_language}
+Reader's native language: {native_name}
+Translate to: {native_name}
 
 Extract words and phrases from the text that a {level}-level reader would NOT already know. \
 These are words above {level} — uncommon, literary, domain-specific, or idiomatic expressions \
@@ -216,13 +228,13 @@ Guidelines:
 - **Skip common words** that any {level} reader would know
 - **Include**: uncommon single words, idiomatic phrases, phrasal verbs, collocations, literary/formal vocabulary
 - **Context sentence**: use the EXACT sentence from the text where the word appears (or shorten it if too long, but keep the word in context). Wrap the target word/phrase in **&lt;b&gt;** tags to highlight it
-- **Translation**: natural translation to {native_language}, not word-for-word
+- **Translation**: natural translation to {native_name}, not word-for-word
 - **Definition**: brief explanation in the source language (1 sentence max)
 - **Example**: one additional example sentence (NOT from the text) showing typical usage. Wrap the target word/phrase in **&lt;b&gt;** tags
 - **Pronunciation**: IPA transcription (e.g. "/juːˈbɪkwɪtəs/") — skip for phrases and idioms
 - **Etymology**: brief word origin in the source language, starting with a label in that language (e.g. "Origin: Latin ubique = everywhere" for English, "Herkunft: Latein ubique = überall" for German). Skip for common roots or phrases
-- **Dictionary form**: always use the base/dictionary form in the "word" field (infinitive for verbs, singular for nouns, etc.), even if the text has an inflected form
-- **Grammar notes**: for languages where it helps learners, include essential grammatical info in the "word" field after the word — e.g. gender for nouns (der/die/das in German, м/ж/ср in Russian, le/la in French), plural forms, verb aspect, irregular patterns. Skip for English and when not useful
+- **Dictionary form**: ALWAYS use the base/dictionary form in the "word" field, even if the text has an inflected form. Verbs must be infinitive with "to" (e.g. text says "ensconced" → word is "to ensconce"; text says "crouching" → word is "to crouch"). Nouns must be singular. Adjectives must be positive degree
+- **Grammar notes**: when useful, add brief grammar info in the "word" field that the READER can understand — e.g. gender for nouns (der/die/das, le/la). Use notation the reader knows based on their native language. Skip for English and Russian words
 - **No proper nouns** (names of people, places, brands) unless they have a general meaning
 - **No numbers, dates, or abbreviations**
 - For phrases/idioms: the "word" field should contain the full phrase in base form

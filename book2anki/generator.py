@@ -594,8 +594,12 @@ def deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
 
 
 def vocab_word(question: str) -> str:
-    """Extract just the word from a vocab question field (strip IPA div)."""
-    return question.split("<div", 1)[0].strip().lower()
+    """Extract just the word from a vocab question field (strip HTML/IPA)."""
+    # Strip everything from first HTML tag onward (<div>, <br>, etc.)
+    w = re.split(r"<\w", question, maxsplit=1)[0]
+    # Also strip IPA on same line: "word /ipa/" or after newline
+    w = w.split("\n")[0]
+    return w.strip().lower()
 
 
 def _vocab_base(word: str) -> str:
