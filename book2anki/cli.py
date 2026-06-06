@@ -22,6 +22,7 @@ from book2anki.prompts import detect_programming
 from book2anki.diagram_gen import process_book_images
 from book2anki.packager import (
     package_cards, package_cards_flat, package_book_flat, package_vocab_flat,
+    package_vocab_production,
     package_single_chapter, load_existing_chapters, YOUTUBE_MODEL,
 )
 
@@ -115,6 +116,13 @@ def _parse_args() -> argparse.Namespace:
         "--level", default=None,
         choices=["A1", "A2", "B1", "B2", "C1", "C2"],
         help="Your CEFR language level (used with --vocab), e.g. --level B2",
+    )
+    parser.add_argument(
+        "--vocab-mode", default=None,
+        choices=["recognition", "production"],
+        help="Vocab card direction (used with --vocab): 'production' (default, "
+             "meaning → produce the English word, for speaking practice) or "
+             "'recognition' (English → meaning)",
     )
     parser.add_argument(
         "--flat", action="store_true",
@@ -317,6 +325,12 @@ def main() -> None:
         print("Error: --vocab requires --lang to specify your native language "
               "(e.g. --vocab --level B2 --lang ru)", file=sys.stderr)
         sys.exit(1)
+    if args.vocab_mode is not None and not args.vocab:
+        print("Error: --vocab-mode only applies in vocabulary mode (add --vocab)",
+              file=sys.stderr)
+        sys.exit(1)
+    if args.vocab_mode is None:
+        args.vocab_mode = "production"  # default when --vocab is used
 
     if is_url or is_yt:
         print(f'"{book_title}"')
@@ -324,6 +338,7 @@ def main() -> None:
         print(f'"{book_title}" — {len(chapters)} chapter(s) extracted.')
     if args.vocab:
         print(f"Mode: vocabulary extraction (level {args.level})"
+              f", cards={args.vocab_mode}"
               f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
               f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
               f"{', topic=' + args.topic if args.topic else ''}")
@@ -476,10 +491,15 @@ def main() -> None:
         if not output_path.endswith(".apkg"):
             output_path = str(Path(output_path) / f"{base_name}.apkg")
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        package_vocab_flat(all_cards, vocab_deck_title, output_path)
+
+        if args.vocab_mode == "production":
+            package_vocab_production(all_cards, vocab_deck_title, output_path)
+        else:
+            package_vocab_flat(all_cards, vocab_deck_title, output_path)
 
         cost = estimate_cost(total_usage, model)
-        print(f"\nDone! Generated {len(all_cards)} vocabulary cards. Cost: {format_cost(cost)}")
+        print(f"\nDone! Generated {len(all_cards)} vocabulary cards."
+              f" Cost: {format_cost(cost)}")
         print(f"Output: {output_path}\n")
         return
 

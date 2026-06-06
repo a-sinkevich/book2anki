@@ -84,6 +84,10 @@ book2anki "https://example.com/article" --vocab --level C1 --lang ru
 book2anki mybook.epub --vocab --level B2 --lang ru --chapters 1-3   # specific chapters
 book2anki mybook.epub --vocab --level C1 --lang ru --topic "medicine"  # only medical vocabulary
 
+# Vocab card direction (--vocab-mode): production (default) or recognition
+book2anki mybook.epub --vocab --level C1 --lang ru                            # production: meaning → produce the English word (default, speaking practice)
+book2anki mybook.epub --vocab --level C1 --lang ru --vocab-mode recognition   # English → meaning
+
 # Parallel processing — faster for multi-chapter books
 book2anki mybook.epub --parallel
 book2anki mybook.epub --vocab --level B2 --lang ru --parallel
@@ -135,6 +139,8 @@ With `--depth 0` or `--topic`, output is a single flat deck (no chapter subdecks
 
 Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` (e.g. `English B2 — The Great Gatsby`). Running for different chapter ranges produces files that merge into the same Anki deck on import.
 
+`--vocab-mode` controls card direction. `production` (default) shows the native-language meaning with the target word blanked out of its context sentence; you must produce the English word/phrase aloud — trains active recall for speaking. `recognition` flips it: it shows the English word and context and you recall the meaning — trains reading/listening. Both modes write the same deck name and share the `vocab::` tag prefix, so the "skip words already in Anki" dedup applies to either.
+
 ## How it works
 
 1. **Parse** — EPUB chapters via TOC, PDF via heading detection, web via article extraction + `srcset` for high-res images, YouTube via transcript API
@@ -181,6 +187,7 @@ Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. U
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Four depth levels**: summary (2-3 cards/chapter), core ideas, detailed, or comprehensive
 - **Vocabulary mode** (`--vocab --level B2 --lang ru`) — extract words/phrases above your CEFR level with IPA pronunciation, etymology, example sentences, and translation
+- **Speaking practice** (`--vocab-mode production`, the default) — production cards prompt in your native language with the word gapped out of its context, so you actively recall and say the English word instead of just recognizing it
 - **Anki-aware dedup** — reads your existing Anki collection to skip words you already have
 - **Topic filter** (`--topic`) — generate cards only about a specific subject (works with both regular and vocab modes)
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards

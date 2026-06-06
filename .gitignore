@@ -13,3 +13,4 @@ build/
 .mypy_cache/
 .env
 .book2anki.env
+.book2anki_*.txt

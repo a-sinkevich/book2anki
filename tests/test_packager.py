@@ -3,6 +3,7 @@ import tempfile
 
 from book2anki.models import Card
 from book2anki.packager import (
+    _gap_context,
     _read_cards_from_apkg,
     _slugify,
     _slugify_for_filename,
@@ -10,6 +11,7 @@ from book2anki.packager import (
     chapter_filename,
     load_existing_chapters,
     package_single_chapter,
+    package_vocab_production,
 )
 
 
@@ -94,3 +96,33 @@ def test_load_existing_chapters_empty_dir():
 
 def test_load_existing_chapters_nonexistent_dir():
     assert load_existing_chapters("/nonexistent/path") == {}
+
+
+def test_gap_context_blanks_bolded_word():
+    assert (
+        _gap_context("She had to <b>come to grips with</b> the new reality.")
+        == "She had to <b>_____</b> the new reality."
+    )
+
+
+def test_gap_context_no_bold_returns_empty():
+    assert _gap_context("no highlighted word here") == ""
+    assert _gap_context("") == ""
+
+
+def test_package_vocab_production_writes_valid_deck():
+    cards = [
+        Card(
+            question="to come to grips with",
+            answer="примириться с",
+            chapter_title="Ch 1",
+            book_title="Book",
+            example="She had to <b>come to grips with</b> the new reality.",
+            image="To begin to deal with something difficult",
+            source_url="It took months to <b>come to grips with</b> the loss.",
+        ),
+    ]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "speak.apkg")
+        package_vocab_production(cards, "Book C1 (speaking)", out)
+        assert os.path.getsize(out) > 0

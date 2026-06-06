@@ -145,34 +145,7 @@ ARTICLE_MODEL = genanki.Model(
     css=CARD_CSS,
 )
 
-VOCAB_MODEL = genanki.Model(
-    model_id=1607392325,
-    name="book2anki Vocab",
-    fields=[
-        {"name": "Word"},
-        {"name": "Context"},
-        {"name": "Translation"},
-        {"name": "Definition"},
-        {"name": "Example"},
-        {"name": "Book"},
-        {"name": "Chapter"},
-    ],
-    templates=[
-        {
-            "name": "Card 1",
-            "qfmt": (
-                '<div class="word">{{Word}}</div>'
-                '<div class="context">{{Context}}</div>'
-            ),
-            "afmt": (
-                '{{FrontSide}}<hr id="answer">'
-                '<div class="translation">{{Translation}}</div>'
-                '{{#Definition}}<div class="definition">{{Definition}}</div>{{/Definition}}'
-                '{{#Example}}<div class="example">{{Example}}</div>{{/Example}}'
-            ),
-        },
-    ],
-    css=CARD_CSS + """\
+_VOCAB_CSS = """\
 .word {
     font-size: 26px;
     font-weight: bold;
@@ -227,6 +200,75 @@ VOCAB_MODEL = genanki.Model(
 }
 .card.night_mode .etymology {
     color: #777;
+}
+"""
+
+
+VOCAB_MODEL = genanki.Model(
+    model_id=1607392325,
+    name="book2anki Vocab",
+    fields=[
+        {"name": "Word"},
+        {"name": "Context"},
+        {"name": "Translation"},
+        {"name": "Definition"},
+        {"name": "Example"},
+        {"name": "Book"},
+        {"name": "Chapter"},
+    ],
+    templates=[
+        {
+            "name": "Card 1",
+            "qfmt": (
+                '<div class="word">{{Word}}</div>'
+                '<div class="context">{{Context}}</div>'
+            ),
+            "afmt": (
+                '{{FrontSide}}<hr id="answer">'
+                '<div class="translation">{{Translation}}</div>'
+                '{{#Definition}}<div class="definition">{{Definition}}</div>{{/Definition}}'
+                '{{#Example}}<div class="example">{{Example}}</div>{{/Example}}'
+            ),
+        },
+    ],
+    css=CARD_CSS + _VOCAB_CSS,
+)
+
+# Production / "speaking" vocab card: prompts in the reader's native language with
+# the target word blanked out of the context sentence, so the learner has to
+# actively recall and produce the English word/phrase (not just recognize it).
+VOCAB_PRODUCTION_MODEL = genanki.Model(
+    model_id=1607392326,
+    name="book2anki Vocab (Speaking)",
+    fields=[
+        {"name": "Word"},
+        {"name": "ContextGap"},
+        {"name": "Context"},
+        {"name": "Translation"},
+        {"name": "Definition"},
+        {"name": "Example"},
+        {"name": "Book"},
+        {"name": "Chapter"},
+    ],
+    templates=[
+        {
+            "name": "Card 1",
+            "qfmt": (
+                '<div class="translation">{{Translation}}</div>'
+                '{{#ContextGap}}<div class="context gap-context">{{ContextGap}}</div>{{/ContextGap}}'
+            ),
+            "afmt": (
+                '{{FrontSide}}<hr id="answer">'
+                '<div class="word">{{Word}}</div>'
+                '{{#Context}}<div class="context">{{Context}}</div>{{/Context}}'
+                '{{#Definition}}<div class="definition">{{Definition}}</div>{{/Definition}}'
+                '{{#Example}}<div class="example">{{Example}}</div>{{/Example}}'
+            ),
+        },
+    ],
+    css=CARD_CSS + _VOCAB_CSS + """\
+.gap-context {
+    margin-top: 14px;
 }
 """,
 )
@@ -411,6 +453,57 @@ def package_vocab_flat(
                     card.book_title, card.chapter_title],
             tags=[tag],
             guid=genanki.guid_for(card.question, deck_name, "vocab"),
+        )
+        deck.add_note(note)
+
+    package = genanki.Package([deck])
+    package.write_to_file(output_path)
+
+
+_BOLD_RE = re.compile(r"<b>.*?</b>", re.IGNORECASE | re.DOTALL)
+
+
+def _gap_context(context: str) -> str:
+    """Blank out the bolded target word/phrase in a context sentence.
+
+    The vocab prompt wraps the target word in <b>…</b>; we replace it with an
+    underlined gap so the learner must produce the word. Returns "" when the
+    sentence has no highlighted word to blank (front then shows translation only).
+    """
+    if not context or not _BOLD_RE.search(context):
+        return ""
+    return _BOLD_RE.sub("<b>_____</b>", context)
+
+
+def package_vocab_production(
+    cards: list[Card], deck_name: str, output_path: str,
+    tag_name: str = "",
+) -> None:
+    """Package vocabulary cards into a flat deck of production ("speaking") cards.
+
+    Same extracted data as the recognition deck, but each card prompts in the
+    reader's native language with the target word gapped out of its context, to
+    train active recall (native meaning → produce the English word/phrase).
+    """
+    deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
+    # Use the same "vocab::" tag prefix as recognition cards so the existing-Anki
+    # dedup (read_vocab_words) picks these up too — the word is the first field in
+    # both models, so the same extraction works.
+    tag = f"vocab::{_slugify(tag_name or deck_name)}"
+
+    for card in cards:
+        word = _escape_field(card.question)
+        context = _escape_field(card.example) if card.example else ""
+        context_gap = _escape_field(_gap_context(card.example)) if card.example else ""
+        translation = _escape_field(card.answer)
+        definition = _escape_field(card.image) if card.image else ""
+        example = _escape_field(card.source_url) if card.source_url else ""
+        note = genanki.Note(
+            model=VOCAB_PRODUCTION_MODEL,
+            fields=[word, context_gap, context, translation, definition,
+                    example, card.book_title, card.chapter_title],
+            tags=[tag],
+            guid=genanki.guid_for(card.question, deck_name, "vocab-speak"),
         )
         deck.add_note(note)
 
