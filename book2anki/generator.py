@@ -16,7 +16,7 @@ PARALLEL_WORKERS = 8
 
 PRICING: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6": (3.0, 15.0),
-    "claude-opus-4-6": (15.0, 75.0),
+    "claude-opus-4-8": (15.0, 75.0),
 }
 
 

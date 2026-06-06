@@ -41,7 +41,7 @@ class ClaudeProvider(LLMProvider):
         """Switch to a different model."""
         models = {
             "sonnet": "claude-sonnet-4-6",
-            "opus": "claude-opus-4-6",
+            "opus": "claude-opus-4-8",
         }
         self.model = models.get(model_name, model_name)
 
