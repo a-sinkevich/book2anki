@@ -11,6 +11,9 @@ from book2anki.prompts import build_prompt, build_vocab_prompt
 
 CHARS_PER_TOKEN = 4
 
+# Max concurrent LLM requests when --parallel is set (chapters and chunks)
+PARALLEL_WORKERS = 8
+
 PRICING: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-opus-4-6": (15.0, 75.0),
@@ -186,7 +189,7 @@ def _process_chunks_parallel(
     futures = {}
     done_count = 0
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
         for i, chunk in enumerate(chunks):
             futures[executor.submit(
                 _generate_with_retries,
@@ -316,7 +319,7 @@ def _process_vocab_chunks_parallel(
     futures = {}
     done_count = 0
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
         for i, chunk in enumerate(chunks):
             futures[executor.submit(
                 _generate_vocab_with_retries,

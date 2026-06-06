@@ -15,7 +15,7 @@ from book2anki.language import detect_language
 from book2anki.generator import (
     LLMProvider, generate_cards_for_chapter, generate_vocab_for_chapter,
     estimate_cost, format_cost, deduplicate, deduplicate_vocab,
-    consolidate_cards, vocab_word, _vocab_base,
+    consolidate_cards, vocab_word, _vocab_base, PARALLEL_WORKERS,
 )
 from book2anki.anki_reader import read_vocab_words
 from book2anki.prompts import detect_programming
@@ -985,7 +985,7 @@ def _process_vocab_parallel(
             parallel_chunks=True,
         )
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
         future_to_chapter = {
             executor.submit(_run_vocab, chapter): chapter
             for chapter in chapters
@@ -1049,7 +1049,7 @@ def _process_parallel(
             parallel_chunks=True,
         )
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
         future_to_chapter = {
             executor.submit(_run_chapter, chapter): chapter
             for chapter in chapters
