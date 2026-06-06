@@ -650,35 +650,83 @@ def _bold_word_in_context(context: str, word: str) -> str:
     return pattern.sub(lambda m: f"<b>{m.group(0)}</b>", context, count=1)
 
 
+def _gap_key(context: str) -> str:
+    """Context sentence with the target word blanked, normalized.
+
+    Two cards generated from the same sentence (but with different — possibly
+    misspelled — headwords) share the same gap key, which lets us recognize
+    them as the same word.
+    """
+    if not context:
+        return ""
+    s = re.sub(r"<b>.*?</b>", "\x00", context, flags=re.IGNORECASE | re.DOTALL)
+    s = re.sub(r"<[^>]+>", " ", s)
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def _context_word(context: str) -> str:
+    """The actual word highlighted in a context sentence (book's real spelling)."""
+    m = re.search(r"<b>(.*?)</b>", context, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return ""
+    return re.sub(r"<[^>]+>", "", m.group(1)).strip().lower()
+
+
+def _spelling_score(word: str, truth: str) -> float:
+    """How closely a headword matches the book's actual word (0..1, -1 if unknown)."""
+    if not truth:
+        return -1.0
+    return SequenceMatcher(None, word, truth).ratio()
+
+
 def deduplicate_vocab(cards: list[Card],
                       max_contexts: int = 3) -> list[Card]:
-    """Merge duplicate vocab cards, combining context sentences up to max_contexts."""
+    """Merge duplicate vocab cards, combining context sentences up to max_contexts.
+
+    Two cards are the same word if their normalized base forms match, or if they
+    were drawn from the same context sentence (different spellings of the same
+    word — an LLM spelling variant). When variants merge, the headword whose
+    spelling best matches the book's actual highlighted word is kept, so
+    misspellings/hallucinations are dropped.
+    """
     unique: list[Card] = []
     for card in cards:
+        card_base = _vocab_base(vocab_word(card.question))
+        card_gap = _gap_key(card.example)
         merged = False
         for existing in unique:
             word = vocab_word(existing.question)
-            if _vocab_base(vocab_word(card.question)) == _vocab_base(word):
-                # Move extra contexts to answer side (source_url = examples)
-                all_examples = [
-                    _bold_word_in_context(e, word)
-                    for e in existing.source_url.split(_SEP) if e.strip()
-                ]
-                if card.example and card.example != existing.example:
-                    bolded = _bold_word_in_context(card.example, word)
-                    if len(all_examples) < max_contexts and bolded not in all_examples:
-                        all_examples.append(bolded)
-                if card.source_url:
-                    for ex in card.source_url.split(_SEP):
-                        ex = ex.strip()
-                        if not ex or len(all_examples) >= max_contexts:
-                            continue
-                        bolded = _bold_word_in_context(ex, word)
-                        if bolded not in all_examples:
-                            all_examples.append(bolded)
-                existing.source_url = _SEP.join(all_examples)
-                merged = True
-                break
+            same_base = _vocab_base(word) == card_base
+            same_ctx = bool(card_gap) and _gap_key(existing.example) == card_gap
+            if not (same_base or same_ctx):
+                continue
+
+            # Keep the spelling that best matches the book's actual word.
+            truth = _context_word(existing.example) or _context_word(card.example)
+            if _spelling_score(card_base, truth) > _spelling_score(
+                    _vocab_base(word), truth):
+                existing.question = card.question
+                existing.image = card.image
+                word = vocab_word(existing.question)
+
+            # Collect distinct contexts (by gapped form) on the answer side,
+            # excluding the primary context already shown on the card.
+            primary = _gap_key(existing.example)
+            seen_keys = {primary} if primary else set()
+            all_examples: list[str] = []
+            for src in (existing.source_url, card.example, card.source_url):
+                for ex in src.split(_SEP):
+                    ex = ex.strip()
+                    if not ex or len(all_examples) >= max_contexts:
+                        continue
+                    key = _gap_key(ex)
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    all_examples.append(_bold_word_in_context(ex, word))
+            existing.source_url = _SEP.join(all_examples)
+            merged = True
+            break
         if not merged:
             unique.append(card)
     return unique

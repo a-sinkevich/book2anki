@@ -234,6 +234,7 @@ Guidelines:
 - **Pronunciation**: IPA transcription (e.g. "/juːˈbɪkwɪtəs/") — skip for phrases and idioms
 - **Etymology**: brief word origin in the source language, starting with a label in that language (e.g. "Origin: Latin ubique = everywhere" for English, "Herkunft: Latein ubique = überall" for German). Skip for common roots or phrases
 - **Dictionary form**: ALWAYS use the base/dictionary form in the "word" field, even if the text has an inflected form. Verbs must be infinitive with "to" (e.g. text says "ensconced" → word is "to ensconce"; text says "crouching" → word is "to crouch"). Nouns must be singular. Adjectives must be positive degree
+- **Correct spelling**: spell the word using standard, correct dictionary spelling. It must be the same word that appears highlighted in the context sentence (just its base form) — never invent, misspell, or guess a word that is not actually in the text
 - **Grammar notes**: when useful, add brief grammar info in the "word" field that the READER can understand — e.g. gender for nouns (der/die/das, le/la). Use notation the reader knows based on their native language. Skip for English and Russian words
 - **No proper nouns** (names of people, places, brands) unless they have a general meaning
 - **No numbers, dates, or abbreviations**

@@ -1,4 +1,10 @@
-from book2anki.generator import deduplicate as _deduplicate, _parse_json_response, _split_into_chunks
+from book2anki.generator import (
+    deduplicate as _deduplicate,
+    deduplicate_vocab,
+    _parse_json_response,
+    _split_into_chunks,
+    vocab_word,
+)
 from book2anki.models import Card
 
 import pytest
@@ -80,3 +86,46 @@ class TestDeduplicate:
 
     def test_empty_list(self):
         assert _deduplicate([]) == []
+
+
+def _vcard(word: str, context: str, ipa: str = "") -> Card:
+    q = word + (f'<div class="ipa">{ipa}</div>' if ipa else "")
+    return Card(
+        question=q,
+        answer="translation",
+        chapter_title="Ch",
+        book_title="Book",
+        example=context,
+        image="definition",
+    )
+
+
+class TestDeduplicateVocab:
+    def test_same_word_same_spelling_merges(self):
+        cards = [
+            _vcard("to traipse", "She would <b>traipse</b> across the field."),
+            _vcard("to traipse", "They <b>traipsed</b> home in the rain."),
+        ]
+        result = deduplicate_vocab(cards)
+        assert len(result) == 1
+
+    def test_spelling_variants_same_sentence_merge_to_correct(self):
+        sentence = "He watched her <b>{}</b> across the muddy yard."
+        cards = [
+            _vcard("to trapess", sentence.format("traipse"), "/trəˈpɛs/"),
+            _vcard("to traipse", sentence.format("traipse"), "/treɪps/"),
+            _vcard("to trapesse", sentence.format("traipse"), "/trəˈpɛs/"),
+            _vcard("to trapese", sentence.format("traipse"), "/trəˈpeɪz/"),
+        ]
+        result = deduplicate_vocab(cards)
+        assert len(result) == 1
+        # The correctly-spelled headword (matching the book's word) is kept.
+        assert vocab_word(result[0].question) == "to traipse"
+
+    def test_different_words_not_merged(self):
+        cards = [
+            _vcard("affect", "It did not <b>affect</b> the outcome."),
+            _vcard("effect", "It had no <b>effect</b> on the outcome at all."),
+        ]
+        result = deduplicate_vocab(cards)
+        assert len(result) == 2
