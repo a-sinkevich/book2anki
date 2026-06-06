@@ -4,6 +4,7 @@ import tempfile
 from book2anki.models import Card
 from book2anki.packager import (
     _gap_context,
+    _split_etymology,
     _read_cards_from_apkg,
     _slugify,
     _slugify_for_filename,
@@ -108,6 +109,18 @@ def test_gap_context_blanks_bolded_word():
 def test_gap_context_no_bold_returns_empty():
     assert _gap_context("no highlighted word here") == ""
     assert _gap_context("") == ""
+
+
+def test_split_etymology_separates_bundled_field():
+    bundled = 'Present everywhere<div class="etymology">Latin ubique = everywhere</div>'
+    definition, etymology = _split_etymology(bundled)
+    assert definition == "Present everywhere"
+    assert etymology == "Latin ubique = everywhere"
+
+
+def test_split_etymology_no_etymology():
+    assert _split_etymology("Just a definition") == ("Just a definition", "")
+    assert _split_etymology("") == ("", "")
 
 
 def test_package_vocab_production_writes_valid_deck():

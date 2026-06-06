@@ -234,11 +234,12 @@ VOCAB_MODEL = genanki.Model(
     css=CARD_CSS + _VOCAB_CSS,
 )
 
-# Production / "speaking" vocab card: prompts in the reader's native language with
-# the target word blanked out of the context sentence, so the learner has to
-# actively recall and produce the English word/phrase (not just recognize it).
+# Production / "speaking" vocab card: prompts in the reader's native language (plus
+# the English definition as a sense cue) with the target word blanked out of the
+# context sentence, so the learner has to actively recall and produce the English
+# word/phrase. The etymology stays on the back so it doesn't give the word away.
 VOCAB_PRODUCTION_MODEL = genanki.Model(
-    model_id=1607392326,
+    model_id=1607392327,
     name="book2anki Vocab (Speaking)",
     fields=[
         {"name": "Word"},
@@ -246,6 +247,7 @@ VOCAB_PRODUCTION_MODEL = genanki.Model(
         {"name": "Context"},
         {"name": "Translation"},
         {"name": "Definition"},
+        {"name": "Etymology"},
         {"name": "Example"},
         {"name": "Book"},
         {"name": "Chapter"},
@@ -255,13 +257,14 @@ VOCAB_PRODUCTION_MODEL = genanki.Model(
             "name": "Card 1",
             "qfmt": (
                 '<div class="translation">{{Translation}}</div>'
+                '{{#Definition}}<div class="definition">{{Definition}}</div>{{/Definition}}'
                 '{{#ContextGap}}<div class="context gap-context">{{ContextGap}}</div>{{/ContextGap}}'
             ),
             "afmt": (
                 '{{FrontSide}}<hr id="answer">'
                 '<div class="word">{{Word}}</div>'
                 '{{#Context}}<div class="context">{{Context}}</div>{{/Context}}'
-                '{{#Definition}}<div class="definition">{{Definition}}</div>{{/Definition}}'
+                '{{#Etymology}}<div class="etymology">{{Etymology}}</div>{{/Etymology}}'
                 '{{#Example}}<div class="example">{{Example}}</div>{{/Example}}'
             ),
         },
@@ -475,6 +478,26 @@ def _gap_context(context: str) -> str:
     return _BOLD_RE.sub("<b>_____</b>", context)
 
 
+_ETYM_RE = re.compile(r'<div class="etymology">(.*?)</div>', re.IGNORECASE | re.DOTALL)
+
+
+def _split_etymology(definition: str) -> tuple[str, str]:
+    """Split a bundled Definition field into (definition, etymology) text.
+
+    The generator stores etymology as a `<div class="etymology">…</div>` appended
+    to the definition. Production cards show the definition on the front and the
+    etymology on the back, so they need to be separated. Returns the etymology's
+    inner text (no wrapper); the template re-wraps it.
+    """
+    if not definition:
+        return "", ""
+    match = _ETYM_RE.search(definition)
+    if not match:
+        return definition, ""
+    rest = (definition[:match.start()] + definition[match.end():]).strip()
+    return rest, match.group(1).strip()
+
+
 def package_vocab_production(
     cards: list[Card], deck_name: str, output_path: str,
     tag_name: str = "",
@@ -496,12 +519,14 @@ def package_vocab_production(
         context = _escape_field(card.example) if card.example else ""
         context_gap = _escape_field(_gap_context(card.example)) if card.example else ""
         translation = _escape_field(card.answer)
-        definition = _escape_field(card.image) if card.image else ""
+        def_text, etym_text = _split_etymology(card.image)
+        definition = _escape_field(def_text) if def_text else ""
+        etymology = _escape_field(etym_text) if etym_text else ""
         example = _escape_field(card.source_url) if card.source_url else ""
         note = genanki.Note(
             model=VOCAB_PRODUCTION_MODEL,
             fields=[word, context_gap, context, translation, definition,
-                    example, card.book_title, card.chapter_title],
+                    etymology, example, card.book_title, card.chapter_title],
             tags=[tag],
             guid=genanki.guid_for(card.question, deck_name, "vocab-speak"),
         )

@@ -139,7 +139,7 @@ With `--depth 0` or `--topic`, output is a single flat deck (no chapter subdecks
 
 Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` (e.g. `English B2 — The Great Gatsby`). Running for different chapter ranges produces files that merge into the same Anki deck on import.
 
-`--vocab-mode` controls card direction. `production` (default) shows the native-language meaning with the target word blanked out of its context sentence; you must produce the English word/phrase aloud — trains active recall for speaking. `recognition` flips it: it shows the English word and context and you recall the meaning — trains reading/listening. Both modes write the same deck name and share the `vocab::` tag prefix, so the "skip words already in Anki" dedup applies to either.
+`--vocab-mode` controls card direction. `production` (default) shows the native-language meaning, the English definition, and the context sentence with the target word blanked out; you must produce the English word/phrase aloud — trains active recall for speaking (etymology stays on the back so it doesn't give the word away). `recognition` flips it: it shows the English word and context and you recall the meaning — trains reading/listening. Both modes write the same deck name and share the `vocab::` tag prefix, so the "skip words already in Anki" dedup applies to either.
 
 ## How it works
 
