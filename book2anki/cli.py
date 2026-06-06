@@ -131,7 +131,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model", default=None,
         choices=["sonnet", "opus", "cli"],
-        help="Model to use: sonnet (default), opus (~15x cost), cli (use claude CLI)",
+        help="Model to use: sonnet (default), opus (~5x cost), cli (use claude CLI)",
     )
     return parser.parse_args()
 

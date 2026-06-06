@@ -92,9 +92,12 @@ book2anki mybook.epub --vocab --level C1 --lang ru --vocab-mode recognition   # 
 book2anki mybook.epub --parallel
 book2anki mybook.epub --vocab --level B2 --lang ru --parallel
 
+# Single combined deck instead of per-chapter files
+book2anki mybook.epub --flat
+
 # Model selection
 book2anki mybook.epub --model sonnet   # Sonnet (faster, cheaper via API)
-book2anki mybook.epub --model opus     # Opus via API (~15x cost)
+book2anki mybook.epub --model opus     # Opus via API (~5x cost)
 book2anki mybook.epub --model cli      # Force claude CLI
 
 # Combine flags
@@ -180,14 +183,14 @@ When using the **Anthropic API**, typical costs:
 | YouTube video (1 hour) | ~$0.05 | ~$0.06 | ~$0.07 | ~$0.13 |
 | Book (full) | $0.20–$1.00 | $0.50–$2.00 | $1.00–$3.00 | $2.00–$5.00 |
 
-Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. Using `--model opus` via API is ~15x more expensive than Sonnet. Tip: use `--chapters` to process specific chapters instead of the whole book.
+Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. Using `--model opus` via API is ~5x more expensive than Sonnet ($15/$75 vs $3/$15 per million input/output tokens). Tip: use `--chapters` to process specific chapters instead of the whole book.
 
 ## Features
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Four depth levels**: summary (2-3 cards/chapter), core ideas, detailed, or comprehensive
 - **Vocabulary mode** (`--vocab --level B2 --lang ru`) — extract words/phrases above your CEFR level with IPA pronunciation, etymology, example sentences, and translation
-- **Speaking practice** (`--vocab-mode production`, the default) — production cards prompt in your native language with the word gapped out of its context, so you actively recall and say the English word instead of just recognizing it
+- **Speaking practice** (`--vocab-mode production`, the default) — production cards prompt in your native language (plus the English definition) with the word gapped out of its context, so you actively recall and say the English word instead of just recognizing it
 - **Anki-aware dedup** — reads your existing Anki collection to skip words you already have
 - **Topic filter** (`--topic`) — generate cards only about a specific subject (works with both regular and vocab modes)
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
