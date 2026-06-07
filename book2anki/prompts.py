@@ -135,7 +135,6 @@ def build_prompt(
             "<pre><code>...</code></pre> tags."
         )
 
-    # Multi-angle redundancy: at depth 2-3, test key concepts from multiple angles
     redundancy_rule = ""
     if depth >= 2:
         redundancy_rule = (

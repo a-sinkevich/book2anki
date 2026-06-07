@@ -23,12 +23,14 @@ class CLIProvider(LLMProvider):
     def generate(self, prompt: str) -> tuple[str, TokenUsage]:
         # Write prompt to temp file to avoid ARG_MAX limits.
         # Then ask claude to read the file (claude -p doesn't read from stdin).
-        # Use current directory so claude CLI has read permission (system
-        # temp dirs like /var/folders may be sandboxed on macOS).
+        # Use system temp dir so the claude CLI doesn't pick up the project's
+        # .claude/ directory and load extra context, which can cause slowdowns.
         fd, prompt_path = tempfile.mkstemp(
-            suffix=".txt", prefix=".book2anki_", dir=".",
+            suffix=".txt", prefix=".book2anki_",
         )
         prompt_abs = os.path.abspath(prompt_path)
+        # Run claude from the temp file's directory to avoid project detection.
+        cwd = os.path.dirname(prompt_abs)
         try:
             with os.fdopen(fd, "w") as f:
                 f.write(prompt)
@@ -51,6 +53,7 @@ class CLIProvider(LLMProvider):
                 stderr=subprocess.PIPE,
                 text=True,
                 env=env,
+                cwd=cwd,
             )
 
             stdout, stderr = proc.communicate(timeout=600)
