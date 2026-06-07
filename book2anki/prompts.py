@@ -95,12 +95,9 @@ def build_prompt(
         text_label = "Chapter text"
 
     example_rule = (
-        '\n- **Example field**: include an optional "example" field with 1-2 concrete illustrations '
-        "when it helps understand the concept — prefer vivid, surprising, or emotionally striking examples "
-        "(a dramatic historical event, a counterintuitive outcome, a famous failure) over generic ones. "
-        "Memorable examples dramatically improve retention. Can go beyond the book's own examples. "
-        "Use <br><br> to separate multiple examples. "
-        'Leave "example" as empty string when not needed — not every card needs one'
+        '\n- **Example field**: include an optional "example" field — prefer vivid, surprising, '
+        "or counterintuitive illustrations over generic ones. Can go beyond the book's own examples. "
+        'Leave "example" as empty string when not needed'
     )
 
     programming_rules = ""
@@ -111,13 +108,10 @@ def build_prompt(
 - **Trade-off cards**: when the text compares approaches, create cards that test understanding of trade-offs
 - **No trivial syntax cards**: don't create cards for basic language syntax that any developer would know"""
         example_rule = (
-            '\n- **Example field**: include an optional "example" field with 1-2 illustrative code snippets '
-            "when it helps understand the concept — prefer striking before/after contrasts or "
-            "surprising edge cases over bland snippets. Use <pre><code> tags for code. "
-            "Can go beyond the book's own examples. "
-            "Use <br><br> to separate multiple examples. "
-            'Leave "example" as empty string when not needed — not every card needs one. '
-            "Good candidates: patterns, techniques, refactorings, before/after transformations"
+            '\n- **Example field**: include an optional "example" field with illustrative code snippets. '
+            "Prefer striking before/after contrasts or surprising edge cases. "
+            "Use <pre><code> tags for code. "
+            'Leave "example" as empty string when not needed'
         )
 
     has_book_images = bool(book_image_captions)
@@ -145,10 +139,8 @@ def build_prompt(
     redundancy_rule = ""
     if depth >= 2:
         redundancy_rule = (
-            "\n- **Test key concepts from multiple angles**: for important ideas, create cards that "
-            "approach the same knowledge differently — e.g. a definition card AND an application card "
-            '("Given scenario Y, which concept applies?"). Each card must still follow the minimum '
-            "information principle"
+            "\n- **Test key concepts from multiple angles**: for important ideas, "
+            "add both a definition card and an application card"
         )
 
     return f"""You are an expert at creating Anki flashcards from {"articles" if is_article else "books"}.
@@ -159,16 +151,15 @@ Language: {language}
 {depth_instruction}{topic_instruction}
 
 Guidelines:
-- **Minimum information principle**: one idea per card
-- **Never put lists in answers**: if the text lists N items (causes, types, steps, components), make N separate cards, each testing ONE item with context — never bundle them into a single answer. If order matters, use linking questions (e.g. "What step follows X in the Y process?")
+- **Minimum information principle**: one idea per card. Prefer splitting long lists into separate cards over bundling them into one answer
 - **Mix question types**: factual recall, conceptual understanding, and application
 - **Write cards in {language}**
 - **No trivial cards**: every card should test something genuinely worth remembering
 - **No meta-cards**: never create cards about the book's structure, what a chapter covers, the author's approach, or how the book is organized. Only test the actual subject matter — the ideas, facts, and concepts themselves. If a chapter is mostly introductory or structural with little substantive content, generate fewer cards
 {context_rule}
-- **Disambiguate similar concepts**: when the text contains easily confused terms, processes, or facts, highlight the distinguishing feature in the question or answer — don't leave it to the reader to figure out which is which
-- **Add a topic label when ambiguous**: if a term could belong to multiple fields, start the question with a brief domain label in parentheses — e.g. "(genetics) What is GRE?" — so the reader's mind activates the right context immediately
-- **Build on fundamentals**: when a concept depends on a more basic one, include the prerequisite in the question phrasing rather than assuming the reader remembers a previous card
+- **Disambiguate confusable concepts**: highlight the distinguishing feature when similar terms or processes appear
+- **Add a domain label**: if a term is ambiguous across fields, prefix the question — e.g. "(genetics) What is GRE?"
+- **Build on fundamentals**: include prerequisite concepts in the question rather than assuming prior cards
 - **Logical order**: arrange cards so foundational concepts come first — definitions before applications, causes before effects
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
