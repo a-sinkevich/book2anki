@@ -14,3 +14,4 @@ build/
 .env
 .book2anki.env
 .book2anki_*.txt
+.claude/

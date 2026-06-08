@@ -436,6 +436,70 @@ def package_cards_flat(
     package.write_to_file(output_path)
 
 
+def _practice_note(
+    card: Card, deck_name: str,
+) -> genanki.Note:
+    """Build a genanki Note for a practice card."""
+    q = _escape_field(card.question)
+    a = _escape_field(card.answer)
+    ex = _escape_field(card.example) if card.example else ""
+    tag = f"practice::{_slugify(deck_name)}"
+    return genanki.Note(
+        model=CARD_MODEL,
+        fields=[q, a, ex, "", card.chapter_title, card.book_title],
+        tags=[tag],
+        guid=genanki.guid_for(card.question, deck_name, "practice"),
+    )
+
+
+def package_practice(
+    cards: list[Card], deck_name: str, output_path: str,
+) -> None:
+    """Package all practice cards into a single .apkg with chapter subdecks."""
+    grouped = _group_cards_by_chapter(cards)
+    decks = []
+    for i, (chapter_title, chapter_cards) in enumerate(grouped):
+        padded = str(i + 1).zfill(2)
+        clean = _strip_chapter_prefix(chapter_title)
+        subdeck = f"{deck_name}::{padded} - {clean}"
+        deck = genanki.Deck(deck_id=_stable_id(subdeck), name=subdeck)
+        for card in chapter_cards:
+            deck.add_note(_practice_note(card, deck_name))
+        decks.append(deck)
+    package = genanki.Package(decks)
+    package.write_to_file(output_path)
+
+
+def package_practice_flat(
+    cards: list[Card], deck_name: str, output_path: str,
+) -> None:
+    """Package practice cards into a single flat deck (no subdecks)."""
+    deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
+    for card in cards:
+        deck.add_note(_practice_note(card, deck_name))
+    package = genanki.Package([deck])
+    package.write_to_file(output_path)
+
+
+def package_practice_chapter(
+    cards: list[Card], deck_name: str, chapter_index: int, output_dir: str,
+) -> str:
+    """Save a single chapter's practice cards. Returns filepath."""
+    os.makedirs(output_dir, exist_ok=True)
+    chapter_title = cards[0].chapter_title
+    padded = str(chapter_index + 1).zfill(2)
+    clean = _strip_chapter_prefix(chapter_title)
+    subdeck = f"{deck_name}::{padded} - {clean}"
+    deck = genanki.Deck(deck_id=_stable_id(subdeck), name=subdeck)
+    for card in cards:
+        deck.add_note(_practice_note(card, deck_name))
+    base = chapter_filename(chapter_title, chapter_index)
+    filepath = os.path.join(output_dir, f"{base}.apkg")
+    package = genanki.Package([deck])
+    package.write_to_file(filepath)
+    return filepath
+
+
 def package_vocab_flat(
     cards: list[Card], deck_name: str, output_path: str,
     tag_name: str = "",

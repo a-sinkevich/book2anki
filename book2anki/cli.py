@@ -14,6 +14,7 @@ from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
 from book2anki.generator import (
     LLMProvider, generate_cards_for_chapter, generate_vocab_for_chapter,
+    generate_practice_for_chapter,
     estimate_cost, format_cost, deduplicate, deduplicate_vocab,
     consolidate_cards, vocab_word, _vocab_base, PARALLEL_WORKERS,
 )
@@ -22,7 +23,8 @@ from book2anki.prompts import detect_programming
 from book2anki.diagram_gen import process_book_images
 from book2anki.packager import (
     package_cards, package_cards_flat, package_book_flat, package_vocab_flat,
-    package_vocab_production,
+    package_vocab_production, package_practice, package_practice_flat,
+    package_practice_chapter,
     package_single_chapter, load_existing_chapters, YOUTUBE_MODEL,
 )
 
@@ -127,6 +129,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--flat", action="store_true",
         help="Output a single .apkg file instead of per-chapter files",
+    )
+    parser.add_argument(
+        "--practice", action="store_true",
+        help="Practice mode: generate programming exercise cards (katas, step-by-step "
+             "drills, variations) instead of theory cards. Only for programming books",
     )
     parser.add_argument(
         "--model", default=None,
@@ -331,6 +338,10 @@ def main() -> None:
         sys.exit(1)
     if args.vocab_mode is None:
         args.vocab_mode = "production"  # default when --vocab is used
+    if args.practice and args.vocab:
+        print("Error: --practice and --vocab cannot be used together",
+              file=sys.stderr)
+        sys.exit(1)
 
     if is_url or is_yt:
         print(f'"{book_title}"')
@@ -342,6 +353,12 @@ def main() -> None:
               f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
               f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
               f"{', topic=' + args.topic if args.topic else ''}")
+    elif args.practice:
+        print(f"Mode: practice exercises"
+              f", depth={args.depth}"
+              f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
+              f"{', topic=' + args.topic if args.topic else ''}"
+              f"{', parallel' if args.parallel else ''}")
     else:
         print(f"Parameters: depth={args.depth}"
               f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
@@ -382,6 +399,162 @@ def main() -> None:
     total_usage = TokenUsage(0, 0)
     model = provider.model_name()
     deck_title = _deck_title(book_title, args.topic)
+
+    if args.practice:
+        if not is_prog:
+            print("Warning: book does not appear to be about programming. "
+                  "Practice mode works best with programming books.",
+                  file=sys.stderr)
+
+        practice_deck_title = f"Practice | {deck_title}"
+
+        if is_url or is_yt:
+            # URL/YouTube: single flat deck, no chapters
+            pbar = _ProgressBar(total=1)
+
+            def _practice_chunk_cb(done: int, total_chunks: int) -> None:
+                if done == 0:
+                    pbar.total = total_chunks
+                    pbar.n = 0
+                else:
+                    pbar.n = done
+                pbar.refresh()
+
+            cards, usage = generate_practice_for_chapter(
+                provider, chapters_to_generate[0], book_title,
+                depth=args.depth,
+                progress_bar=pbar,
+                topic=args.topic or "",
+                on_chunk_done=_practice_chunk_cb,
+                parallel_chunks=args.parallel,
+            )
+            pbar.close()
+            all_cards.extend(cards)
+            total_usage += usage
+
+            if not all_cards:
+                cost = estimate_cost(total_usage, model)
+                print(f"Error: No practice cards were generated. Cost: {format_cost(cost)}",
+                      file=sys.stderr)
+                sys.exit(1)
+
+            base_name = re.sub(r'[<>:"/\\|?*]', "", practice_deck_title).replace(' ', '_')
+            output_path = args.output or f"{base_name}.apkg"
+            package_practice_flat(all_cards, practice_deck_title, output_path)
+        else:
+            # Book: per-chapter saves, resume, subdecks (same as regular mode)
+            depth_label = f"d{args.depth}" if args.depth != 1 else ""
+            base_name = re.sub(r'[<>:"/\\|?*]', "", practice_deck_title).replace(' ', '_')
+            if depth_label:
+                base_name = f"{base_name}_{depth_label}"
+            output_dir = args.output or base_name
+            single_deck = bool(args.topic) or args.flat
+            chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
+
+            pr_existing: dict[int, list[Card]] = {}
+            if chapters_dir:
+                pr_existing = load_existing_chapters(chapters_dir)
+                for idx, cards in sorted(pr_existing.items()):
+                    if any(ch.index == idx for ch in chapters_to_generate):
+                        all_cards.extend(cards)
+                if pr_existing:
+                    existing_in_scope = {
+                        idx for idx in pr_existing
+                        if any(ch.index == idx for ch in chapters_to_generate)
+                    }
+                    if existing_in_scope:
+                        print(f"Resuming: {len(existing_in_scope)}/{len(chapters_to_generate)}"
+                              f" chapters already done ({len(all_cards)} cards)")
+
+            pending = [ch for ch in chapters_to_generate if ch.index not in pr_existing]
+
+            pr_existing_counts: dict[int, int] | None = None
+            if pr_existing:
+                pr_existing_counts = {idx: len(cards) for idx, cards in pr_existing.items()}
+
+            if pending:
+                if args.parallel:
+                    new_cards, total_usage = _process_practice_parallel(
+                        provider, pending, book_title,
+                        depth=args.depth, topic=args.topic or "",
+                        chapters_dir=chapters_dir,
+                        practice_deck_title=practice_deck_title,
+                        all_chapters=chapters_to_generate,
+                        existing_counts=pr_existing_counts,
+                    )
+                    all_cards.extend(new_cards)
+                else:
+                    cp = _ChapterProgress(
+                        chapters_to_generate, existing=pr_existing_counts,
+                    )
+                    session_cards = 0
+                    practice_time = 0.0
+                    for chapter in pending:
+                        cp.start_chapter(chapter.index)
+                        ch_start = time.monotonic()
+                        cards, usage = generate_practice_for_chapter(
+                            provider, chapter, book_title,
+                            depth=args.depth,
+                            progress_bar=cp,
+                            topic=args.topic or "",
+                            parallel_chunks=args.parallel,
+                        )
+                        ch_elapsed = time.monotonic() - ch_start
+                        practice_time += ch_elapsed
+                        all_cards.extend(cards)
+                        session_cards += len(cards)
+                        total_usage += usage
+
+                        if cards and chapters_dir:
+                            package_practice_chapter(
+                                cards, practice_deck_title,
+                                chapter.index, chapters_dir,
+                            )
+
+                        ch_cost = format_cost(estimate_cost(usage, model))
+                        cp.complete_chapter(
+                            chapter.index, len(cards), ch_elapsed, ch_cost,
+                        )
+
+                    cp.close()
+                    cached = sum(pr_existing_counts.values()) if pr_existing_counts else 0
+                    _print_summary(
+                        session_cards, practice_time, total_usage, model,
+                        cached_cards=cached,
+                    )
+
+            if not all_cards:
+                cost = estimate_cost(total_usage, model)
+                print(f"Error: No practice cards were generated."
+                      f" Cost: {format_cost(cost)}", file=sys.stderr)
+                sys.exit(1)
+
+            # Dedup for flat/topic mode
+            if single_deck and len(all_cards) > 3:
+                before = len(all_cards)
+                all_cards = deduplicate(all_cards)
+                if len(all_cards) < before:
+                    print(f"Removed {before - len(all_cards)} similar cards"
+                          f" ({before} → {len(all_cards)})")
+
+            if single_deck:
+                path = f"{output_dir}.apkg"
+                package_practice_flat(all_cards, practice_deck_title, path)
+            else:
+                os.makedirs(output_dir, exist_ok=True)
+                combined = str(Path(output_dir) / f"{base_name}.apkg")
+                package_practice(all_cards, practice_deck_title, combined)
+
+        cost = estimate_cost(total_usage, model)
+        print(f"\nDone! Generated {len(all_cards)} practice cards."
+              f" Cost: {format_cost(cost)}")
+        if is_url or is_yt:
+            print(f"Output: {base_name}.apkg\n")
+        elif single_deck:
+            print(f"Output: {output_dir}.apkg\n")
+        else:
+            print(f"Output: {output_dir}/\n")
+        return
 
     if args.vocab:
         # In vocab mode: source language = book's language (auto-detected),
@@ -952,6 +1125,75 @@ class _QuietBar:
 
     def set_postfix_str(self, msg: str, refresh: bool = False) -> None:
         pass
+
+
+def _process_practice_parallel(
+    provider: LLMProvider, chapters: list[Chapter], book_title: str,
+    depth: int = 1, topic: str = "",
+    chapters_dir: str = "", practice_deck_title: str = "",
+    all_chapters: list[Chapter] | None = None,
+    existing_counts: dict[int, int] | None = None,
+) -> tuple[list[Card], TokenUsage]:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    total_usage = TokenUsage(0, 0)
+    model = provider.model_name()
+    session_cards = 0
+    chapter_start: dict[int, float] = {}
+    quiet = _QuietBar()
+    cards_by_chapter: dict[int, list[Card]] = {}
+
+    wall_start = time.monotonic()
+    cp = _ChapterProgress(all_chapters or chapters, existing=existing_counts)
+
+    def _run_practice(ch: Chapter) -> tuple[list[Card], TokenUsage]:
+        cp.start_chapter(ch.index)
+        chapter_start[ch.index] = time.monotonic()
+        return generate_practice_for_chapter(
+            provider=provider,
+            chapter=ch,
+            book_title=book_title,
+            depth=depth,
+            progress_bar=quiet,
+            topic=topic,
+            parallel_chunks=True,
+        )
+
+    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
+        future_to_chapter = {
+            executor.submit(_run_practice, chapter): chapter
+            for chapter in chapters
+        }
+
+        for future in as_completed(future_to_chapter):
+            chapter = future_to_chapter[future]
+            ch_elapsed = time.monotonic() - chapter_start[chapter.index]
+            try:
+                cards, usage = future.result()
+                cards_by_chapter[chapter.index] = cards
+                session_cards += len(cards)
+                total_usage += usage
+
+                if cards and chapters_dir:
+                    package_practice_chapter(
+                        cards, practice_deck_title,
+                        chapter.index, chapters_dir,
+                    )
+
+                ch_cost = format_cost(estimate_cost(usage, model))
+                cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
+            except Exception as e:
+                cp.complete_chapter(chapter.index, 0, ch_elapsed, "error")
+                print(f"Warning: Failed to process \"{chapter.title}\": {e}",
+                      file=sys.stderr)
+
+    cp.close()
+    all_cards: list[Card] = []
+    for idx in sorted(cards_by_chapter):
+        all_cards.extend(cards_by_chapter[idx])
+    wall_elapsed = time.monotonic() - wall_start
+    cached = sum(existing_counts.values()) if existing_counts else 0
+    _print_summary(session_cards, wall_elapsed, total_usage, model, cached_cards=cached)
+    return all_cards, total_usage
 
 
 def _process_vocab_parallel(

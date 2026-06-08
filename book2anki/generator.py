@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from typing import Any, Callable
 
 from book2anki.models import Card, Chapter, TokenUsage
-from book2anki.prompts import build_prompt, build_vocab_prompt
+from book2anki.prompts import build_prompt, build_vocab_prompt, build_practice_prompt
 
 CHARS_PER_TOKEN = 4
 
@@ -778,3 +778,194 @@ Return the JSON array of IDs to keep:"""
         pass
 
     return cards, TokenUsage(0, 0)
+
+
+def _generate_practice_with_retries(
+    provider: LLMProvider,
+    text: str,
+    book_title: str,
+    chapter_title: str,
+    depth: int,
+    max_retries: int = 3,
+    status_fn: Callable[[str], None] | None = None,
+    topic: str = "",
+) -> tuple[list[Card], TokenUsage]:
+    """Call LLM with practice prompt and parse response, with retries."""
+    prompt = build_practice_prompt(
+        book_title, chapter_title, text, depth, topic=topic,
+    )
+    short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title
+    cumulative = TokenUsage(0, 0)
+
+    def _report(msg: str) -> None:
+        if status_fn:
+            status_fn(msg)
+
+    for attempt in range(max_retries):
+        try:
+            response, usage = provider.generate(prompt)
+            cumulative += usage
+            cards_data = _parse_json_response(response)
+            cards = []
+            for item in cards_data:
+                if "question" not in item or "answer" not in item:
+                    continue
+                cards.append(Card(
+                    question=item["question"],
+                    answer=item["answer"],
+                    chapter_title=chapter_title,
+                    book_title=book_title,
+                    example=item.get("example", ""),
+                ))
+            return cards, cumulative
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            if attempt < max_retries - 1:
+                preview = response[:500] if response else "(empty)"
+                print(f"\n\"{short}\" parse error: {e}", file=sys.stderr)
+                print(f"\"{short}\" response preview: {preview}", file=sys.stderr)
+                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
+                time.sleep(1)
+                continue
+            _report(f"\"{short}\" failed after {max_retries} attempts")
+            return [], cumulative
+        except Exception as e:
+            if attempt < max_retries - 1:
+                err_str = str(e)
+                if "rate_limit" in err_str or "429" in err_str:
+                    wait = 60 * (attempt + 1)
+                    _report(f"\"{short}\" rate limited, waiting {wait}s...")
+                else:
+                    wait = 5 * (2 ** attempt)
+                    print(f"\n\"{short}\" error: {type(e).__name__}: {str(e)[:300]}",
+                          file=sys.stderr)
+                    _report(f"\"{short}\" error, retry in {wait}s...")
+                time.sleep(wait)
+                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
+                continue
+            _report(f"\"{short}\" failed after {max_retries} attempts")
+            return [], cumulative
+
+    return [], cumulative
+
+
+def generate_practice_for_chapter(
+    provider: LLMProvider,
+    chapter: Chapter,
+    book_title: str,
+    depth: int,
+    progress_bar: Any = None,
+    topic: str = "",
+    on_chunk_done: Callable[[int, int], None] | None = None,
+    parallel_chunks: bool = False,
+) -> tuple[list[Card], TokenUsage]:
+    """Generate programming practice exercise cards for a single chapter."""
+    def _status(msg: str) -> None:
+        if progress_bar is not None:
+            progress_bar.set_postfix_str(msg, refresh=True)
+        else:
+            print(msg, flush=True)
+
+    short = chapter.title[:60] + "…" if len(chapter.title) > 60 else chapter.title
+    _status(f"\"{short}\"")
+
+    max_text_tokens = min(
+        int(provider.context_window_tokens() * 0.8),
+        provider.max_request_tokens(),
+    )
+    prompt_overhead = 1000  # practice prompt is larger
+    output_reserve = 8000  # practice cards (esp. katas) produce longer output
+    available_tokens = max_text_tokens - prompt_overhead - output_reserve
+    max_chars = available_tokens * CHARS_PER_TOKEN
+
+    # Comprehensive mode generates very long output per chunk
+    if depth == 3:
+        max_chars = min(max_chars, 20000)
+
+    total_usage = TokenUsage(0, 0)
+
+    if len(chapter.text) <= max_chars:
+        cards, usage = _generate_practice_with_retries(
+            provider, chapter.text, book_title, chapter.title, depth,
+            status_fn=_status, topic=topic,
+        )
+        total_usage += usage
+        if on_chunk_done:
+            on_chunk_done(1, 1)
+    else:
+        chunks = _split_into_chunks(chapter.text, max_chars)
+        if on_chunk_done:
+            on_chunk_done(0, len(chunks))
+
+        if parallel_chunks:
+            all_cards = _process_practice_chunks_parallel(
+                chunks, provider, book_title, chapter.title, depth,
+                total_usage, short, _status, on_chunk_done, topic=topic,
+            )
+        else:
+            all_cards = []
+            for i, chunk in enumerate(chunks):
+                _status(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
+                if i > 0:
+                    time.sleep(5)
+                chunk_cards, usage = _generate_practice_with_retries(
+                    provider, chunk, book_title, chapter.title, depth,
+                    status_fn=_status, topic=topic,
+                )
+                total_usage += usage
+                all_cards.extend(chunk_cards)
+                if on_chunk_done:
+                    on_chunk_done(i + 1, len(chunks))
+        cards = deduplicate(all_cards)
+
+    valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
+    return valid_cards, total_usage
+
+
+def _process_practice_chunks_parallel(
+    chunks: list[str],
+    provider: LLMProvider,
+    book_title: str,
+    chapter_title: str,
+    depth: int,
+    total_usage: TokenUsage,
+    short: str,
+    status_fn: Callable[[str], None],
+    on_chunk_done: Callable[[int, int], None] | None,
+    **kwargs: Any,
+) -> list[Card]:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    cards_by_index: dict[int, list[Card]] = {}
+    futures = {}
+    done_count = 0
+
+    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
+        for i, chunk in enumerate(chunks):
+            futures[executor.submit(
+                _generate_practice_with_retries,
+                provider, chunk, book_title, chapter_title, depth,
+                status_fn=lambda _msg: None,
+                **kwargs,
+            )] = i
+
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                chunk_cards, usage = future.result()
+                cards_by_index[idx] = chunk_cards
+                total_usage.input_tokens += usage.input_tokens
+                total_usage.output_tokens += usage.output_tokens
+                done_count += 1
+                status_fn(f"\"{short}\" chunks {done_count}/{len(chunks)}")
+                if on_chunk_done:
+                    on_chunk_done(done_count, len(chunks))
+            except Exception as e:
+                print(f"  chunk {idx + 1} failed: {e}", file=sys.stderr)
+                done_count += 1
+                if on_chunk_done:
+                    on_chunk_done(done_count, len(chunks))
+
+    all_cards: list[Card] = []
+    for idx in sorted(cards_by_index):
+        all_cards.extend(cards_by_index[idx])
+    return all_cards

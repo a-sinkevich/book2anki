@@ -260,3 +260,99 @@ Example format:
 ---
 
 Extract vocabulary above {level} as a JSON array:"""
+
+
+PRACTICE_DEPTH_INSTRUCTIONS = {
+    0: (
+        "Identify only the single most important pattern or technique "
+        "worth practicing from this chapter. Generate exercise cards for it only."
+    ),
+    1: (
+        "Identify the core patterns, techniques, or implementations from this chapter "
+        "that are worth practicing. Skip minor utilities and trivial examples."
+    ),
+    2: (
+        "Identify all important patterns, techniques, and implementations from this "
+        "chapter, including secondary patterns and notable edge cases."
+    ),
+    3: (
+        "Identify every pattern, technique, implementation, and idiom from this chapter "
+        "that could appear in production code or interviews. Be comprehensive."
+    ),
+}
+
+
+def build_practice_prompt(
+    book_title: str,
+    chapter_title: str,
+    chapter_text: str,
+    depth: int,
+    topic: str = "",
+) -> str:
+    """Build a prompt to generate programming practice exercise cards."""
+    depth_instruction = PRACTICE_DEPTH_INSTRUCTIONS[depth]
+
+    topic_instruction = ""
+    if topic:
+        topic_instruction = (
+            f"\n\nIMPORTANT: Generate exercises ONLY related to: {topic}. "
+            "Skip everything unrelated to this topic. "
+            "If the text contains nothing relevant, return an empty JSON array []."
+        )
+
+    return f"""You are an expert programming instructor creating Anki exercise cards \
+from a programming book.
+
+Book: "{book_title}"
+Chapter: "{chapter_title}"
+
+{depth_instruction}{topic_instruction}
+
+For each pattern or technique you identify, generate an "Implement ..." exercise card:
+- **Question**: a concrete specification — what to implement, required behavior, \
+constraints, and edge cases. Go BEYOND the book's own examples — use your knowledge \
+to create realistic, interview-quality exercises that apply the chapter's patterns \
+(e.g. implement an LRU cache, a thread-safe singleton, a retry-with-backoff utility). \
+The best exercises are ones a developer would actually need in production
+- **Answer**: complete, compilable, production-quality code — not pseudocode. \
+Include brief inline comments only where a non-obvious design decision is made
+
+Guidelines:
+- **Skip non-practical chapters**: if the chapter has no implementable code patterns, \
+return an empty JSON array []
+- **Answers with code must use <pre><code> tags**
+- **One exercise per distinct pattern**: don't generate multiple exercises for the \
+same pattern unless they test meaningfully different aspects
+- **Specifications must be precise**: include class/method names, parameter types, \
+return types, thread-safety requirements, and any constraints the solution must satisfy
+- **Solutions must be self-contained**: a reader should be able to type the answer \
+into an IDE and have it compile
+
+Output ONLY a JSON array. No markdown, no explanation, no wrapper.
+
+[
+  {{"question": "Implement a Builder for NutritionFacts with required servingSize \
+(int) and optional calories, fat, sodium (all int, default 0). The built object \
+must be immutable. Validate that servingSize > 0 in build().", \
+"answer": "<pre><code>public class NutritionFacts {{\\n    private final int servingSize;\
+\\n    private final int calories;\\n    private final int fat;\\n    private final int \
+sodium;\\n\\n    private NutritionFacts(Builder builder) {{\\n        this.servingSize = \
+builder.servingSize;\\n        this.calories = builder.calories;\\n        this.fat = \
+builder.fat;\\n        this.sodium = builder.sodium;\\n    }}\\n\\n    public static \
+class Builder {{\\n        private final int servingSize;\\n        private int calories;\
+\\n        private int fat;\\n        private int sodium;\\n\\n        public Builder\
+(int servingSize) {{\\n            this.servingSize = servingSize;\\n        }}\\n\\n\
+        public Builder calories(int val) {{ calories = val; return this; }}\\n        \
+public Builder fat(int val) {{ fat = val; return this; }}\\n        public Builder \
+sodium(int val) {{ sodium = val; return this; }}\\n\\n        public NutritionFacts \
+build() {{\\n            if (servingSize <= 0) throw new IllegalArgumentException();\
+\\n            return new NutritionFacts(this);\\n        }}\\n    }}\\n}}</code></pre>", \
+"example": ""}}
+]
+
+Chapter text:
+---
+{chapter_text}
+---
+
+Generate the exercise cards now as a JSON array:"""
