@@ -136,6 +136,10 @@ def _parse_args() -> argparse.Namespace:
              "drills, variations) instead of theory cards. Only for programming books",
     )
     parser.add_argument(
+        "--code-lang", default=None,
+        help="Programming language for --practice exercises, e.g. --code-lang java",
+    )
+    parser.add_argument(
         "--model", default=None,
         choices=["sonnet", "opus", "cli"],
         help="Model to use: sonnet (default), opus (~5x cost), cli (use claude CLI)",
@@ -342,6 +346,10 @@ def main() -> None:
         print("Error: --practice and --vocab cannot be used together",
               file=sys.stderr)
         sys.exit(1)
+    if args.code_lang and not args.practice:
+        print("Error: --code-lang only applies in practice mode (add --practice)",
+              file=sys.stderr)
+        sys.exit(1)
 
     if is_url or is_yt:
         print(f'"{book_title}"')
@@ -357,6 +365,7 @@ def main() -> None:
         print(f"Mode: practice exercises"
               f", depth={args.depth}"
               f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
+              f"{', code-lang=' + args.code_lang if args.code_lang else ''}"
               f"{', topic=' + args.topic if args.topic else ''}"
               f"{', parallel' if args.parallel else ''}")
     else:
@@ -425,6 +434,7 @@ def main() -> None:
                 depth=args.depth,
                 progress_bar=pbar,
                 topic=args.topic or "",
+                code_lang=args.code_lang or "",
                 on_chunk_done=_practice_chunk_cb,
                 parallel_chunks=args.parallel,
             )
@@ -477,6 +487,7 @@ def main() -> None:
                     new_cards, total_usage = _process_practice_parallel(
                         provider, pending, book_title,
                         depth=args.depth, topic=args.topic or "",
+                        code_lang=args.code_lang or "",
                         chapters_dir=chapters_dir,
                         practice_deck_title=practice_deck_title,
                         all_chapters=chapters_to_generate,
@@ -497,6 +508,7 @@ def main() -> None:
                             depth=args.depth,
                             progress_bar=cp,
                             topic=args.topic or "",
+                            code_lang=args.code_lang or "",
                             parallel_chunks=args.parallel,
                         )
                         ch_elapsed = time.monotonic() - ch_start
@@ -1129,7 +1141,7 @@ class _QuietBar:
 
 def _process_practice_parallel(
     provider: LLMProvider, chapters: list[Chapter], book_title: str,
-    depth: int = 1, topic: str = "",
+    depth: int = 1, topic: str = "", code_lang: str = "",
     chapters_dir: str = "", practice_deck_title: str = "",
     all_chapters: list[Chapter] | None = None,
     existing_counts: dict[int, int] | None = None,
@@ -1155,6 +1167,7 @@ def _process_practice_parallel(
             depth=depth,
             progress_bar=quiet,
             topic=topic,
+            code_lang=code_lang,
             parallel_chunks=True,
         )
 

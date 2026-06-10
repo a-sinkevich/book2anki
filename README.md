@@ -99,6 +99,7 @@ book2anki mybook.epub --flat
 book2anki effective_java.epub --practice
 book2anki effective_java.epub --practice --depth 2   # more exercises per chapter
 book2anki effective_java.epub --practice --topic "concurrency"
+book2anki effective_java.epub --practice --code-lang java   # force all code in Java
 
 # Model selection
 book2anki mybook.epub --model sonnet   # Sonnet (faster, cheaper via API)

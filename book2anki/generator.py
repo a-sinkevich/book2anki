@@ -789,10 +789,11 @@ def _generate_practice_with_retries(
     max_retries: int = 3,
     status_fn: Callable[[str], None] | None = None,
     topic: str = "",
+    code_lang: str = "",
 ) -> tuple[list[Card], TokenUsage]:
     """Call LLM with practice prompt and parse response, with retries."""
     prompt = build_practice_prompt(
-        book_title, chapter_title, text, depth, topic=topic,
+        book_title, chapter_title, text, depth, topic=topic, code_lang=code_lang,
     )
     short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title
     cumulative = TokenUsage(0, 0)
@@ -855,6 +856,7 @@ def generate_practice_for_chapter(
     depth: int,
     progress_bar: Any = None,
     topic: str = "",
+    code_lang: str = "",
     on_chunk_done: Callable[[int, int], None] | None = None,
     parallel_chunks: bool = False,
 ) -> tuple[list[Card], TokenUsage]:
@@ -886,7 +888,7 @@ def generate_practice_for_chapter(
     if len(chapter.text) <= max_chars:
         cards, usage = _generate_practice_with_retries(
             provider, chapter.text, book_title, chapter.title, depth,
-            status_fn=_status, topic=topic,
+            status_fn=_status, topic=topic, code_lang=code_lang,
         )
         total_usage += usage
         if on_chunk_done:
@@ -899,7 +901,8 @@ def generate_practice_for_chapter(
         if parallel_chunks:
             all_cards = _process_practice_chunks_parallel(
                 chunks, provider, book_title, chapter.title, depth,
-                total_usage, short, _status, on_chunk_done, topic=topic,
+                total_usage, short, _status, on_chunk_done,
+                topic=topic, code_lang=code_lang,
             )
         else:
             all_cards = []
@@ -909,7 +912,7 @@ def generate_practice_for_chapter(
                     time.sleep(5)
                 chunk_cards, usage = _generate_practice_with_retries(
                     provider, chunk, book_title, chapter.title, depth,
-                    status_fn=_status, topic=topic,
+                    status_fn=_status, topic=topic, code_lang=code_lang,
                 )
                 total_usage += usage
                 all_cards.extend(chunk_cards)

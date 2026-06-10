@@ -288,6 +288,7 @@ def build_practice_prompt(
     chapter_text: str,
     depth: int,
     topic: str = "",
+    code_lang: str = "",
 ) -> str:
     """Build a prompt to generate programming practice exercise cards."""
     depth_instruction = PRACTICE_DEPTH_INSTRUCTIONS[depth]
@@ -300,13 +301,20 @@ def build_practice_prompt(
             "If the text contains nothing relevant, return an empty JSON array []."
         )
 
+    code_lang_instruction = ""
+    if code_lang:
+        code_lang_instruction = (
+            f"\n\nIMPORTANT: ALL code in questions and answers MUST be in {code_lang}. "
+            f"Even if the book uses a different language, translate all examples to {code_lang}."
+        )
+
     return f"""You are an expert programming instructor creating Anki exercise cards \
 from a programming book.
 
 Book: "{book_title}"
 Chapter: "{chapter_title}"
 
-{depth_instruction}{topic_instruction}
+{depth_instruction}{topic_instruction}{code_lang_instruction}
 
 For each pattern or technique you identify, generate an "Implement ..." exercise card:
 - **Question**: a concrete specification — what to implement, required behavior, \
