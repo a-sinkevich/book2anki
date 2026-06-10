@@ -63,15 +63,19 @@ def parse_chapters(spec: str) -> list[int]:
 def _create_provider(model: str | None = None) -> LLMProvider:
     from book2anki.provider_cli import CLIProvider
 
+    shortcuts = {"sonnet", "opus", "cli"}
+
     if model == "cli":
         return CLIProvider("opus")
 
-    # Default or explicit model: try CLI first, fall back to API
-    cli_model = model or "opus"
-    if CLIProvider.is_available():
-        print(f"Using claude CLI ({cli_model})\n")
-        return CLIProvider(cli_model)
+    # Shortcut or default: try CLI first, fall back to API
+    if model is None or model in shortcuts:
+        cli_model = model or "opus"
+        if CLIProvider.is_available():
+            print(f"Using claude CLI ({cli_model})\n")
+            return CLIProvider(cli_model)
 
+    # Exact model ID or CLI unavailable: use API
     from book2anki.provider_claude import ClaudeProvider
     provider = ClaudeProvider()
     if model:
@@ -141,8 +145,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model", default=None,
-        choices=["sonnet", "opus", "cli"],
-        help="Model to use: sonnet (default), opus (~5x cost), cli (use claude CLI)",
+        help="Model to use: sonnet, opus, cli (use claude CLI), "
+             "or an exact model ID (e.g. claude-opus-4-7, claude-fable-5)",
     )
     return parser.parse_args()
 

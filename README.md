@@ -102,9 +102,11 @@ book2anki effective_java.epub --practice --topic "concurrency"
 book2anki effective_java.epub --practice --code-lang java   # force all code in Java
 
 # Model selection
-book2anki mybook.epub --model sonnet   # Sonnet (faster, cheaper via API)
-book2anki mybook.epub --model opus     # Opus via API (~5x cost)
-book2anki mybook.epub --model cli      # Force claude CLI
+book2anki mybook.epub --model sonnet              # Sonnet (faster, cheaper via API)
+book2anki mybook.epub --model opus                # Opus via API (~5x cost)
+book2anki mybook.epub --model cli                 # Force claude CLI
+book2anki mybook.epub --model claude-opus-4-7     # Exact model ID
+book2anki mybook.epub --model claude-fable-5      # Any model supported by the API
 
 # Combine flags
 book2anki mybook.epub --depth 0 --topic "agriculture"  # 2-3 cards about agriculture
