@@ -448,7 +448,7 @@ def main() -> None:
             if depth_label:
                 base_name = f"{base_name}_{depth_label}"
             output_dir = args.output or base_name
-            single_deck = bool(args.topic) or args.flat
+            single_deck = args.flat
             chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
 
             pr_existing: dict[int, list[Card]] = {}
