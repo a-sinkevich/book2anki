@@ -335,6 +335,10 @@ same pattern unless they test meaningfully different aspects
 return types, thread-safety requirements, and any constraints the solution must satisfy
 - **Solutions must be self-contained**: a reader should be able to type the answer \
 into an IDE and have it compile
+- **Production-ready code**: solutions must use proper concurrency primitives \
+(e.g. ConcurrentHashMap, ReadWriteLock, not blanket synchronized), correct error \
+handling, and idiomatic patterns — the kind of code you'd put in a real codebase, \
+not textbook simplifications
 
 Output ONLY a JSON array. No markdown, no explanation, no wrapper.
 

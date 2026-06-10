@@ -195,7 +195,7 @@ Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. U
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Four depth levels**: summary (2-3 cards/chapter), core ideas, detailed, or comprehensive
-- **Practice mode** (`--practice`) — generate programming exercise cards: overview (key steps), atomic step drills, full katas (write-from-scratch), and variation/what-if cards. Uses Anki as a spaced repetition scheduler for coding drills
+- **Practice mode** (`--practice`) — generate "Implement …" programming exercise cards from a book. Each card has a precise specification as the question and complete, production-ready code as the answer. Solutions use proper concurrency primitives, idiomatic patterns, and correct error handling — not textbook simplifications. Use `--code-lang java` to force a specific language
 - **Vocabulary mode** (`--vocab --level B2 --lang ru`) — extract words/phrases above your CEFR level with IPA pronunciation, etymology, example sentences, and translation
 - **Speaking practice** (`--vocab-mode production`, the default) — production cards prompt in your native language (plus the English definition) with the word gapped out of its context, so you actively recall and say the English word instead of just recognizing it
 - **Anki-aware dedup** — reads your existing Anki collection to skip words you already have
