@@ -342,7 +342,8 @@ into an IDE and have it compile
 - **Production-ready code**: solutions must use proper concurrency primitives \
 (e.g. ConcurrentHashMap, ReadWriteLock, not blanket synchronized), correct error \
 handling, and idiomatic patterns — the kind of code you'd put in a real codebase, \
-not textbook simplifications
+not textbook simplifications. Use explicit type annotations in languages that \
+support them (Python type hints, TypeScript types, etc.)
 
 Output ONLY a JSON array. No markdown, no explanation, no wrapper.
 
