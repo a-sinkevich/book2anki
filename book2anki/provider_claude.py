@@ -57,9 +57,14 @@ class ClaudeProvider(LLMProvider):
         )
         if response.stop_reason == "refusal":
             raise ValueError("Model refused the request (stop_reason=refusal)")
-        block = response.content[0]
-        assert hasattr(block, "text"), f"Expected TextBlock, got {type(block)}"
-        return block.text, usage
+        # Find the first TextBlock — some models return ThinkingBlock(s) first
+        for block in response.content:
+            if hasattr(block, "text"):
+                return block.text, usage
+        raise ValueError(
+            f"No text in response, got: "
+            f"{[type(b).__name__ for b in response.content]}"
+        )
 
     def model_name(self) -> str:
         return self.model
