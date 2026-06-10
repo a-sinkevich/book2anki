@@ -838,11 +838,14 @@ def _generate_practice_with_retries(
                 else:
                     wait = 5 * (2 ** attempt)
                     print(f"\n\"{short}\" error: {type(e).__name__}: {str(e)[:300]}",
-                          file=sys.stderr)
+                          file=sys.stderr, flush=True)
                     _report(f"\"{short}\" error, retry in {wait}s...")
                 time.sleep(wait)
                 _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
                 continue
+            print(f"\n\"{short}\" FAILED after {max_retries} attempts: "
+                  f"{type(e).__name__}: {str(e)[:500]}",
+                  file=sys.stderr, flush=True)
             _report(f"\"{short}\" failed after {max_retries} attempts")
             return [], cumulative
 

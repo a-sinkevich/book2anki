@@ -51,12 +51,14 @@ class ClaudeProvider(LLMProvider):
             max_tokens=16384,
             messages=[{"role": "user", "content": prompt}],
         )
-        block = response.content[0]
-        assert hasattr(block, "text"), f"Expected TextBlock, got {type(block)}"
         usage = TokenUsage(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
         )
+        if response.stop_reason == "refusal":
+            raise ValueError("Model refused the request (stop_reason=refusal)")
+        block = response.content[0]
+        assert hasattr(block, "text"), f"Expected TextBlock, got {type(block)}"
         return block.text, usage
 
     def model_name(self) -> str:
