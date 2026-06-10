@@ -326,8 +326,12 @@ The best exercises are ones a developer would actually need in production
 Include brief inline comments only where a non-obvious design decision is made
 
 Guidelines:
-- **Skip non-practical chapters**: if the chapter has no implementable code patterns, \
-return an empty JSON array []
+- **Skip purely non-technical chapters**: only return an empty JSON array [] for \
+chapters that have NO technical content at all (e.g. preface, acknowledgments). \
+Chapters about system design, architecture, or algorithms are valid — even if the \
+book discusses them without code, create exercises that implement the key components \
+(e.g. a chapter about rate limiting → implement a sliding window rate limiter; \
+a chapter about URL shortening → implement the shortening service with Base62 encoding)
 - **Answers with code must use <pre><code> tags**
 - **One exercise per distinct pattern**: don't generate multiple exercises for the \
 same pattern unless they test meaningfully different aspects
