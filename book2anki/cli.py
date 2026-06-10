@@ -17,6 +17,7 @@ from book2anki.generator import (
     generate_practice_for_chapter,
     estimate_cost, format_cost, deduplicate, deduplicate_vocab,
     consolidate_cards, vocab_word, _vocab_base, PARALLEL_WORKERS,
+    generation_errors,
 )
 from book2anki.anki_reader import read_vocab_words
 from book2anki.prompts import detect_programming
@@ -540,6 +541,11 @@ def main() -> None:
                     )
 
             if not all_cards:
+                if generation_errors:
+                    print("\nErrors during generation:", file=sys.stderr)
+                    for err in generation_errors:
+                        print(f"  ✗ {err}", file=sys.stderr)
+                    generation_errors.clear()
                 cost = estimate_cost(total_usage, model)
                 print(f"Error: No practice cards were generated."
                       f" Cost: {format_cost(cost)}", file=sys.stderr)

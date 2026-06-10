@@ -14,6 +14,9 @@ CHARS_PER_TOKEN = 4
 # Max concurrent LLM requests when --parallel is set (chapters and chunks)
 PARALLEL_WORKERS = 8
 
+# Errors collected during generation (printed after progress table closes)
+generation_errors: list[str] = []
+
 PRICING: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-opus-4-8": (15.0, 75.0),
@@ -802,6 +805,8 @@ def _generate_practice_with_retries(
         if status_fn:
             status_fn(msg)
 
+    last_error = ""
+
     for attempt in range(max_retries):
         try:
             response, usage = provider.generate(prompt)
@@ -820,16 +825,16 @@ def _generate_practice_with_retries(
                 ))
             return cards, cumulative
         except (json.JSONDecodeError, KeyError, ValueError) as e:
+            last_error = f"parse error: {e}"
             if attempt < max_retries - 1:
-                preview = response[:500] if response else "(empty)"
-                print(f"\n\"{short}\" parse error: {e}", file=sys.stderr)
-                print(f"\"{short}\" response preview: {preview}", file=sys.stderr)
                 _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
                 time.sleep(1)
                 continue
             _report(f"\"{short}\" failed after {max_retries} attempts")
+            generation_errors.append(f"\"{short}\": {last_error}")
             return [], cumulative
         except Exception as e:
+            last_error = f"{type(e).__name__}: {str(e)[:500]}"
             if attempt < max_retries - 1:
                 err_str = str(e)
                 if "rate_limit" in err_str or "429" in err_str:
@@ -837,16 +842,12 @@ def _generate_practice_with_retries(
                     _report(f"\"{short}\" rate limited, waiting {wait}s...")
                 else:
                     wait = 5 * (2 ** attempt)
-                    print(f"\n\"{short}\" error: {type(e).__name__}: {str(e)[:300]}",
-                          file=sys.stderr, flush=True)
                     _report(f"\"{short}\" error, retry in {wait}s...")
                 time.sleep(wait)
                 _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
                 continue
-            print(f"\n\"{short}\" FAILED after {max_retries} attempts: "
-                  f"{type(e).__name__}: {str(e)[:500]}",
-                  file=sys.stderr, flush=True)
             _report(f"\"{short}\" failed after {max_retries} attempts")
+            generation_errors.append(f"\"{short}\": {last_error}")
             return [], cumulative
 
     return [], cumulative
