@@ -348,7 +348,9 @@ into an IDE and have it compile
 handling, and idiomatic patterns — the kind of code you'd put in a real codebase, \
 not textbook simplifications. Use explicit type annotations and modern language \
 idioms. Examples (not exhaustive): Python 3.10+ — `X | None` not `Optional[X]`, \
-`list[int]` not `List[int]`, `@dataclass` not manual `__init__`; \
+`list[int]` not `List[int]`, `@dataclass` with all fields declared with proper \
+types (including internal state like `_lock: threading.Lock = field(default_factory=threading.Lock)`), \
+never use `Any`; \
 Java 17+ — records, sealed interfaces, `var`, `List.of()`, pattern matching in switch
 
 Output ONLY a JSON array. No markdown, no explanation, no wrapper.
