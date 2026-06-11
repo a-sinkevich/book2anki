@@ -95,9 +95,12 @@ def build_prompt(
         text_label = "Chapter text"
 
     example_rule = (
-        '\n- **Example field**: include an optional "example" field — prefer vivid, surprising, '
-        "or counterintuitive illustrations over generic ones. Can go beyond the book's own examples. "
-        'Leave "example" as empty string when not needed'
+        '\n- **Example field**: include an optional "example" field with supplementary material '
+        "that makes the card memorable. Draw from both the book's own examples and your broader knowledge. "
+        "Good content: a striking real-world case (e.g. a famous outage, a company that used this), "
+        "a counterintuitive fact, a common gotcha or misconception, a connection to another concept, "
+        "a vivid analogy. "
+        'Leave "example" as empty string when the card is already self-sufficient'
     )
 
     programming_rules = ""
@@ -108,10 +111,11 @@ def build_prompt(
 - **Trade-off cards**: when the text compares approaches, create cards that test understanding of trade-offs
 - **No trivial syntax cards**: don't create cards for basic language syntax that any developer would know"""
         example_rule = (
-            '\n- **Example field**: include an optional "example" field with illustrative code snippets. '
-            "Prefer striking before/after contrasts or surprising edge cases. "
-            "Use <pre><code> tags for code. "
-            'Leave "example" as empty string when not needed'
+            '\n- **Example field**: include an optional "example" field with supplementary material '
+            "— code snippets (use <pre><code> tags), common gotchas, real-world cases where this "
+            "pattern saved or broke a system, connections to related concepts. "
+            "Draw from both the book's own examples and your broader knowledge. "
+            'Leave "example" as empty string when the card is already self-sufficient'
         )
 
     has_book_images = bool(book_image_captions)
