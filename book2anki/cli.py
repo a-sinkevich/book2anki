@@ -420,7 +420,10 @@ def main() -> None:
                   "Practice mode works best with programming books.",
                   file=sys.stderr)
 
-        practice_deck_title = f"Practice | {deck_title}"
+        if args.code_lang:
+            practice_deck_title = f"Practice | {args.code_lang.capitalize()} | {deck_title}"
+        else:
+            practice_deck_title = f"Practice | {deck_title}"
 
         if is_url or is_yt:
             # URL/YouTube: single flat deck, no chapters
