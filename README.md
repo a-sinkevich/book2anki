@@ -14,11 +14,11 @@ AI-powered tool to convert books (EPUB/PDF), web articles, and YouTube videos in
      ```
      ANTHROPIC_API_KEY=your-key
      ```
-   - **OpenAI API** (source install only — not available in standalone binary): get a key from [OpenAI](https://platform.openai.com/api-keys) and save it in `~/.book2anki.env`:
+   - **OpenAI API**: get a key from [OpenAI](https://platform.openai.com/api-keys) and save it in `~/.book2anki.env`:
      ```
      OPENAI_API_KEY=your-key
      ```
-     Install with OpenAI support: `pip install -e '.[openai]'`, then use `--model gpt5.5` or any GPT/o-series model.
+     Then use `--model gpt5.5` or any GPT/o-series model.
 3. Open a terminal (macOS: Terminal.app, Windows: PowerShell, Linux: any terminal) and make the binary executable (once, macOS/Linux only):
    ```bash
    chmod +x book2anki-macos-arm64    # or book2anki-linux-amd64

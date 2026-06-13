@@ -1,22 +1,14 @@
 import os
 import sys
 
+import openai
+
 from book2anki.generator import LLMProvider
 from book2anki.models import TokenUsage
 
 
 class OpenAIProvider(LLMProvider):
     def __init__(self) -> None:
-        try:
-            import openai
-        except ImportError:
-            print(
-                "Error: GPT models are not available in the standalone binary.\n"
-                "Use a Claude model instead (default), or the Codex CLI (--model codex).",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             if sys.platform == "win32":
