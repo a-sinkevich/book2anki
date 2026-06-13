@@ -11,12 +11,8 @@ class OpenAIProvider(LLMProvider):
             import openai
         except ImportError:
             print(
-                "Error: OpenAI models require the openai package, which is not\n"
-                "available in the standalone binary.\n\n"
-                "To use GPT models, run from source:\n"
-                "  pip install -e '.[openai]'\n"
-                "  python -m book2anki mybook.epub --model gpt5.5\n\n"
-                "The standalone binary supports Claude models (default) and CLI providers.",
+                "Error: GPT models are not available in the standalone binary.\n"
+                "Use a Claude model instead (default), or the Codex CLI (--model codex).",
                 file=sys.stderr,
             )
             sys.exit(1)
