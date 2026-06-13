@@ -65,9 +65,23 @@ def _create_provider(model: str | None = None) -> LLMProvider:
     from book2anki.provider_cli import CLIProvider
 
     shortcuts = {"sonnet", "opus", "cli"}
+    gpt_shortcuts = {
+        "gpt5.5", "gpt5.4", "gpt5.4-mini", "gpt4o", "gpt4o-mini",
+        "o3", "o3-mini", "o4-mini",
+    }
 
     if model == "cli":
         return CLIProvider("opus")
+
+    # GPT models → OpenAI provider
+    if model in gpt_shortcuts or (
+        model and model.startswith(("gpt-", "o1", "o3", "o4"))
+    ):
+        from book2anki.provider_openai import OpenAIProvider
+        oai = OpenAIProvider()
+        if model:
+            oai.set_model(model)
+        return oai
 
     # Shortcut or default: try CLI first, fall back to API
     if model is None or model in shortcuts:
@@ -146,8 +160,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model", default=None,
-        help="Model to use: sonnet, opus, cli (use claude CLI), "
-             "or an exact model ID (e.g. claude-opus-4-7, claude-fable-5)",
+        help="Model to use: sonnet, opus, cli (Claude CLI), gpt5.5, gpt5.4, gpt4o, o3, o4-mini, "
+             "or any exact model ID (e.g. claude-opus-4-7, gpt-5.4-mini)",
     )
     return parser.parse_args()
 

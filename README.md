@@ -14,6 +14,11 @@ AI-powered tool to convert books (EPUB/PDF), web articles, and YouTube videos in
      ```
      ANTHROPIC_API_KEY=your-key
      ```
+   - **OpenAI API**: get a key from [OpenAI](https://platform.openai.com/api-keys) and save it in `~/.book2anki.env`:
+     ```
+     OPENAI_API_KEY=your-key
+     ```
+     Then use `--model gpt4o` or any GPT/o-series model. Requires `pip install openai` when running from source.
 3. Open a terminal (macOS: Terminal.app, Windows: PowerShell, Linux: any terminal) and make the binary executable (once, macOS/Linux only):
    ```bash
    chmod +x book2anki-macos-arm64    # or book2anki-linux-amd64
@@ -102,11 +107,14 @@ book2anki effective_java.epub --practice --topic "concurrency"
 book2anki effective_java.epub --practice --code-lang java   # force all code in Java
 
 # Model selection
-book2anki mybook.epub --model sonnet              # Sonnet (faster, cheaper via API)
-book2anki mybook.epub --model opus                # Opus via API (~5x cost)
+book2anki mybook.epub --model sonnet              # Claude Sonnet (faster, cheaper)
+book2anki mybook.epub --model opus                # Claude Opus via API
 book2anki mybook.epub --model cli                 # Force claude CLI
-book2anki mybook.epub --model claude-opus-4-7     # Exact model ID
-book2anki mybook.epub --model claude-fable-5      # Any model supported by the API
+book2anki mybook.epub --model gpt4o               # GPT-4o (requires OPENAI_API_KEY)
+book2anki mybook.epub --model gpt5.5              # GPT-5.5 (default for OpenAI)
+book2anki mybook.epub --model o3                  # OpenAI o3
+book2anki mybook.epub --model o4-mini             # OpenAI o4-mini
+book2anki mybook.epub --model claude-opus-4-7     # Any exact model ID
 
 # Combine flags
 book2anki mybook.epub --depth 0 --topic "agriculture"  # 2-3 cards about agriculture
