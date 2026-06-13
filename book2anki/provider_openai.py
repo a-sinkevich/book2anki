@@ -10,8 +10,15 @@ class OpenAIProvider(LLMProvider):
         try:
             import openai
         except ImportError:
-            print("Error: openai package is required for GPT models.\n"
-                  "Install it with: pip install openai", file=sys.stderr)
+            print(
+                "Error: OpenAI models require the openai package, which is not\n"
+                "available in the standalone binary.\n\n"
+                "To use GPT models, run from source:\n"
+                "  pip install -e '.[openai]'\n"
+                "  python -m book2anki mybook.epub --model gpt5.5\n\n"
+                "The standalone binary supports Claude models (default) and CLI providers.",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         api_key = os.environ.get("OPENAI_API_KEY")
