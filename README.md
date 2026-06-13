@@ -110,6 +110,7 @@ book2anki effective_java.epub --practice --code-lang java   # force all code in 
 book2anki mybook.epub --model sonnet              # Claude Sonnet (faster, cheaper)
 book2anki mybook.epub --model opus                # Claude Opus via API
 book2anki mybook.epub --model cli                 # Force claude CLI
+book2anki mybook.epub --model codex               # Codex CLI (uses codex exec)
 book2anki mybook.epub --model gpt4o               # GPT-4o (requires OPENAI_API_KEY)
 book2anki mybook.epub --model gpt5.5              # GPT-5.5 (default for OpenAI)
 book2anki mybook.epub --model o3                  # OpenAI o3
