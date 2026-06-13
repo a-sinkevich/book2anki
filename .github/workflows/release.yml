@@ -44,6 +44,7 @@ jobs:
           --hidden-import book2anki
           --collect-submodules book2anki
           --collect-data langdetect
+          --exclude-module openai
           book2anki/__main__.py
 
       - name: Upload artifact
