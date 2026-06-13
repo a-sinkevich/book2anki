@@ -9,7 +9,8 @@ DEPTH_INSTRUCTIONS = {
     1: (
         "Generate cards that test understanding of the chapter's core ideas: "
         "the main thesis, key arguments, and central takeaways. "
-        "Skip supporting details, examples, and nuances — focus only on what's essential."
+        "Do not create separate cards for minor supporting details, examples, or nuances — "
+        "focus the questions only on what's essential."
     ),
     2: (
         "Generate cards that test understanding of core ideas plus important supporting material: "
@@ -95,12 +96,11 @@ def build_prompt(
         text_label = "Chapter text"
 
     example_rule = (
-        '\n- **Example field**: include an optional "example" field with supplementary material '
-        "that makes the card memorable. Draw from both the book's own examples and your broader knowledge. "
-        "Good content: a striking real-world case (e.g. a famous outage, a company that used this), "
-        "a counterintuitive fact, a common gotcha or misconception, a connection to another concept, "
-        "a vivid analogy. "
-        'Leave "example" as empty string when the card is already self-sufficient'
+        '\n- **Example field**: make cards usable as standalone learning material, not just memory prompts. '
+        'For every non-trivial concept, fill the "example" field with a concrete example, scenario, '
+        "counterexample, common gotcha, misconception, vivid analogy, or connection to another concept. "
+        "Draw from both the book's own examples and your broader knowledge when that helps clarify the idea. "
+        'Leave "example" as an empty string only for atomic facts where an example would add no value'
     )
 
     programming_rules = ""
@@ -111,11 +111,13 @@ def build_prompt(
 - **Trade-off cards**: when the text compares approaches, create cards that test understanding of trade-offs
 - **No trivial syntax cards**: don't create cards for basic language syntax that any developer would know"""
         example_rule = (
-            '\n- **Example field**: include an optional "example" field with supplementary material '
-            "— code snippets (use <pre><code> tags), common gotchas, real-world cases where this "
-            "pattern saved or broke a system, connections to related concepts. "
-            "Draw from both the book's own examples and your broader knowledge. "
-            'Leave "example" as empty string when the card is already self-sufficient'
+            '\n- **Example field**: make cards usable as standalone learning material, not just memory prompts. '
+            'For every non-trivial programming concept, idiom, API, pattern, or concurrency rule, fill the '
+            '"example" field with a minimal code snippet, concrete scenario, counterexample, common gotcha, '
+            "real-world failure mode, or connection to related concepts. Use <pre><code>...</code></pre> "
+            "for code snippets. Draw from both the book's own examples and your broader knowledge when that "
+            'helps clarify the idea. Leave "example" as an empty string only for atomic facts where an example '
+            "would add no value"
         )
 
     has_book_images = bool(book_image_captions)

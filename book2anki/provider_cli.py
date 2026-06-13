@@ -11,7 +11,11 @@ from book2anki.models import TokenUsage
 
 class CLIProvider(LLMProvider):
     def __init__(self, model: str = "opus") -> None:
-        self.model = model
+        models = {
+            "sonnet": "claude-sonnet-4-6",
+            "opus": "claude-opus-4-8",
+        }
+        self.model = models.get(model, model)
 
     @staticmethod
     def is_available() -> bool:

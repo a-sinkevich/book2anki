@@ -284,6 +284,7 @@ def _write_single_output(
     all_cards: list[Card], book_title: str, output: str | None,
     is_youtube: bool = False, media_files: list[str] | None = None,
     depth: int = 1,
+    model_version: str = "",
 ) -> str:
     """Write a single .apkg file for a URL source. Returns output path."""
     base_name = output or re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
@@ -295,9 +296,13 @@ def _write_single_output(
             all_cards, book_title, path,
             tag_prefix="youtube", model=YOUTUBE_MODEL,
             media_files=media_files,
+            model_version=model_version,
         )
     else:
-        package_cards_flat(all_cards, book_title, path, media_files=media_files)
+        package_cards_flat(
+            all_cards, book_title, path, media_files=media_files,
+            model_version=model_version,
+        )
     return base_name
 
 
@@ -308,17 +313,24 @@ def _write_output(
     full_book: bool,
     flat: bool = False,
     media_files: list[str] | None = None,
+    model_version: str = "",
 ) -> None:
     """Write final Anki deck output files."""
     if flat:
         # Single flat deck — write .apkg directly, no folder needed
         path = f"{output_dir}.apkg"
-        package_book_flat(all_cards, book_title, path, media_files=media_files)
+        package_book_flat(
+            all_cards, book_title, path, media_files=media_files,
+            model_version=model_version,
+        )
     elif full_book:
         os.makedirs(output_dir, exist_ok=True)
         base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
         combined_path = str(Path(output_dir) / f"{base_name}.apkg")
-        package_cards(all_cards, book_title, combined_path, media_files=media_files)
+        package_cards(
+            all_cards, book_title, combined_path, media_files=media_files,
+            model_version=model_version,
+        )
 
 
 def main() -> None:
@@ -477,7 +489,10 @@ def main() -> None:
 
             base_name = re.sub(r'[<>:"/\\|?*]', "", practice_deck_title).replace(' ', '_')
             output_path = args.output or f"{base_name}.apkg"
-            package_practice_flat(all_cards, practice_deck_title, output_path)
+            package_practice_flat(
+                all_cards, practice_deck_title, output_path,
+                model_version=model,
+            )
         else:
             # Book: per-chapter saves, resume, subdecks (same as regular mode)
             depth_label = f"d{args.depth}" if args.depth != 1 else ""
@@ -548,6 +563,7 @@ def main() -> None:
                             package_practice_chapter(
                                 cards, practice_deck_title,
                                 chapter.index, chapters_dir,
+                                model_version=model,
                             )
 
                         ch_cost = format_cost(estimate_cost(usage, model))
@@ -583,11 +599,17 @@ def main() -> None:
 
             if single_deck:
                 path = f"{output_dir}.apkg"
-                package_practice_flat(all_cards, practice_deck_title, path)
+                package_practice_flat(
+                    all_cards, practice_deck_title, path,
+                    model_version=model,
+                )
             else:
                 os.makedirs(output_dir, exist_ok=True)
                 combined = str(Path(output_dir) / f"{base_name}.apkg")
-                package_practice(all_cards, practice_deck_title, combined)
+                package_practice(
+                    all_cards, practice_deck_title, combined,
+                    model_version=model,
+                )
 
         cost = estimate_cost(total_usage, model)
         print(f"\nDone! Generated {len(all_cards)} practice cards."
@@ -710,9 +732,15 @@ def main() -> None:
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
         if args.vocab_mode == "production":
-            package_vocab_production(all_cards, vocab_deck_title, output_path)
+            package_vocab_production(
+                all_cards, vocab_deck_title, output_path,
+                model_version=model,
+            )
         else:
-            package_vocab_flat(all_cards, vocab_deck_title, output_path)
+            package_vocab_flat(
+                all_cards, vocab_deck_title, output_path,
+                model_version=model,
+            )
 
         cost = estimate_cost(total_usage, model)
         print(f"\nDone! Generated {len(all_cards)} vocabulary cards."
@@ -737,7 +765,7 @@ def main() -> None:
         base = _write_single_output(
             all_cards, deck_title, args.output,
             is_youtube=is_yt, media_files=all_media,
-            depth=args.depth,
+            depth=args.depth, model_version=model,
         )
 
         # Clean up temporary media files (already embedded in .apkg)
@@ -818,6 +846,7 @@ def main() -> None:
             full_book=(args.chapters is None),
             flat=single_deck,
             media_files=all_media,
+            model_version=model,
         )
 
         # Clean up temporary media files (already embedded in .apkg)
@@ -1146,6 +1175,7 @@ def _process_sequential(
             package_single_chapter(
                 cards, book_title, chapter.index, chapters_dir,
                 media_files=ch_media,
+                model_version=model,
             )
 
         if is_book:
@@ -1222,6 +1252,7 @@ def _process_practice_parallel(
                     package_practice_chapter(
                         cards, practice_deck_title,
                         chapter.index, chapters_dir,
+                        model_version=model,
                     )
 
                 ch_cost = format_cost(estimate_cost(usage, model))
@@ -1366,6 +1397,7 @@ def _process_parallel(
                     package_single_chapter(
                         cards, book_title, chapter.index, chapters_dir,
                         media_files=ch_media,
+                        model_version=model,
                     )
 
                 ch_cost = format_cost(estimate_cost(usage, model))

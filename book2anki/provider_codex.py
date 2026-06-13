@@ -35,6 +35,7 @@ class CodexCLIProvider(LLMProvider):
                         "codex", "exec",
                         "--ephemeral",
                         "--skip-git-repo-check",
+                        "--model", self.model,
                         "-",
                     ],
                     stdin=stdin_f,

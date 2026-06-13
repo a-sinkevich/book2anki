@@ -1,9 +1,12 @@
 import os
+import sqlite3
 import tempfile
+import zipfile
 
 from book2anki.models import Card
 from book2anki.packager import (
     _gap_context,
+    _model_tag,
     _split_etymology,
     _read_cards_from_apkg,
     _slugify,
@@ -14,6 +17,21 @@ from book2anki.packager import (
     package_single_chapter,
     package_vocab_production,
 )
+
+
+def _note_tags(path: str) -> list[list[str]]:
+    with zipfile.ZipFile(path, "r") as zf:
+        db_name = next(n for n in zf.namelist() if n.startswith("collection.anki2"))
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+            tmp.write(zf.read(db_name))
+            tmp_path = tmp.name
+    try:
+        conn = sqlite3.connect(tmp_path)
+        rows = conn.execute("SELECT tags FROM notes").fetchall()
+        conn.close()
+    finally:
+        os.unlink(tmp_path)
+    return [tags.strip().split() for (tags,) in rows]
 
 
 def test_stable_id_deterministic():
@@ -30,6 +48,11 @@ def test_slugify_basic():
 
 def test_slugify_special_chars():
     assert _slugify("Chapter 1: The Beginning!") == "chapter-1-the-beginning"
+
+
+def test_model_tag_preserves_exact_model_version():
+    assert _model_tag("gpt-5.5") == "model::gpt-5.5"
+    assert _model_tag("cli:claude-opus-4-8") == "model::cli::claude-opus-4-8"
 
 
 def test_slugify_cyrillic():
@@ -64,13 +87,36 @@ def test_roundtrip_apkg():
         Card(question="Why Z?", answer="Because W.", chapter_title="Ch 1", book_title="Test Book"),
     ]
     with tempfile.TemporaryDirectory() as tmpdir:
-        path = package_single_chapter(cards, "Test Book", 0, tmpdir)
+        path = package_single_chapter(
+            cards, "Test Book", 0, tmpdir, model_version="gpt-5.5",
+        )
         assert os.path.exists(path)
         loaded = _read_cards_from_apkg(path)
         assert len(loaded) == 2
         assert loaded[0].question == "What is X?"
         assert loaded[1].answer == "Because W."
         assert loaded[0].book_title == "Test Book"
+        assert "model::gpt-5.5" in loaded[0].tags
+        assert all("model::gpt-5.5" in tags for tags in _note_tags(path))
+
+
+def test_package_preserves_existing_model_tag():
+    cards = [
+        Card(
+            question="Q",
+            answer="A",
+            chapter_title="Ch",
+            book_title="Book",
+            tags=["book::book", "model::cli::claude-opus-4-8"],
+        ),
+    ]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = package_single_chapter(
+            cards, "Book", 0, tmpdir, model_version="gpt-5.5",
+        )
+        tags = _note_tags(path)[0]
+        assert "model::cli::claude-opus-4-8" in tags
+        assert "model::gpt-5.5" not in tags
 
 
 def test_load_existing_chapters():

@@ -40,6 +40,7 @@ class Card:
     source_url: str = ""
     example: str = ""
     image: str = ""
+    tags: list[str] = field(default_factory=list)
 
 
 SKIP_TITLES = {

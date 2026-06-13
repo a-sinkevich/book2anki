@@ -324,6 +324,30 @@ def _slugify(text: str) -> str:
     return slug.strip("-")
 
 
+def _model_tag(model_name: str) -> str:
+    """Return an Anki-safe hierarchical tag for the generation model."""
+    if not model_name.strip():
+        return ""
+    parts = re.split(r":+", model_name.strip().lower())
+    clean_parts = []
+    for part in parts:
+        clean = re.sub(r"[^a-z0-9_.-]+", "-", part)
+        clean = re.sub(r"-+", "-", clean).strip("-")
+        if clean:
+            clean_parts.append(clean)
+    if not clean_parts:
+        return ""
+    return "model::" + "::".join(clean_parts)
+
+
+def _note_tags(base_tag: str, card: Card, model_version: str = "") -> list[str]:
+    """Build note tags, preserving model tags read from existing packages."""
+    tags = [base_tag, *card.tags]
+    if model_version and not any(tag.startswith("model::") for tag in tags):
+        tags.append(_model_tag(model_version))
+    return [tag for i, tag in enumerate(tags) if tag and tag not in tags[:i]]
+
+
 def _strip_chapter_prefix(title: str) -> str:
     """Strip leading number/chapter prefixes like '1.', 'Chapter 3:', 'Глава 5.'."""
     return _CHAPTER_PREFIX_RE.sub("", title).strip() or title
@@ -339,6 +363,7 @@ def _slugify_for_filename(title: str) -> str:
 
 def _build_chapter_deck(
     book_title: str, chapter_title: str, chapter_index: int, chapter_cards: list[Card],
+    model_version: str = "",
 ) -> genanki.Deck:
     """Build a single subdeck for a chapter."""
     padded = str(chapter_index + 1).zfill(2)
@@ -356,7 +381,7 @@ def _build_chapter_deck(
         note = genanki.Note(
             model=CARD_MODEL,
             fields=[q, a, ex, dg, card.chapter_title, card.book_title],
-            tags=[book_tag],
+            tags=_note_tags(book_tag, card, model_version),
             guid=genanki.guid_for(card.question, card.book_title, card.chapter_title),
         )
         deck.add_note(note)
@@ -367,11 +392,12 @@ def _build_chapter_deck(
 def package_cards(
     cards: list[Card], book_title: str, output_path: str,
     media_files: list[str] | None = None,
+    model_version: str = "",
 ) -> None:
     """Package all cards into a single .apkg file with chapter-based subdecks."""
     grouped = _group_cards_by_chapter(cards)
     decks = [
-        _build_chapter_deck(book_title, chapter_title, i, chapter_cards)
+        _build_chapter_deck(book_title, chapter_title, i, chapter_cards, model_version)
         for i, (chapter_title, chapter_cards) in enumerate(grouped)
     ]
     package = genanki.Package(decks)
@@ -383,6 +409,7 @@ def package_cards(
 def package_book_flat(
     cards: list[Card], book_title: str, output_path: str,
     media_files: list[str] | None = None,
+    model_version: str = "",
 ) -> None:
     """Package book cards into a single flat deck (no subdecks), using CARD_MODEL."""
     deck = genanki.Deck(deck_id=_stable_id(book_title), name=book_title)
@@ -396,7 +423,7 @@ def package_book_flat(
         note = genanki.Note(
             model=CARD_MODEL,
             fields=[q, a, ex, dg, card.chapter_title, card.book_title],
-            tags=[tag],
+            tags=_note_tags(tag, card, model_version),
             guid=genanki.guid_for(card.question, card.book_title, card.chapter_title),
         )
         deck.add_note(note)
@@ -411,6 +438,7 @@ def package_cards_flat(
     cards: list[Card], deck_name: str, output_path: str,
     tag_prefix: str = "article", model: genanki.Model = ARTICLE_MODEL,
     media_files: list[str] | None = None,
+    model_version: str = "",
 ) -> None:
     """Package all cards into a single flat deck (no subdecks)."""
     deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
@@ -425,7 +453,7 @@ def package_cards_flat(
         note = genanki.Note(
             model=model,
             fields=[q, a, ex, dg, deck_name, source_url],
-            tags=[tag],
+            tags=_note_tags(tag, card, model_version),
             guid=genanki.guid_for(card.question, deck_name, source_url),
         )
         deck.add_note(note)
@@ -437,7 +465,7 @@ def package_cards_flat(
 
 
 def _practice_note(
-    card: Card, deck_name: str,
+    card: Card, deck_name: str, model_version: str = "",
 ) -> genanki.Note:
     """Build a genanki Note for a practice card."""
     q = _escape_field(card.question)
@@ -447,13 +475,13 @@ def _practice_note(
     return genanki.Note(
         model=CARD_MODEL,
         fields=[q, a, ex, "", card.chapter_title, card.book_title],
-        tags=[tag],
+        tags=_note_tags(tag, card, model_version),
         guid=genanki.guid_for(card.question, deck_name, "practice"),
     )
 
 
 def package_practice(
-    cards: list[Card], deck_name: str, output_path: str,
+    cards: list[Card], deck_name: str, output_path: str, model_version: str = "",
 ) -> None:
     """Package all practice cards into a single .apkg with chapter subdecks."""
     grouped = _group_cards_by_chapter(cards)
@@ -464,25 +492,26 @@ def package_practice(
         subdeck = f"{deck_name}::{padded} - {clean}"
         deck = genanki.Deck(deck_id=_stable_id(subdeck), name=subdeck)
         for card in chapter_cards:
-            deck.add_note(_practice_note(card, deck_name))
+            deck.add_note(_practice_note(card, deck_name, model_version))
         decks.append(deck)
     package = genanki.Package(decks)
     package.write_to_file(output_path)
 
 
 def package_practice_flat(
-    cards: list[Card], deck_name: str, output_path: str,
+    cards: list[Card], deck_name: str, output_path: str, model_version: str = "",
 ) -> None:
     """Package practice cards into a single flat deck (no subdecks)."""
     deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
     for card in cards:
-        deck.add_note(_practice_note(card, deck_name))
+        deck.add_note(_practice_note(card, deck_name, model_version))
     package = genanki.Package([deck])
     package.write_to_file(output_path)
 
 
 def package_practice_chapter(
     cards: list[Card], deck_name: str, chapter_index: int, output_dir: str,
+    model_version: str = "",
 ) -> str:
     """Save a single chapter's practice cards. Returns filepath."""
     os.makedirs(output_dir, exist_ok=True)
@@ -492,7 +521,7 @@ def package_practice_chapter(
     subdeck = f"{deck_name}::{padded} - {clean}"
     deck = genanki.Deck(deck_id=_stable_id(subdeck), name=subdeck)
     for card in cards:
-        deck.add_note(_practice_note(card, deck_name))
+        deck.add_note(_practice_note(card, deck_name, model_version))
     base = chapter_filename(chapter_title, chapter_index)
     filepath = os.path.join(output_dir, f"{base}.apkg")
     package = genanki.Package([deck])
@@ -502,7 +531,7 @@ def package_practice_chapter(
 
 def package_vocab_flat(
     cards: list[Card], deck_name: str, output_path: str,
-    tag_name: str = "",
+    tag_name: str = "", model_version: str = "",
 ) -> None:
     """Package vocabulary cards into a single flat deck."""
     deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
@@ -518,7 +547,7 @@ def package_vocab_flat(
             model=VOCAB_MODEL,
             fields=[word, context, translation, definition, example,
                     card.book_title, card.chapter_title],
-            tags=[tag],
+            tags=_note_tags(tag, card, model_version),
             guid=genanki.guid_for(card.question, deck_name, "vocab"),
         )
         deck.add_note(note)
@@ -564,7 +593,7 @@ def _split_etymology(definition: str) -> tuple[str, str]:
 
 def package_vocab_production(
     cards: list[Card], deck_name: str, output_path: str,
-    tag_name: str = "",
+    tag_name: str = "", model_version: str = "",
 ) -> None:
     """Package vocabulary cards into a flat deck of production ("speaking") cards.
 
@@ -591,7 +620,7 @@ def package_vocab_production(
             model=VOCAB_PRODUCTION_MODEL,
             fields=[word, context_gap, context, translation, definition,
                     etymology, example, card.book_title, card.chapter_title],
-            tags=[tag],
+            tags=_note_tags(tag, card, model_version),
             guid=genanki.guid_for(card.question, deck_name, "vocab-speak"),
         )
         deck.add_note(note)
@@ -609,11 +638,14 @@ def chapter_filename(chapter_title: str, chapter_index: int) -> str:
 def package_single_chapter(
     cards: list[Card], book_title: str, chapter_index: int, output_dir: str,
     media_files: list[str] | None = None,
+    model_version: str = "",
 ) -> str:
     """Package a single chapter's cards and save to output_dir. Returns filepath."""
     os.makedirs(output_dir, exist_ok=True)
     chapter_title = cards[0].chapter_title
-    deck = _build_chapter_deck(book_title, chapter_title, chapter_index, cards)
+    deck = _build_chapter_deck(
+        book_title, chapter_title, chapter_index, cards, model_version,
+    )
     base = chapter_filename(chapter_title, chapter_index)
     filepath = os.path.join(output_dir, f"{base}.apkg")
     package = genanki.Package([deck])
@@ -640,14 +672,15 @@ def _read_cards_from_apkg(filepath: str) -> list[Card]:
 
     try:
         conn = sqlite3.connect(tmp_path)
-        rows = conn.execute("SELECT flds FROM notes").fetchall()
+        rows = conn.execute("SELECT flds, tags FROM notes").fetchall()
         conn.close()
     finally:
         os.unlink(tmp_path)
 
     cards = []
-    for (flds,) in rows:
+    for flds, raw_tags in rows:
         parts = flds.split("\x1f")
+        tags = raw_tags.strip().split() if raw_tags else []
         if len(parts) >= 6:
             cards.append(Card(
                 question=parts[0],
@@ -656,6 +689,7 @@ def _read_cards_from_apkg(filepath: str) -> list[Card]:
                 image=parts[3],
                 chapter_title=parts[4],
                 book_title=parts[5],
+                tags=tags,
             ))
         elif len(parts) >= 5:
             cards.append(Card(
@@ -664,6 +698,7 @@ def _read_cards_from_apkg(filepath: str) -> list[Card]:
                 example=parts[2],
                 chapter_title=parts[3],
                 book_title=parts[4],
+                tags=tags,
             ))
         elif len(parts) >= 4:
             cards.append(Card(
@@ -671,6 +706,7 @@ def _read_cards_from_apkg(filepath: str) -> list[Card]:
                 answer=parts[1],
                 chapter_title=parts[2],
                 book_title=parts[3],
+                tags=tags,
             ))
     return cards
 

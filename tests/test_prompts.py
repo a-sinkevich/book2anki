@@ -26,3 +26,18 @@ def test_build_prompt_all_depths():
 def test_build_prompt_language():
     prompt = build_prompt("Book", "Ch", "text", 1, "ru")
     assert "ru" in prompt
+
+
+def test_build_prompt_pushes_examples_as_standalone_learning_material():
+    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    assert "standalone learning material" in prompt
+    assert "For every non-trivial concept" in prompt
+    assert "broader knowledge" in prompt
+    assert "empty string only for atomic facts" in prompt
+
+
+def test_programming_prompt_pushes_code_examples():
+    prompt = build_prompt("Book", "Ch", "text", 1, "en", is_programming=True)
+    assert "For every non-trivial programming concept" in prompt
+    assert "minimal code snippet" in prompt
+    assert "<pre><code>...</code></pre>" in prompt
