@@ -97,8 +97,8 @@ book2anki mybook.epub --vocab --level C1 --lang ru --vocab-mode recognition   # 
 book2anki mybook.epub --parallel
 book2anki mybook.epub --vocab --level B2 --lang ru --parallel
 
-# Single combined deck instead of per-chapter files
-book2anki mybook.epub --flat
+# Single compact deck instead of per-chapter files
+book2anki mybook.epub --compact  # --flat also works
 
 # Practice mode — programming exercise cards (katas, drills, variations)
 book2anki effective_java.epub --practice
@@ -155,7 +155,8 @@ Book-Title/
     media/                  # book images (when EPUB contains figures)
 ```
 
-With `--depth 0` or `--topic`, output is a single flat deck (no chapter subdecks).
+Book output uses per-chapter files by default for every depth, including `--depth 0`.
+Use `--compact`/`--flat` for a single flat deck. `--topic` also outputs a single flat deck.
 
 Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` (e.g. `English B2 — The Great Gatsby`). Running for different chapter ranges produces files that merge into the same Anki deck on import.
 
@@ -166,8 +167,8 @@ Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` 
 1. **Parse** — EPUB chapters via TOC, PDF via heading detection, web via article extraction + `srcset` for high-res images, YouTube via transcript API
 2. **Chunk** — split chapters into overlapping segments fitting the model's context window (~80% of limit minus output reserve)
 3. **Generate** — each chunk → Claude (Opus via CLI or Sonnet via API) with depth/language/content-type-aware prompt; image captions included so the model can reference figures
-4. **Dedup** — `SequenceMatcher`-based similarity dedup within chunks; LLM consolidation pass across chapters in summary/topic modes
-5. **Package** — `.apkg` via [genanki](https://github.com/kerrickstaley/genanki); per-chapter subdecks for books, flat deck for articles/summary/topic
+4. **Dedup** — `SequenceMatcher`-based similarity dedup within chunks; LLM consolidation pass across chapters in compact/topic modes
+5. **Package** — `.apkg` via [genanki](https://github.com/kerrickstaley/genanki); per-chapter subdecks for books, flat deck for articles/topic/compact output
 
 Chapters are saved individually on completion — interrupt and resume without re-generating.
 
@@ -212,7 +213,7 @@ Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. U
 - **Anki-aware dedup** — reads your existing Anki collection to skip words you already have
 - **Topic filter** (`--topic`) — generate cards only about a specific subject (works with both regular and vocab modes)
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
-- **Smart dedup** — similarity-based dedup within chunks; LLM consolidation across chapters in summary/topic modes; vocab duplicates merged with multiple contexts
+- **Smart dedup** — similarity-based dedup within chunks; LLM consolidation across chapters in compact/topic modes; vocab duplicates merged with multiple contexts
 - **Dark & light theme** — cards adapt to your Anki theme
 - **Parallel processing** (`--parallel`) — process multiple chapters simultaneously
 - **Claude CLI support** — auto-detects `claude` CLI for zero-cost generation, falls back to API

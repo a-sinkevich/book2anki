@@ -150,8 +150,8 @@ def _parse_args() -> argparse.Namespace:
              "'recognition' (English → meaning)",
     )
     parser.add_argument(
-        "--flat", action="store_true",
-        help="Output a single .apkg file instead of per-chapter files",
+        "--flat", "--compact", action="store_true", dest="flat",
+        help="Output a single compact .apkg file instead of per-chapter files",
     )
     parser.add_argument(
         "--practice", action="store_true",
@@ -262,6 +262,12 @@ def _deck_title(book_title: str, topic: str | None) -> str:
     if not topic:
         return book_title
     return f"{book_title} — {_short_topic(topic)}"
+
+
+def _use_single_deck(depth: int, topic: str | None, flat: bool) -> bool:
+    """Return whether book output should be a single compact deck."""
+    _ = depth
+    return bool(topic) or flat
 
 
 def _cleanup_media(media_files: list[str]) -> None:
@@ -780,8 +786,8 @@ def main() -> None:
         if depth_label:
             base_name = f"{base_name}_{depth_label}"
         output_dir = args.output or base_name
-        # Single flat deck: summary, topic, or explicit --flat
-        single_deck = args.depth == 0 or bool(args.topic) or args.flat
+        # Single compact deck only for topic mode or explicit --flat/--compact.
+        single_deck = _use_single_deck(args.depth, args.topic, args.flat)
         chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
 
         existing: dict[int, list[Card]] = {}
@@ -825,7 +831,7 @@ def main() -> None:
                   file=sys.stderr)
             sys.exit(1)
 
-        # Cross-chapter dedup for summary/topic mode
+        # Cross-chapter dedup for compact/topic mode
         if single_deck and len(all_cards) > 3:
             before = len(all_cards)
             all_cards = deduplicate(all_cards)

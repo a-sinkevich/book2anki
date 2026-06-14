@@ -1,6 +1,6 @@
 import pytest
 
-from book2anki.cli import parse_chapters
+from book2anki.cli import _use_single_deck, parse_chapters
 
 
 class TestParseChapters:
@@ -47,3 +47,14 @@ class TestParseChapters:
     def test_empty_string(self):
         with pytest.raises(ValueError):
             parse_chapters("")
+
+
+class TestSingleDeckMode:
+    def test_depth_zero_does_not_imply_single_deck(self):
+        assert not _use_single_deck(depth=0, topic=None, flat=False)
+
+    def test_flat_flag_uses_single_deck(self):
+        assert _use_single_deck(depth=1, topic=None, flat=True)
+
+    def test_topic_uses_single_deck(self):
+        assert _use_single_deck(depth=1, topic="agriculture", flat=False)
