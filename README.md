@@ -33,6 +33,7 @@ AI-powered tool to convert books (EPUB/PDF), web articles, and YouTube videos in
    ./book2anki-macos-arm64 "https://en.wikipedia.org/wiki/Spaced_repetition"
    ./book2anki-macos-arm64 "https://www.youtube.com/watch?v=lrSB9gEUJEQ"
    ./book2anki-macos-arm64 MnT1xgZgkpk --depth 3  # YouTube video ID, comprehensive
+   ./book2anki-macos-arm64 --prompt "Fundamentals of cognitive load theory for software engineering"
    ```
 
 ## Install from source
@@ -76,6 +77,10 @@ book2anki mybook.epub --chapters 1,3-5,8
 book2anki "https://example.com/article"
 book2anki "https://www.youtube.com/watch?v=VIDEO_ID"
 book2anki VIDEO_ID    # just the YouTube video ID (no quotes needed)
+
+# From a study prompt — no source file needed
+book2anki --prompt "Fundamentals of cognitive load theory: key principles and how to apply them in software engineering"
+book2anki --prompt "Java memory model refresher for senior engineers" --depth 2
 
 # Generate cards in a different language than the source
 book2anki mybook.epub --lang ru    # English book → Russian cards
@@ -159,6 +164,8 @@ Book output uses per-chapter files by default for every depth, including `--dept
 The combined deck contains the processed chapter set, so `--chapters 3-5` also writes one combined deck for chapters 3-5.
 Use `--compact`/`--flat` for a single flat deck. `--topic` also outputs a single flat deck.
 
+Prompt mode (`--prompt`) outputs a flat deck from model knowledge, asks the model for a concise deck title, and tags notes with `source::prompt`. Use it when you want standalone study material without providing a book, article, or video.
+
 Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` (e.g. `English B2 — The Great Gatsby`). Running for different chapter ranges produces files that merge into the same Anki deck on import.
 
 `--vocab-mode` controls card direction. `production` (default) shows the native-language meaning, the English definition, and the context sentence with the target word blanked out; you must produce the English word/phrase aloud — trains active recall for speaking (etymology stays on the back so it doesn't give the word away). `recognition` flips it: it shows the English word and context and you recall the meaning — trains reading/listening. Both modes write the same deck name and share the `vocab::` tag prefix, so the "skip words already in Anki" dedup applies to either.
@@ -208,6 +215,7 @@ Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. U
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Four depth levels**: essential summary, core ideas, detailed, or comprehensive
+- **Prompt mode** (`--prompt "..."`) — generate standalone cards from a study request using model knowledge, without a source file or URL
 - **Practice mode** (`--practice`) — generate "Implement …" programming exercise cards from a book. Each card has a precise specification as the question and complete, production-ready code as the answer. Solutions use proper concurrency primitives, idiomatic patterns, and correct error handling — not textbook simplifications. Use `--code-lang java` to force a specific language
 - **Vocabulary mode** (`--vocab --level B2 --lang ru`) — extract words/phrases above your CEFR level with IPA pronunciation, etymology, example sentences, and translation
 - **Speaking practice** (`--vocab-mode production`, the default) — production cards prompt in your native language (plus the English definition) with the word gapped out of its context, so you actively recall and say the English word instead of just recognizing it

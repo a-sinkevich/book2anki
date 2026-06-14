@@ -2,6 +2,7 @@ from book2anki.generator import (
     LLMProvider,
     deduplicate as _deduplicate,
     deduplicate_vocab,
+    generate_cards_for_prompt,
     _generate_with_retries,
     _parse_json_response,
     _split_into_chunks,
@@ -95,6 +96,52 @@ class TestCliEmptyRetry:
         assert provider.calls == 1
         assert usage == TokenUsage(1, 1)
         assert cards == []
+
+
+class TestPromptGeneration:
+    def test_generates_cards_from_prompt_request(self):
+        provider = _FakeProvider(
+            ['{"title": "Cognitive Load for Engineers", "cards": ['
+             '{"question": "What is cognitive load?", "answer": "Mental effort.", '
+             '"example": "A crowded API can increase extraneous load."}]}'],
+            "gpt-5.5",
+        )
+
+        title, cards, usage = generate_cards_for_prompt(
+            provider,
+            "Cognitive load theory for software engineers",
+            "Prompt — Cognitive load theory",
+            1,
+            "en",
+        )
+
+        assert provider.calls == 1
+        assert usage == TokenUsage(1, 1)
+        assert title == "Cognitive Load for Engineers"
+        assert len(cards) == 1
+        assert cards[0].book_title == "Cognitive Load for Engineers"
+        assert cards[0].chapter_title == "Generated Study Guide"
+        assert cards[0].source_url == "Cognitive load theory for software engineers"
+        assert "source::prompt" in cards[0].tags
+
+    def test_prompt_generation_falls_back_to_request_title_for_old_array_response(self):
+        provider = _FakeProvider(
+            ['[{"question": "Q", "answer": "A"}]'],
+            "gpt-5.5",
+        )
+
+        title, cards, usage = generate_cards_for_prompt(
+            provider,
+            "Long request",
+            "Prompt — Long request",
+            1,
+            "en",
+        )
+
+        assert usage == TokenUsage(1, 1)
+        assert title == "Prompt — Long request"
+        assert len(cards) == 1
+        assert cards[0].book_title == "Prompt — Long request"
 
     def test_cli_provider_does_not_retry_topic_empty_result(self):
         provider = _FakeProvider(

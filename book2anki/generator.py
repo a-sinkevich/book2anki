@@ -7,7 +7,9 @@ from difflib import SequenceMatcher
 from typing import Any, Callable
 
 from book2anki.models import Card, Chapter, TokenUsage
-from book2anki.prompts import build_prompt, build_vocab_prompt, build_practice_prompt
+from book2anki.prompts import (
+    build_prompt, build_prompt_request, build_vocab_prompt, build_practice_prompt,
+)
 
 CHARS_PER_TOKEN = 4
 
@@ -564,6 +566,112 @@ def _generate_with_retries(
             return [], cumulative
 
     return [], cumulative
+
+
+def generate_cards_for_prompt(
+    provider: LLMProvider,
+    request: str,
+    fallback_title: str,
+    depth: int,
+    language: str,
+    status_fn: Callable[[str], None] | None = None,
+) -> tuple[str, list[Card], TokenUsage]:
+    """Generate standalone cards from a source-free study request."""
+    prompt = build_prompt_request(request, depth, language)
+    short = fallback_title[:60] + "…" if len(fallback_title) > 60 else fallback_title
+    cumulative = TokenUsage(0, 0)
+    max_retries = _max_retries_for_provider(provider, 1)
+
+    def _report(msg: str) -> None:
+        if status_fn:
+            status_fn(msg)
+
+    for attempt in range(max_retries):
+        try:
+            response, usage = provider.generate(prompt)
+            cumulative += usage
+            deck_title, cards_data = _parse_prompt_response(response)
+            deck_title = deck_title or fallback_title
+            cards = [
+                Card(
+                    question=item["question"],
+                    answer=item["answer"],
+                    chapter_title="Generated Study Guide",
+                    book_title=deck_title,
+                    source_url=request,
+                    example=item.get("example", ""),
+                    tags=["source::prompt"],
+                )
+                for item in cards_data
+                if "question" in item and "answer" in item
+            ]
+            if _should_retry_empty_cards(provider, cards, "", attempt, max_retries):
+                _retry_empty_cards(short, attempt, max_retries, _report)
+                continue
+            return deck_title, cards, cumulative
+        except (json.JSONDecodeError, KeyError, ValueError):
+            if attempt < max_retries - 1:
+                _report(f"\"{short}\" parse error, retry {attempt + 2}/{max_retries}")
+                time.sleep(1)
+                continue
+            _report(f"\"{short}\" failed after {max_retries} attempts")
+            return fallback_title, [], cumulative
+        except Exception as e:
+            if attempt < max_retries - 1:
+                err_str = str(e)
+                if "rate_limit" in err_str or "429" in err_str:
+                    wait = 60 * (attempt + 1)
+                    _report(f"\"{short}\" rate limited, waiting {wait}s...")
+                else:
+                    wait = 5 * (2 ** attempt)
+                    _report(f"\"{short}\" error, retry in {wait}s...")
+                time.sleep(wait)
+                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
+                continue
+            _report(f"\"{short}\" failed after {max_retries} attempts")
+            return fallback_title, [], cumulative
+
+    return fallback_title, [], cumulative
+
+
+def _parse_prompt_response(response: str) -> tuple[str, list[dict[str, Any]]]:
+    """Parse prompt-mode response, accepting the current object shape and old arrays."""
+    text = response.strip()
+
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        result = None
+
+    if isinstance(result, dict):
+        return _prompt_result_parts(result)
+    if isinstance(result, list):
+        return "", list(result)
+
+    match = re.search(r"```(?:json)?\s*(\{.*?})\s*```", text, re.DOTALL)
+    if match:
+        result = json.loads(match.group(1))
+        if isinstance(result, dict):
+            return _prompt_result_parts(result)
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        result = json.loads(text[start:end + 1])
+        if isinstance(result, dict):
+            return _prompt_result_parts(result)
+
+    cards = _parse_json_response(response)
+    return "", cards
+
+
+def _prompt_result_parts(result: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+    """Extract title and cards from a parsed prompt-mode JSON object."""
+    title = str(result.get("title", "")).strip()
+    cards = result.get("cards", [])
+    if not isinstance(cards, list):
+        raise ValueError("Prompt response 'cards' must be an array")
+    return title, list(cards)
 
 
 def _parse_json_response(response: str) -> list[dict[str, Any]]:

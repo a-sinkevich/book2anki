@@ -1,6 +1,12 @@
 import pytest
 
-from book2anki.cli import _use_single_deck, _write_output, parse_chapters
+from book2anki.cli import (
+    _apkg_output_path,
+    _prompt_deck_title,
+    _use_single_deck,
+    _write_output,
+    parse_chapters,
+)
 from book2anki.models import Card
 
 
@@ -79,3 +85,18 @@ def test_write_output_creates_combined_deck_for_chapter_subset(tmp_path):
     )
 
     assert (output_dir / "Book.apkg").exists()
+
+
+def test_prompt_deck_title_is_derived_from_request():
+    title = _prompt_deck_title(
+        "Fundamentals of cognitive load theory for software engineering practice",
+    )
+    assert title.startswith("Prompt — Fundamentals of cognitive load theory")
+
+
+def test_apkg_output_path_accepts_file_or_directory():
+    assert _apkg_output_path("Prompt — Cognitive Load", None) == (
+        "Prompt_—_Cognitive_Load.apkg"
+    )
+    assert _apkg_output_path("Deck", "custom.apkg") == "custom.apkg"
+    assert _apkg_output_path("Deck", "out") == "out/Deck.apkg"

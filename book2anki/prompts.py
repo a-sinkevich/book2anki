@@ -187,6 +187,56 @@ Example format:
 Generate the flashcards now as a JSON array:"""
 
 
+def build_prompt_request(
+    request: str,
+    depth: int,
+    language: str,
+) -> str:
+    """Build a prompt for source-free study material generated from model knowledge."""
+    depth_instruction = DEPTH_INSTRUCTIONS[depth]
+
+    return f"""You are an expert teacher creating standalone Anki flashcards from a study request.
+
+Study request:
+---
+{request}
+---
+
+Language: {language}
+
+{depth_instruction}
+
+Guidelines:
+- **Use your broader knowledge** to teach the requested topic accurately and practically
+- **Deck title**: create a concise, human-readable title for the deck, normally 3-7 words. Prefer the topic and practical angle over copying the full request
+- **Minimum information principle**: one idea per card. Prefer splitting long lists into separate cards over bundling them into one answer
+- **Make every card self-contained**: include enough topic context in each question that the card can be reviewed on its own
+- **Mix question types**: factual recall, conceptual understanding, application, diagnosis, and trade-offs
+- **Write cards in {language}**
+- **No trivial cards**: every card should test something genuinely worth remembering
+- **No meta-cards**: never create cards about the request itself, your approach, or the generated deck structure
+- **Disambiguate confusable concepts**: highlight the distinguishing feature when similar terms or processes appear
+- **Build on fundamentals**: include prerequisite concepts in the question rather than assuming prior cards
+- **Logical order**: arrange cards so foundational concepts come first — definitions before applications, causes before effects
+- **Answers should be concise but complete** — typically 1-3 sentences
+- **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
+- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting
+- **Example field**: make cards usable as standalone learning material, not just memory prompts. For every non-trivial concept, fill the "example" field with a concrete example, scenario, counterexample, common gotcha, misconception, vivid analogy, or practical application. If the request involves software engineering or programming, include code snippets where they clarify the idea and use <pre><code>...</code></pre> tags. Leave "example" as an empty string only for atomic facts where an example would add no value
+
+Output ONLY a JSON object with "title" and "cards" fields. The "title" field is a concise deck title. The "cards" field is an array of objects with "question", "answer", and optionally "example" fields. No markdown, no explanation, no wrapper — just the raw JSON object.
+
+Example format:
+{{
+  "title": "Cognitive Load for Engineers",
+  "cards": [
+    {{"question": "What is X?", "answer": "X is...", "example": ""}},
+    {{"question": "How would you apply Y in practice?", "answer": "Use Y when...", "example": "For example, in a software team..."}}
+  ]
+}}
+
+Generate the deck now as a JSON object:"""
+
+
 VALID_LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2")
 
 

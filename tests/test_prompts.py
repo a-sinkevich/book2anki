@@ -1,4 +1,4 @@
-from book2anki.prompts import DEPTH_INSTRUCTIONS, build_prompt
+from book2anki.prompts import DEPTH_INSTRUCTIONS, build_prompt, build_prompt_request
 
 
 def test_build_prompt_contains_book_title():
@@ -48,3 +48,13 @@ def test_programming_prompt_pushes_code_examples():
     assert "For every non-trivial programming concept" in prompt
     assert "minimal code snippet" in prompt
     assert "<pre><code>...</code></pre>" in prompt
+
+
+def test_build_prompt_request_uses_study_request_without_source():
+    prompt = build_prompt_request("Cognitive load theory for software engineers", 1, "en")
+    assert "Study request" in prompt
+    assert "Cognitive load theory for software engineers" in prompt
+    assert "Use your broader knowledge" in prompt
+    assert "standalone learning material" in prompt
+    assert "concise deck title" in prompt
+    assert '"title" and "cards" fields' in prompt

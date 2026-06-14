@@ -14,7 +14,7 @@ from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
 from book2anki.generator import (
     LLMProvider, generate_cards_for_chapter, generate_vocab_for_chapter,
-    generate_practice_for_chapter,
+    generate_practice_for_chapter, generate_cards_for_prompt,
     estimate_cost, format_cost, deduplicate, deduplicate_vocab,
     consolidate_cards, vocab_word, _vocab_base, PARALLEL_WORKERS,
     generation_errors,
@@ -107,7 +107,14 @@ def _parse_args() -> argparse.Namespace:
         prog="book2anki",
         description="Convert nonfiction books (EPUB/PDF) into Anki flashcard decks using LLMs.",
     )
-    parser.add_argument("file", help="Path to .epub or .pdf file, or a URL (article/YouTube)")
+    parser.add_argument(
+        "file", nargs="?",
+        help="Path to .epub or .pdf file, or a URL (article/YouTube)",
+    )
+    parser.add_argument(
+        "--prompt", default=None,
+        help="Generate standalone cards from this study request instead of a source file/url",
+    )
     parser.add_argument(
         "--depth", type=int, choices=[0, 1, 2, 3], default=1,
         help="Card generation depth: 0=essential summary, 1=core, 2=detailed, 3=comprehensive (default: 1)",
@@ -168,7 +175,22 @@ def _parse_args() -> argparse.Namespace:
              "gpt5.5, gpt5.4, gpt4o, o3, o4-mini, "
              "or any exact model ID (e.g. claude-opus-4-7, gpt-5.4-mini)",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.file and not args.prompt:
+        parser.error("file is required unless --prompt is provided")
+    if args.file and args.prompt:
+        parser.error("--prompt cannot be used together with a file/url")
+    if args.prompt and args.chapters:
+        parser.error("--chapters only applies to source files/urls")
+    if args.prompt and args.topic:
+        parser.error("--topic filters a source; put the topic in --prompt instead")
+    if args.prompt and args.vocab:
+        parser.error("--vocab only applies to source files/urls")
+    if args.prompt and args.practice:
+        parser.error("--practice only applies to source files/urls")
+    if args.prompt and args.code_lang:
+        parser.error("--code-lang only applies in practice mode")
+    return args
 
 
 def _is_url(text: str) -> bool:
@@ -248,6 +270,7 @@ def _lang_name(source_lang: str) -> str:
 
 
 _MAX_TOPIC_LEN = 25
+_MAX_PROMPT_TITLE_LEN = 80
 
 
 def _short_topic(topic: str) -> str:
@@ -257,11 +280,84 @@ def _short_topic(topic: str) -> str:
     return topic[:_MAX_TOPIC_LEN].rsplit(" ", 1)[0] + "…"
 
 
+def _prompt_deck_title(request: str) -> str:
+    """Build a readable deck title from a source-free study request."""
+    title = re.sub(r"\s+", " ", request).strip()
+    if len(title) > _MAX_PROMPT_TITLE_LEN:
+        title = title[:_MAX_PROMPT_TITLE_LEN].rsplit(" ", 1)[0] + "…"
+    return f"Prompt — {title or 'Study Request'}"
+
+
+def _apkg_output_path(base_title: str, output: str | None, depth: int = 1) -> str:
+    """Build an .apkg output path from a title and optional file/directory output."""
+    safe = re.sub(r'[<>:"/\\|?*]', "", base_title).replace(" ", "_")
+    if depth != 1:
+        safe = f"{safe}_d{depth}"
+    if not output:
+        return f"{safe}.apkg"
+    if output.endswith(".apkg"):
+        return output
+    return str(Path(output) / f"{safe}.apkg")
+
+
 def _deck_title(book_title: str, topic: str | None) -> str:
     """Build deck title, appending truncated topic if specified."""
     if not topic:
         return book_title
     return f"{book_title} — {_short_topic(topic)}"
+
+
+def _run_prompt_mode(args: argparse.Namespace) -> None:
+    """Generate a flat deck from a source-free study request."""
+    request = args.prompt.strip()
+    if not request:
+        print("Error: --prompt cannot be empty", file=sys.stderr)
+        sys.exit(1)
+
+    fallback_title = _prompt_deck_title(request)
+    lang = detect_language(request, override=args.lang)
+
+    print(f'"{fallback_title}"')
+    print(f"Mode: prompt study guide, depth={args.depth}"
+          f"{', lang=' + args.lang if args.lang else ', lang=auto'}")
+    print(f"Language: {lang}")
+    print()
+
+    try:
+        provider = _create_provider(args.model)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    model = provider.model_name()
+    print(f"Cards model: {model}")
+    print()
+
+    print("Generating...")
+    deck_title, cards, usage = generate_cards_for_prompt(
+        provider, request, fallback_title, args.depth, lang,
+        status_fn=lambda msg: print(msg, flush=True),
+    )
+
+    if not cards:
+        cost = estimate_cost(usage, model)
+        print(f"Error: No cards were generated. Cost: {format_cost(cost)}",
+              file=sys.stderr)
+        sys.exit(1)
+
+    output_path = _apkg_output_path(deck_title, args.output, args.depth)
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    package_cards_flat(
+        cards, deck_title, output_path,
+        tag_prefix="prompt", model_version=model,
+    )
+
+    cost = estimate_cost(usage, model)
+    cost_str = f" Cost: {format_cost(cost)}" if cost > 0 else ""
+    if deck_title != fallback_title:
+        print(f"Deck title: {deck_title}")
+    print(f"\nDone! Generated {len(cards)} cards.{cost_str}")
+    print(f"Output: {output_path}\n")
 
 
 def _use_single_deck(topic: str | None, flat: bool) -> bool:
@@ -343,6 +439,11 @@ def main() -> None:
 
     args = _parse_args()
 
+    if args.prompt:
+        _run_prompt_mode(args)
+        return
+
+    assert args.file is not None
     is_url = _is_url(args.file)
     is_yt = is_youtube_input(args.file)
 
