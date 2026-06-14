@@ -1,6 +1,7 @@
 import pytest
 
-from book2anki.cli import _use_single_deck, parse_chapters
+from book2anki.cli import _use_single_deck, _write_output, parse_chapters
+from book2anki.models import Card
 
 
 class TestParseChapters:
@@ -51,10 +52,30 @@ class TestParseChapters:
 
 class TestSingleDeckMode:
     def test_depth_zero_does_not_imply_single_deck(self):
-        assert not _use_single_deck(depth=0, topic=None, flat=False)
+        assert not _use_single_deck(topic=None, flat=False)
 
     def test_flat_flag_uses_single_deck(self):
-        assert _use_single_deck(depth=1, topic=None, flat=True)
+        assert _use_single_deck(topic=None, flat=True)
 
     def test_topic_uses_single_deck(self):
-        assert _use_single_deck(depth=1, topic="agriculture", flat=False)
+        assert _use_single_deck(topic="agriculture", flat=False)
+
+
+def test_write_output_creates_combined_deck_for_chapter_subset(tmp_path):
+    cards = [
+        Card(
+            question="Q",
+            answer="A",
+            chapter_title="Chapter 3",
+            book_title="Book",
+        ),
+    ]
+
+    output_dir = tmp_path / "Book"
+    _write_output(
+        cards,
+        "Book",
+        str(output_dir),
+    )
+
+    assert (output_dir / "Book.apkg").exists()

@@ -1,17 +1,37 @@
 from book2anki.generator import (
+    LLMProvider,
     deduplicate as _deduplicate,
     deduplicate_vocab,
+    _generate_with_retries,
     _parse_json_response,
     _split_into_chunks,
     vocab_word,
 )
-from book2anki.models import Card
+from book2anki.models import Card, TokenUsage
 
 import pytest
 
 
 def _card(q: str, a: str = "answer") -> Card:
     return Card(question=q, answer=a, chapter_title="Ch", book_title="Book")
+
+
+class _FakeProvider(LLMProvider):
+    def __init__(self, responses: list[str], model: str) -> None:
+        self.responses = responses
+        self.model = model
+        self.calls = 0
+
+    def generate(self, prompt: str) -> tuple[str, TokenUsage]:
+        response = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return response, TokenUsage(1, 1)
+
+    def context_window_tokens(self) -> int:
+        return 100_000
+
+    def model_name(self) -> str:
+        return self.model
 
 
 class TestParseJsonResponse:
@@ -38,6 +58,61 @@ class TestParseJsonResponse:
         text = '[{"question": "Q1", "answer": "A1"}, {"question": "Q2", "answer": "A2"}]'
         result = _parse_json_response(text)
         assert len(result) == 2
+
+
+class TestCliEmptyRetry:
+    def test_cli_provider_retries_empty_card_result(self, monkeypatch):
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _seconds: None)
+        provider = _FakeProvider(
+            [
+                "[]",
+                '[{"question": "Q", "answer": "A"}]',
+            ],
+            "cli:claude-opus-4-8",
+        )
+
+        cards, usage = _generate_with_retries(
+            provider, "chapter text", "Book", "Chapter", 1, "en",
+        )
+
+        assert provider.calls == 2
+        assert usage == TokenUsage(2, 2)
+        assert [card.question for card in cards] == ["Q"]
+
+    def test_api_provider_does_not_retry_empty_card_result(self):
+        provider = _FakeProvider(
+            [
+                "[]",
+                '[{"question": "Q", "answer": "A"}]',
+            ],
+            "gpt-5.5",
+        )
+
+        cards, usage = _generate_with_retries(
+            provider, "chapter text", "Book", "Chapter", 1, "en",
+        )
+
+        assert provider.calls == 1
+        assert usage == TokenUsage(1, 1)
+        assert cards == []
+
+    def test_cli_provider_does_not_retry_topic_empty_result(self):
+        provider = _FakeProvider(
+            [
+                "[]",
+                '[{"question": "Q", "answer": "A"}]',
+            ],
+            "cli:claude-opus-4-8",
+        )
+
+        cards, usage = _generate_with_retries(
+            provider, "chapter text", "Book", "Chapter", 1, "en",
+            topic="missing topic",
+        )
+
+        assert provider.calls == 1
+        assert usage == TokenUsage(1, 1)
+        assert cards == []
 
 
 class TestSplitIntoChunks:

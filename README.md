@@ -156,6 +156,7 @@ Book-Title/
 ```
 
 Book output uses per-chapter files by default for every depth, including `--depth 0`.
+The combined deck contains the processed chapter set, so `--chapters 3-5` also writes one combined deck for chapters 3-5.
 Use `--compact`/`--flat` for a single flat deck. `--topic` also outputs a single flat deck.
 
 Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` (e.g. `English B2 — The Great Gatsby`). Running for different chapter ranges produces files that merge into the same Anki deck on import.

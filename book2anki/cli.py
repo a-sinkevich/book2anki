@@ -264,9 +264,8 @@ def _deck_title(book_title: str, topic: str | None) -> str:
     return f"{book_title} — {_short_topic(topic)}"
 
 
-def _use_single_deck(depth: int, topic: str | None, flat: bool) -> bool:
+def _use_single_deck(topic: str | None, flat: bool) -> bool:
     """Return whether book output should be a single compact deck."""
-    _ = depth
     return bool(topic) or flat
 
 
@@ -316,7 +315,6 @@ def _write_output(
     all_cards: list[Card],
     book_title: str,
     output_dir: str,
-    full_book: bool,
     flat: bool = False,
     media_files: list[str] | None = None,
     model_version: str = "",
@@ -329,7 +327,7 @@ def _write_output(
             all_cards, book_title, path, media_files=media_files,
             model_version=model_version,
         )
-    elif full_book:
+    else:
         os.makedirs(output_dir, exist_ok=True)
         base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
         combined_path = str(Path(output_dir) / f"{base_name}.apkg")
@@ -439,9 +437,6 @@ def main() -> None:
 
     model_name = provider.model_name()
     print(f"Cards model: {model_name}")
-    if "opus" in model_name:
-        print("\033[38;5;208m⚠  Opus uses ~5x more tokens than Sonnet. "
-              "Use --model sonnet to reduce usage.\033[0m")
     print()
 
     all_cards: list[Card] = []
@@ -787,7 +782,7 @@ def main() -> None:
             base_name = f"{base_name}_{depth_label}"
         output_dir = args.output or base_name
         # Single compact deck only for topic mode or explicit --flat/--compact.
-        single_deck = _use_single_deck(args.depth, args.topic, args.flat)
+        single_deck = _use_single_deck(args.topic, args.flat)
         chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
 
         existing: dict[int, list[Card]] = {}
@@ -849,7 +844,6 @@ def main() -> None:
 
         _write_output(
             all_cards, deck_title, output_dir,
-            full_book=(args.chapters is None),
             flat=single_deck,
             media_files=all_media,
             model_version=model,

@@ -13,6 +13,7 @@ CHARS_PER_TOKEN = 4
 
 # Max concurrent LLM requests when --parallel is set (chapters and chunks)
 PARALLEL_WORKERS = 8
+CLI_EMPTY_RESULT_RETRIES = 3
 
 # Errors collected during generation (printed after progress table closes)
 generation_errors: list[str] = []
@@ -65,6 +66,44 @@ class LLMProvider(ABC):
     def max_request_tokens(self) -> int:
         """Max input tokens per request (for rate limit aware chunking)."""
         return self.context_window_tokens()
+
+
+def _is_cli_provider(provider: LLMProvider) -> bool:
+    """Return True for local CLI-backed providers where empty fast returns happen."""
+    return provider.model_name().startswith(("cli:", "codex:"))
+
+
+def _max_retries_for_provider(provider: LLMProvider, max_retries: int) -> int:
+    """CLI providers get extra chances; API providers keep caller's retry count."""
+    if _is_cli_provider(provider):
+        return max(max_retries, CLI_EMPTY_RESULT_RETRIES)
+    return max_retries
+
+
+def _should_retry_empty_cards(
+    provider: LLMProvider,
+    cards: list[Card],
+    topic: str,
+    attempt: int,
+    max_retries: int,
+) -> bool:
+    """Retry empty card results only for CLI providers and non-topic runs."""
+    return (
+        _is_cli_provider(provider)
+        and not topic
+        and not cards
+        and attempt < max_retries - 1
+    )
+
+
+def _retry_empty_cards(
+    short: str,
+    attempt: int,
+    max_retries: int,
+    report: Callable[[str], None],
+) -> None:
+    report(f"\"{short}\" returned 0 cards, retrying ({attempt + 2}/{max_retries})")
+    time.sleep(1)
 
 
 def generate_cards_for_chapter(
@@ -387,6 +426,8 @@ def _generate_vocab_with_retries(
         if status_fn:
             status_fn(msg)
 
+    max_retries = _max_retries_for_provider(provider, max_retries)
+
     for attempt in range(max_retries):
         try:
             response, usage = provider.generate(prompt)
@@ -413,6 +454,9 @@ def _generate_vocab_with_retries(
                     image=definition,
                     source_url=item.get("example", ""),
                 ))
+            if _should_retry_empty_cards(provider, cards, topic, attempt, max_retries):
+                _retry_empty_cards(short, attempt, max_retries, _report)
+                continue
             return cards, cumulative
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             if attempt < max_retries - 1:
@@ -473,12 +517,14 @@ def _generate_with_retries(
         if status_fn:
             status_fn(msg)
 
+    max_retries = _max_retries_for_provider(provider, max_retries)
+
     for attempt in range(max_retries):
         try:
             response, usage = provider.generate(prompt)
             cumulative += usage
             cards_data = _parse_json_response(response)
-            return [
+            cards = [
                 Card(
                     question=item["question"],
                     answer=item["answer"],
@@ -490,7 +536,11 @@ def _generate_with_retries(
                 )
                 for item in cards_data
                 if "question" in item and "answer" in item
-            ], cumulative
+            ]
+            if _should_retry_empty_cards(provider, cards, topic, attempt, max_retries):
+                _retry_empty_cards(short, attempt, max_retries, _report)
+                continue
+            return cards, cumulative
         except (json.JSONDecodeError, KeyError, ValueError):
             if attempt < max_retries - 1:
                 _report(f"\"{short}\" parse error, retry {attempt + 2}/{max_retries}")
@@ -815,6 +865,8 @@ def _generate_practice_with_retries(
 
     last_error = ""
 
+    max_retries = _max_retries_for_provider(provider, max_retries)
+
     for attempt in range(max_retries):
         try:
             response, usage = provider.generate(prompt)
@@ -831,6 +883,9 @@ def _generate_practice_with_retries(
                     book_title=book_title,
                     example=item.get("example", ""),
                 ))
+            if _should_retry_empty_cards(provider, cards, topic, attempt, max_retries):
+                _retry_empty_cards(short, attempt, max_retries, _report)
+                continue
             return cards, cumulative
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             last_error = f"parse error: {e}"
