@@ -2,9 +2,10 @@ import re
 
 DEPTH_INSTRUCTIONS = {
     0: (
-        "Generate only 2-3 cards capturing the single most important ideas — "
-        "the main thesis and one or two key facts worth remembering long-term. "
-        "Nothing else. This is a minimal summary, not a study guide."
+        "Generate cards only for the single most important ideas worth remembering long-term: "
+        "the main thesis, core mental model, or essential conclusion. "
+        "Do not aim for a fixed number of cards; create as many or as few as the content warrants, "
+        "including zero for sections without substantive ideas. This is a minimal summary, not a study guide."
     ),
     1: (
         "Generate cards that test understanding of the chapter's core ideas: "

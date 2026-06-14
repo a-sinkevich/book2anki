@@ -62,7 +62,7 @@ In the examples below, replace `book2anki` with how you run it:
 # Basic — generates Anki deck with core-level cards
 book2anki mybook.epub
 
-# Choose depth: 0=summary (2-3 cards/chapter), 1=core, 2=detailed, 3=comprehensive
+# Choose depth: 0=essential summary, 1=core, 2=detailed, 3=comprehensive
 book2anki mybook.epub --depth 0   # just the key takeaways
 book2anki mybook.pdf --depth 2
 
@@ -118,7 +118,7 @@ book2anki mybook.epub --model o4-mini             # OpenAI o4-mini
 book2anki mybook.epub --model claude-opus-4-7     # Any exact model ID
 
 # Combine flags
-book2anki mybook.epub --depth 0 --topic "agriculture"  # 2-3 cards about agriculture
+book2anki mybook.epub --depth 0 --topic "agriculture"  # only essential ideas about agriculture
 book2anki mybook.epub --depth 2 --topic "memory" --lang ru
 
 ```
@@ -141,7 +141,7 @@ book2anki "https://en.wikipedia.org/wiki/Roman_Empire" --topic "military organiz
 # Extract just what you need from a long YouTube lecture
 book2anki "https://youtube.com/watch?v=VIDEO_ID" --topic "compound interest"
 
-# Quick summary on a topic: depth 0 + topic = 2-3 cards about X
+# Quick summary on a topic: depth 0 + topic = only the essential ideas about X
 book2anki neuroscience.epub --depth 0 --topic "synaptic plasticity"
 ```
 
@@ -205,7 +205,7 @@ Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. U
 ## Features
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
-- **Four depth levels**: summary (2-3 cards/chapter), core ideas, detailed, or comprehensive
+- **Four depth levels**: essential summary, core ideas, detailed, or comprehensive
 - **Practice mode** (`--practice`) — generate "Implement …" programming exercise cards from a book. Each card has a precise specification as the question and complete, production-ready code as the answer. Solutions use proper concurrency primitives, idiomatic patterns, and correct error handling — not textbook simplifications. Use `--code-lang java` to force a specific language
 - **Vocabulary mode** (`--vocab --level B2 --lang ru`) — extract words/phrases above your CEFR level with IPA pronunciation, etymology, example sentences, and translation
 - **Speaking practice** (`--vocab-mode production`, the default) — production cards prompt in your native language (plus the English definition) with the word gapped out of its context, so you actively recall and say the English word instead of just recognizing it

@@ -18,7 +18,7 @@ def test_build_prompt_contains_depth_instruction():
 
 
 def test_build_prompt_all_depths():
-    for depth in (1, 2, 3):
+    for depth in (0, 1, 2, 3):
         prompt = build_prompt("Book", "Ch", "text", depth, "en")
         assert DEPTH_INSTRUCTIONS[depth][:20] in prompt
 
@@ -26,6 +26,13 @@ def test_build_prompt_all_depths():
 def test_build_prompt_language():
     prompt = build_prompt("Book", "Ch", "text", 1, "ru")
     assert "ru" in prompt
+
+
+def test_depth_zero_does_not_force_fixed_card_count():
+    prompt = build_prompt("Book", "Ch", "text", 0, "en")
+    assert "Do not aim for a fixed number of cards" in prompt
+    assert "as many or as few as the content warrants" in prompt
+    assert "2-3 cards" not in prompt
 
 
 def test_build_prompt_pushes_examples_as_standalone_learning_material():

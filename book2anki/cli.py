@@ -110,7 +110,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("file", help="Path to .epub or .pdf file, or a URL (article/YouTube)")
     parser.add_argument(
         "--depth", type=int, choices=[0, 1, 2, 3], default=1,
-        help="Card generation depth: 0=summary (2-3 cards), 1=core, 2=detailed, 3=comprehensive (default: 1)",
+        help="Card generation depth: 0=essential summary, 1=core, 2=detailed, 3=comprehensive (default: 1)",
     )
     parser.add_argument(
         "--lang", default=None,
