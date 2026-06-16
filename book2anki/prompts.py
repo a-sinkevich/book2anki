@@ -396,6 +396,15 @@ same pattern unless they test meaningfully different aspects
 return types, thread-safety requirements, and any constraints the solution must satisfy
 - **Solutions must be self-contained**: a reader should be able to type the answer \
 into an IDE and have it compile
+- **Runnable demonstrations**: when the target language supports it, include a \
+runnable demonstration entry point alongside the implementation where practical. \
+For Java, prefer a complete single-file Java 17+ example with \
+`public static void main(String[] args)` that exercises the implementation, shows \
+expected behavior, and covers at least one important edge case. For concurrency \
+exercises, demonstrate realistic multi-threaded usage with APIs such as \
+ExecutorService, CountDownLatch, CompletableFuture, or locks where appropriate. \
+Omit the entry point only when it would make the solution misleading or distract \
+from the concept
 - **Production-ready code**: solutions must use proper concurrency primitives \
 (e.g. ConcurrentHashMap, ReadWriteLock, not blanket synchronized), correct error \
 handling, and idiomatic patterns — the kind of code you'd put in a real codebase, \
@@ -423,7 +432,12 @@ class Builder {{\\n        private final int servingSize;\\n        private int 
 public Builder fat(int val) {{ fat = val; return this; }}\\n        public Builder \
 sodium(int val) {{ sodium = val; return this; }}\\n\\n        public NutritionFacts \
 build() {{\\n            if (servingSize <= 0) throw new IllegalArgumentException();\
-\\n            return new NutritionFacts(this);\\n        }}\\n    }}\\n}}</code></pre>", \
+\\n            return new NutritionFacts(this);\\n        }}\\n    }}\\n\\n    public \
+static void main(String[] args) {{\\n        NutritionFacts facts = new \
+NutritionFacts.Builder(240).calories(100).sodium(35).build();\\n        System.out.println(facts);\
+\\n        try {{\\n            new NutritionFacts.Builder(0).build();\\n        }} catch \
+(IllegalArgumentException expected) {{\\n            System.out.println(\"invalid serving size\");\
+\\n        }}\\n    }}\\n}}</code></pre>", \
 "example": ""}}
 ]
 

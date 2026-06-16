@@ -1,4 +1,9 @@
-from book2anki.prompts import DEPTH_INSTRUCTIONS, build_prompt, build_prompt_request
+from book2anki.prompts import (
+    DEPTH_INSTRUCTIONS,
+    build_practice_prompt,
+    build_prompt,
+    build_prompt_request,
+)
 
 
 def test_build_prompt_contains_book_title():
@@ -58,3 +63,19 @@ def test_build_prompt_request_uses_study_request_without_source():
     assert "standalone learning material" in prompt
     assert "concise deck title" in prompt
     assert '"title" and "cards" fields' in prompt
+
+
+def test_practice_prompt_prefers_runnable_java_examples():
+    prompt = build_practice_prompt(
+        "Effective Java",
+        "Concurrency",
+        "Use concurrent collections.",
+        1,
+        code_lang="java",
+    )
+
+    assert "Runnable demonstrations" in prompt
+    assert "public static void main(String[] args)" in prompt
+    assert "complete single-file Java 17+ example" in prompt
+    assert "ExecutorService" in prompt
+    assert "CountDownLatch" in prompt
