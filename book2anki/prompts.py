@@ -375,16 +375,33 @@ Chapter: "{chapter_title}"
 
 For each pattern or technique you identify, generate an "Implement ..." exercise card:
 - **Question**: a concrete specification formatted as readable HTML for Anki. \
-Structure the question with: a short bold title, then the requirements as a list. \
-Use <code> tags for class/method names, types, and signatures inline. Example:
+Structure the question with: a short bold title, a plain-language goal, a separate \
+API block for signatures, and requirements/edge cases as HTML lists. Avoid mixing \
+normal prose and inline <code> heavily in the same sentence; use inline <code> only \
+for rare single identifiers. Put class/method signatures in a dedicated \
+<pre><code>...</code></pre> block. Example:
 
 <b>Implement a thread-safe LRU cache</b><br><br>\
-Requirements:<br>\
-• Class <code>LRUCache&lt;K, V&gt;</code> with a fixed capacity<br>\
-• <code>get(key: K) → V | None</code> — return value or None if missing/expired<br>\
-• <code>put(key: K, value: V) → None</code> — insert or update, evict LRU if full<br>\
-• TTL-based expiration (lazy eviction on access)<br>\
-• Thread-safe with <code>ReadWriteLock</code>, not blanket synchronized
+Goal:<br>\
+Build a cache that keeps recently used entries available and evicts older entries \
+when capacity is reached.<br><br>\
+API:<br>\
+<pre><code>class LRUCache&lt;K, V&gt;
+V get(K key)
+void put(K key, V value)</code></pre>\
+Requirements:\
+<ul>\
+  <li>Use a fixed positive capacity.</li>\
+  <li>Reading a value marks it as recently used.</li>\
+  <li>Adding beyond capacity evicts the least recently used entry.</li>\
+  <li>Missing keys return null.</li>\
+  <li>Implementation must be thread-safe.</li>\
+</ul>\
+Edge cases:\
+<ul>\
+  <li>Updating an existing key must not increase size.</li>\
+  <li>Zero or negative capacity should be rejected.</li>\
+</ul>
 
 - **Answer**: complete, compilable, production-quality code — not pseudocode. \
 Include brief inline comments only where a non-obvious design decision is made
@@ -401,13 +418,21 @@ a chapter about URL shortening → implement the shortening service with Base62 
 same pattern unless they test meaningfully different aspects
 - **Specifications must be precise**: include class/method names, parameter types, \
 return types, thread-safety requirements, and any constraints the solution must satisfy
+- **Question names define the production API**: class names, method names, and \
+signatures in the question must describe the thing being implemented, independent \
+of any runnable demo. Do not add names like Demo, Example, Runner, App, or Test \
+only because the answer includes a main method. Do not mention the main method in \
+the question unless the actual exercise is to build a CLI or application entry point
 - **Solutions must be self-contained**: a reader should be able to type the answer \
 into an IDE and have it compile
 - **Runnable demonstrations**: when the target language supports it, include a \
-runnable demonstration entry point alongside the implementation where practical. \
+runnable demonstration entry point in the answer alongside the implementation where practical. \
 For Java, prefer a complete single-file Java 17+ example with \
-`public static void main(String[] args)` that exercises the implementation, shows \
-expected behavior, and covers at least one important edge case. For concurrency \
+`public static void main(String[] args)` inside the primary implementation class \
+or another naturally named class that is already part of the solution. The main \
+method is only a learning/debugging harness: it must not change the required API, \
+class names, or question wording. Use it to exercise the implementation, show \
+expected behavior, and cover at least one important edge case. For concurrency \
 exercises, demonstrate realistic multi-threaded usage with APIs such as \
 ExecutorService, CountDownLatch, CompletableFuture, or locks where appropriate. \
 Omit the entry point only when it would make the solution misleading or distract \
@@ -424,12 +449,31 @@ Java 17+ — records, sealed interfaces, `var`, `List.of()`, pattern matching in
 Output ONLY a JSON array. No markdown, no explanation, no wrapper.
 
 [
-  {{"question": "<b>Implement a Builder for NutritionFacts</b><br><br>Requirements:<br>\
-• Class <code>NutritionFacts</code> with required <code>servingSize</code> (int) \
-and optional <code>calories</code>, <code>fat</code>, <code>sodium</code> (int, default 0)<br>\
-• Immutable — all fields <code>final</code>, no setters<br>\
-• <code>Builder.build()</code> validates <code>servingSize &gt; 0</code>", \
-"answer": "<pre><code>public class NutritionFacts {{...}}</code></pre>", \
+  {{"question": "<b>Implement a Builder for NutritionFacts</b><br><br>\
+Goal:<br>Create an immutable value object using the Builder pattern.<br><br>\
+API:<br><pre><code>class NutritionFacts\\nNutritionFacts.Builder(int servingSize)\
+\\nBuilder calories(int value)\\nBuilder fat(int value)\\nBuilder sodium(int value)\
+\\nNutritionFacts build()</code></pre>\
+Requirements:<ul><li>Require serving size when the builder is created.</li>\
+<li>Default calories, fat, and sodium to zero.</li>\
+<li>Keep the built object immutable: final fields and no setters.</li>\
+<li>Validate that serving size is positive before creating the object.</li></ul>", \
+"answer": "<pre><code>public class NutritionFacts {{\\n    private final int servingSize;\
+\\n    private final int calories;\\n    private final int fat;\\n    private final int sodium;\
+\\n\\n    private NutritionFacts(Builder builder) {{\\n        this.servingSize = builder.servingSize;\
+\\n        this.calories = builder.calories;\\n        this.fat = builder.fat;\\n        this.sodium = builder.sodium;\
+\\n    }}\\n\\n    public static class Builder {{\\n        private final int servingSize;\
+\\n        private int calories;\\n        private int fat;\\n        private int sodium;\
+\\n\\n        public Builder(int servingSize) {{\\n            this.servingSize = servingSize;\
+\\n        }}\\n\\n        public Builder calories(int val) {{ calories = val; return this; }}\
+\\n        public Builder fat(int val) {{ fat = val; return this; }}\\n        public Builder sodium(int val) {{ sodium = val; return this; }}\
+\\n\\n        public NutritionFacts build() {{\\n            if (servingSize <= 0) throw new IllegalArgumentException(\\\"servingSize must be positive\\\");\
+\\n            return new NutritionFacts(this);\\n        }}\\n    }}\\n\\n    @Override\
+\\n    public String toString() {{\\n        return \\\"NutritionFacts[servingSize=\\\" + servingSize + \\\", calories=\\\" + calories + \\\", fat=\\\" + fat + \\\", sodium=\\\" + sodium + \\\"]\\\";\
+\\n    }}\\n\\n    public static void main(String[] args) {{\\n        NutritionFacts facts = new NutritionFacts.Builder(240).calories(100).sodium(35).build();\
+\\n        System.out.println(facts);\\n\\n        try {{\\n            new NutritionFacts.Builder(0).build();\
+\\n        }} catch (IllegalArgumentException expected) {{\\n            System.out.println(expected.getMessage());\
+\\n        }}\\n    }}\\n}}</code></pre>", \
 "example": ""}}
 ]
 

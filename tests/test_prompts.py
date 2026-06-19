@@ -1,3 +1,5 @@
+import json
+
 from book2anki.prompts import (
     DEPTH_INSTRUCTIONS,
     build_practice_prompt,
@@ -79,3 +81,17 @@ def test_practice_prompt_prefers_runnable_java_examples():
     assert "complete single-file Java 17+ example" in prompt
     assert "ExecutorService" in prompt
     assert "CountDownLatch" in prompt
+    assert "Question names define the production API" in prompt
+    assert "Do not add names like Demo, Example, Runner, App, or Test" in prompt
+    assert "main method is only a learning/debugging harness" in prompt
+    assert "separate API block for signatures" in prompt
+    assert "<pre><code>class LRUCache" in prompt
+    assert "<ul>" in prompt
+    assert "Avoid mixing normal prose and inline <code> heavily" in prompt
+
+    sample_start = prompt.index("[\n")
+    sample_end = prompt.index("\n]\n", sample_start) + 2
+    sample_cards = json.loads(prompt[sample_start:sample_end])
+    assert sample_cards[0]["question"].startswith(
+        "<b>Implement a Builder for NutritionFacts</b>"
+    )
