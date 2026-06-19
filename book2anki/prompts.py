@@ -374,11 +374,18 @@ Chapter: "{chapter_title}"
 {depth_instruction}{topic_instruction}{code_lang_instruction}
 
 For each pattern or technique you identify, generate an "Implement ..." exercise card:
-- **Question**: a concrete specification — what to implement, required behavior, \
-constraints, and edge cases. Go BEYOND the book's own examples — use your knowledge \
-to create realistic, interview-quality exercises that apply the chapter's patterns \
-(e.g. implement an LRU cache, a thread-safe singleton, a retry-with-backoff utility). \
-The best exercises are ones a developer would actually need in production
+- **Question**: a concrete specification formatted as readable HTML for Anki. \
+Structure the question with: a short bold title, then the requirements as a list. \
+Use <code> tags for class/method names, types, and signatures inline. Example:
+
+<b>Implement a thread-safe LRU cache</b><br><br>\
+Requirements:<br>\
+• Class <code>LRUCache&lt;K, V&gt;</code> with a fixed capacity<br>\
+• <code>get(key: K) → V | None</code> — return value or None if missing/expired<br>\
+• <code>put(key: K, value: V) → None</code> — insert or update, evict LRU if full<br>\
+• TTL-based expiration (lazy eviction on access)<br>\
+• Thread-safe with <code>ReadWriteLock</code>, not blanket synchronized
+
 - **Answer**: complete, compilable, production-quality code — not pseudocode. \
 Include brief inline comments only where a non-obvious design decision is made
 
@@ -417,27 +424,12 @@ Java 17+ — records, sealed interfaces, `var`, `List.of()`, pattern matching in
 Output ONLY a JSON array. No markdown, no explanation, no wrapper.
 
 [
-  {{"question": "Implement a Builder for NutritionFacts with required servingSize \
-(int) and optional calories, fat, sodium (all int, default 0). The built object \
-must be immutable. Validate that servingSize > 0 in build().", \
-"answer": "<pre><code>public class NutritionFacts {{\\n    private final int servingSize;\
-\\n    private final int calories;\\n    private final int fat;\\n    private final int \
-sodium;\\n\\n    private NutritionFacts(Builder builder) {{\\n        this.servingSize = \
-builder.servingSize;\\n        this.calories = builder.calories;\\n        this.fat = \
-builder.fat;\\n        this.sodium = builder.sodium;\\n    }}\\n\\n    public static \
-class Builder {{\\n        private final int servingSize;\\n        private int calories;\
-\\n        private int fat;\\n        private int sodium;\\n\\n        public Builder\
-(int servingSize) {{\\n            this.servingSize = servingSize;\\n        }}\\n\\n\
-        public Builder calories(int val) {{ calories = val; return this; }}\\n        \
-public Builder fat(int val) {{ fat = val; return this; }}\\n        public Builder \
-sodium(int val) {{ sodium = val; return this; }}\\n\\n        public NutritionFacts \
-build() {{\\n            if (servingSize <= 0) throw new IllegalArgumentException();\
-\\n            return new NutritionFacts(this);\\n        }}\\n    }}\\n\\n    public \
-static void main(String[] args) {{\\n        NutritionFacts facts = new \
-NutritionFacts.Builder(240).calories(100).sodium(35).build();\\n        System.out.println(facts);\
-\\n        try {{\\n            new NutritionFacts.Builder(0).build();\\n        }} catch \
-(IllegalArgumentException expected) {{\\n            System.out.println(\"invalid serving size\");\
-\\n        }}\\n    }}\\n}}</code></pre>", \
+  {{"question": "<b>Implement a Builder for NutritionFacts</b><br><br>Requirements:<br>\
+• Class <code>NutritionFacts</code> with required <code>servingSize</code> (int) \
+and optional <code>calories</code>, <code>fat</code>, <code>sodium</code> (int, default 0)<br>\
+• Immutable — all fields <code>final</code>, no setters<br>\
+• <code>Builder.build()</code> validates <code>servingSize &gt; 0</code>", \
+"answer": "<pre><code>public class NutritionFacts {{...}}</code></pre>", \
 "example": ""}}
 ]
 
