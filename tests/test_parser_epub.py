@@ -24,6 +24,9 @@ class TestShouldSkip:
     def test_skips_bibliography(self):
         assert should_skip_chapter("Bibliography", "x" * 5000)
 
+    def test_skips_series_page(self):
+        assert should_skip_chapter("Series", "x" * 5000)
+
     def test_skips_russian_titles(self):
         assert should_skip_chapter("Содержание", "x" * 5000)
         assert should_skip_chapter("Об авторе", "x" * 5000)

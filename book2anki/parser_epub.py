@@ -3,6 +3,7 @@ import posixpath
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import ebooklib
 from ebooklib import epub
@@ -124,6 +125,7 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
     toc_map: dict[str, str] = {}
     # Track which section each href belongs to, for disambiguating duplicates
     href_section: dict[str, str] = {}
+    manifest_hrefs = _manifest_hrefs(book)
 
     def _is_skip_title(title: str | None) -> bool:
         if not title:
@@ -146,7 +148,11 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
         ) else None
         level_group_href: str | None = None
 
+        def _href(href: str) -> str:
+            return _normalize_toc_href(href, manifest_hrefs)
+
         def _store(href: str, title: str) -> None:
+            href = _href(href)
             toc_map[href] = title
             if section_name:
                 href_section[href] = section_name
@@ -155,7 +161,7 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
             if isinstance(item, tuple):
                 section, children = item
                 title = section.title if hasattr(section, "title") else None
-                href = section.href.split("#")[0] if hasattr(section, "href") else None
+                href = _href(section.href) if hasattr(section, "href") else None
 
                 has_subtree = any(isinstance(c, tuple) for c in children)
 
@@ -196,20 +202,25 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     is_chapter = _is_numbered_chapter(title)
                     gt = title if (title and not is_skip) else None
 
-                    # Don't register Part's href — let child chapters claim it.
-                    # Numbered chapters can overwrite non-chapter entries
-                    # (e.g. Глава 1 overwrites Предисловие when they share a file).
-                    if href and not is_part:
-                        existing = toc_map.get(href)
-                        if existing is None or (is_chapter and not _is_numbered_chapter(existing)):
-                            _store(href, title or "")
-
                     child_hrefs = {
-                        c.href.split("#")[0]
+                        _href(c.href)
                         for c in children
                         if hasattr(c, "href") and not isinstance(c, tuple)
                     }
                     same_file = child_hrefs <= {href}
+                    is_wrapper_with_separate_children = (
+                        bool(children) and depth == 0 and not is_chapter and not same_file
+                    )
+
+                    # Don't register Part's href — let child chapters claim it.
+                    # Numbered chapters can overwrite non-chapter entries
+                    # (e.g. Глава 1 overwrites Предисловие when they share a file).
+                    if href and not is_part and not is_wrapper_with_separate_children:
+                        existing = toc_map.get(href)
+                        if existing is None or (is_chapter and not _is_numbered_chapter(existing)):
+                            toc_map[href] = title or ""
+                            if section_name:
+                                href_section[href] = section_name
 
                     # Group children under parent when they share the
                     # parent's file (inline sub-headings) or at deep
@@ -226,7 +237,7 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                     level_group = None if is_part else gt
                     level_group_href = None if is_chapter else href
             elif hasattr(item, "href"):
-                href = item.href.split("#")[0]
+                href = _href(item.href)
                 if href not in toc_map:
                     # level_group_href=None means "apply to any file" (skip section)
                     # Don't group if leaf is itself a numbered chapter
@@ -264,6 +275,53 @@ def _extract_toc_titles(book: epub.EpubBook) -> dict[str, str]:
                         toc_map[href] = f"{section} — {title}"
 
     return toc_map
+
+
+def _manifest_hrefs(book: epub.EpubBook) -> set[str]:
+    """Return manifest item hrefs as ebooklib reports them."""
+    get_items = getattr(book, "get_items", None)
+    if not callable(get_items):
+        return set()
+    hrefs = set()
+    for item in get_items():
+        get_name = getattr(item, "get_name", None)
+        if callable(get_name):
+            hrefs.add(get_name())
+    return hrefs
+
+
+def _normalize_toc_href(href: str, manifest_hrefs: set[str]) -> str:
+    """Normalize TOC hrefs so they match manifest/spine item names.
+
+    Some EPUBs keep the NCX in a subdirectory and store NCX entries such as
+    "../xhtml/chapter.xhtml". ebooklib exposes that value directly, while spine
+    items use the manifest href "xhtml/chapter.xhtml". Normalize those relative
+    hrefs before they are used as chapter-map keys.
+    """
+    href = unquote(href.split("#", 1)[0]).replace("\\", "/").lstrip("/")
+    normalized = posixpath.normpath(href)
+    candidates = [href, normalized]
+
+    stripped = normalized
+    while stripped.startswith("../"):
+        stripped = stripped[3:]
+        candidates.append(stripped)
+    if normalized.startswith("./"):
+        candidates.append(normalized[2:])
+
+    for candidate in candidates:
+        if candidate in manifest_hrefs:
+            return candidate
+
+    basename = posixpath.basename(normalized)
+    basename_matches = [
+        item_href for item_href in manifest_hrefs
+        if posixpath.basename(item_href) == basename
+    ]
+    if len(basename_matches) == 1:
+        return basename_matches[0]
+
+    return normalized
 
 
 def _build_image_map(book: epub.EpubBook) -> dict[str, Any]:

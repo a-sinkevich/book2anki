@@ -45,7 +45,8 @@ class Card:
 
 SKIP_TITLES = {
     "copyright", "dedication", "epigraph", "contents", "table of contents",
-    "also by", "title page", "titlepage", "about the author", "about the authors",
+    "also by", "series", "series page", "title page", "titlepage",
+    "about the author", "about the authors",
     "about the publisher", "about this ebook",
     "acknowledgments", "acknowledgements", "bibliography", "notes", "index",
     "credits", "cover", "illustrations", "glossary", "preface", "foreword",

@@ -20,6 +20,15 @@ def _book_with_toc(toc: list) -> SimpleNamespace:
     return SimpleNamespace(toc=toc)
 
 
+def _book_with_toc_and_manifest(toc: list, hrefs: list[str]) -> SimpleNamespace:
+    """Create a mock book with TOC plus manifest item hrefs."""
+    items = [
+        SimpleNamespace(get_name=lambda href=href: href)
+        for href in hrefs
+    ]
+    return SimpleNamespace(toc=toc, get_items=lambda: items)
+
+
 class TestFlatToc:
     """TOC with only leaf items — no grouping should happen."""
 
@@ -35,6 +44,33 @@ class TestFlatToc:
             "ch2.html": "Chapter 2",
             "ch3.html": "Chapter 3",
         }
+
+    def test_ncx_relative_hrefs_normalized_to_manifest_hrefs(self):
+        """NCX entries like ../xhtml/ch1.xhtml match spine manifest hrefs."""
+        book = _book_with_toc_and_manifest(
+            [
+                _link("Introduction", "../xhtml/11_Introduction.xhtml"),
+                _link("How We Got Here", "../xhtml/13_Chapter1.xhtml"),
+            ],
+            [
+                "xhtml/11_Introduction.xhtml",
+                "xhtml/13_Chapter1.xhtml",
+            ],
+        )
+        result = _extract_toc_titles(book)
+        assert result == {
+            "xhtml/11_Introduction.xhtml": "Introduction",
+            "xhtml/13_Chapter1.xhtml": "How We Got Here",
+        }
+
+    def test_unique_basename_fallback_for_toc_href(self):
+        """TOC hrefs still match when only the basename lines up uniquely."""
+        book = _book_with_toc_and_manifest(
+            [_link("Chapter 1", "chapter1.xhtml")],
+            ["text/chapter1.xhtml", "text/chapter2.xhtml"],
+        )
+        result = _extract_toc_titles(book)
+        assert result == {"text/chapter1.xhtml": "Chapter 1"}
 
 
 class TestHierarchicalGrouping:
@@ -162,6 +198,19 @@ class TestRootLevelNoGrouping:
         assert result["ch1.html"] == "Chapter 1"
         # Part's own href (p1.html) is not in the map since no child uses it
         assert "p1.html" not in result
+
+    def test_named_part_wrapper_does_not_become_chapter(self):
+        """Part-like wrappers may be named thematically, not "Part N"."""
+        book = _book_with_toc([
+            _parent("Before", "part1.html", [
+                _link("How We Got Here", "ch1.html"),
+                _link("Against Inevitabilism", "ch2.html"),
+            ]),
+        ])
+        result = _extract_toc_titles(book)
+        assert "part1.html" not in result
+        assert result["ch1.html"] == "How We Got Here"
+        assert result["ch2.html"] == "Against Inevitabilism"
 
 
 class TestSiblingGrouping:
