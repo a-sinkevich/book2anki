@@ -10,7 +10,7 @@ AI-powered tool to convert books (EPUB/PDF), web articles, and YouTube videos in
    - **Windows**: `book2anki-windows-amd64.exe`
 2. Set up an LLM provider (choose one):
    - **Claude CLI** (recommended if you have [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed): no extra setup needed — book2anki auto-detects and uses it with Opus
-   - **Anthropic API**: get a key from [Anthropic](https://console.anthropic.com/settings/keys), [add credit](https://console.anthropic.com/settings/billing) (prepaid, see [costs](#costs)), and save it in `~/.book2anki.env` (Windows: `C:\Users\<YourName>\.book2anki.env`):
+   - **Anthropic API**: get a key from [Anthropic](https://console.anthropic.com/settings/keys), [add credit](https://console.anthropic.com/settings/billing), and save it in `~/.book2anki.env` (Windows: `C:\Users\<YourName>\.book2anki.env`):
      ```
      ANTHROPIC_API_KEY=your-key
      ```
@@ -115,6 +115,7 @@ book2anki effective_java.epub --practice --code-lang java   # force all code in 
 book2anki mybook.epub --model sonnet              # Claude Sonnet (faster, cheaper)
 book2anki mybook.epub --model opus                # Claude Opus via API
 book2anki mybook.epub --model cli                 # Force claude CLI
+book2anki mybook.epub --model cli:claude-fable-5  # Exact Claude CLI-only model
 book2anki mybook.epub --model codex               # Codex CLI (uses codex exec)
 book2anki mybook.epub --model gpt4o               # GPT-4o (requires OPENAI_API_KEY)
 book2anki mybook.epub --model gpt5.5              # GPT-5.5 (default for OpenAI)
@@ -198,18 +199,11 @@ make clean       # remove build artifacts
 make install-dev # install dev deps
 ```
 
-## Costs
+## Billing
 
 If you use the **Claude CLI** (default when available), there is no direct API cost — usage goes through your Claude Code subscription.
 
-When using the **Anthropic API**, typical costs:
-
-| Source | Depth 0 (summary) | Depth 1 (core) | Depth 2 (detailed) | Depth 3 (comprehensive) |
-|--------|:-:|:-:|:-:|:-:|
-| YouTube video (1 hour) | ~$0.05 | ~$0.06 | ~$0.07 | ~$0.13 |
-| Book (full) | $0.20–$1.00 | $0.50–$2.00 | $1.00–$3.00 | $2.00–$5.00 |
-
-Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. Using `--model opus` via API is ~5x more expensive than Sonnet ($15/$75 vs $3/$15 per million input/output tokens). Tip: use `--chapters` to process specific chapters instead of the whole book.
+When using API providers, book2anki does not print local cost estimates because provider pricing, caching, and token accounting can change or differ by account. Use the Anthropic/OpenAI billing dashboard for authoritative costs. Use `--chapters` to process specific chapters instead of the whole book.
 
 ## Features
 
@@ -225,8 +219,8 @@ Vocabulary mode (`--vocab`) costs roughly the same as depth 2–3 per chapter. U
 - **Smart dedup** — similarity-based dedup within chunks; LLM consolidation across chapters in compact/topic modes; vocab duplicates merged with multiple contexts
 - **Dark & light theme** — cards adapt to your Anki theme
 - **Parallel processing** (`--parallel`) — process multiple chapters simultaneously
-- **Claude CLI support** — auto-detects `claude` CLI for zero-cost generation, falls back to API
+- **Claude CLI support** — auto-detects `claude` CLI for subscription-based generation, falls back to API
 - **Model selection** (`--model`) — choose between Sonnet (fast/cheap), Opus (highest quality), or CLI
 - **Resume on interrupt**: re-run the same command and it skips already-generated chapters
 - **Auto language detection** with `--lang` override
-- **Progress bar** with per-chapter cost breakdown during generation
+- **Progress bar** with per-chapter card counts and elapsed time

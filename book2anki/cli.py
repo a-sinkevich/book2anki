@@ -15,7 +15,7 @@ from book2anki.language import detect_language
 from book2anki.generator import (
     LLMProvider, generate_cards_for_chapter, generate_vocab_for_chapter,
     generate_practice_for_chapter, generate_cards_for_prompt,
-    estimate_cost, format_cost, deduplicate, deduplicate_vocab,
+    deduplicate, deduplicate_vocab,
     consolidate_cards, vocab_word, _vocab_base, PARALLEL_WORKERS,
     generation_errors,
 )
@@ -72,6 +72,12 @@ def _create_provider(model: str | None = None) -> LLMProvider:
 
     if model == "cli":
         return CLIProvider("opus")
+
+    if model and model.startswith("cli:"):
+        cli_model = model.split(":", 1)[1].strip()
+        if not cli_model:
+            raise ValueError("--model cli:<model> requires a Claude CLI model name")
+        return CLIProvider(cli_model)
 
     if model == "codex":
         from book2anki.provider_codex import CodexCLIProvider
@@ -173,7 +179,8 @@ def _parse_args() -> argparse.Namespace:
         "--model", default=None,
         help="Model to use: sonnet, opus, cli (Claude CLI), codex (Codex CLI), "
              "gpt5.5, gpt5.4, gpt4o, o3, o4-mini, "
-             "or any exact model ID (e.g. claude-opus-4-7, gpt-5.4-mini)",
+             "cli:<model> for exact Claude CLI models, "
+             "or any exact API model ID (e.g. claude-opus-4-7, gpt-5.4-mini)",
     )
     args = parser.parse_args()
     if not args.file and not args.prompt:
@@ -340,9 +347,7 @@ def _run_prompt_mode(args: argparse.Namespace) -> None:
     )
 
     if not cards:
-        cost = estimate_cost(usage, model)
-        print(f"Error: No cards were generated. Cost: {format_cost(cost)}",
-              file=sys.stderr)
+        print("Error: No cards were generated.", file=sys.stderr)
         sys.exit(1)
 
     output_path = _apkg_output_path(deck_title, args.output, args.depth)
@@ -352,17 +357,20 @@ def _run_prompt_mode(args: argparse.Namespace) -> None:
         tag_prefix="prompt", model_version=model,
     )
 
-    cost = estimate_cost(usage, model)
-    cost_str = f" Cost: {format_cost(cost)}" if cost > 0 else ""
     if deck_title != fallback_title:
         print(f"Deck title: {deck_title}")
-    print(f"\nDone! Generated {len(cards)} cards.{cost_str}")
+    print(f"\nDone! Generated {len(cards)} cards.")
     print(f"Output: {output_path}\n")
 
 
 def _use_single_deck(topic: str | None, flat: bool) -> bool:
     """Return whether book output should be a single compact deck."""
     return bool(topic) or flat
+
+
+def _chapter_order(chapters: list[Chapter]) -> dict[str, int]:
+    """Map chapter titles to their original zero-based book index."""
+    return {chapter.title: chapter.index for chapter in chapters}
 
 
 def _cleanup_media(media_files: list[str]) -> None:
@@ -414,6 +422,7 @@ def _write_output(
     flat: bool = False,
     media_files: list[str] | None = None,
     model_version: str = "",
+    chapters: list[Chapter] | None = None,
 ) -> None:
     """Write final Anki deck output files."""
     if flat:
@@ -430,6 +439,7 @@ def _write_output(
         package_cards(
             all_cards, book_title, combined_path, media_files=media_files,
             model_version=model_version,
+            chapter_order=_chapter_order(chapters) if chapters else None,
         )
 
 
@@ -584,9 +594,7 @@ def main() -> None:
             total_usage += usage
 
             if not all_cards:
-                cost = estimate_cost(total_usage, model)
-                print(f"Error: No practice cards were generated. Cost: {format_cost(cost)}",
-                      file=sys.stderr)
+                print("Error: No practice cards were generated.", file=sys.stderr)
                 sys.exit(1)
 
             base_name = re.sub(r'[<>:"/\\|?*]', "", practice_deck_title).replace(' ', '_')
@@ -668,15 +676,14 @@ def main() -> None:
                                 model_version=model,
                             )
 
-                        ch_cost = format_cost(estimate_cost(usage, model))
                         cp.complete_chapter(
-                            chapter.index, len(cards), ch_elapsed, ch_cost,
+                            chapter.index, len(cards), ch_elapsed,
                         )
 
                     cp.close()
                     cached = sum(pr_existing_counts.values()) if pr_existing_counts else 0
                     _print_summary(
-                        session_cards, practice_time, total_usage, model,
+                        session_cards, practice_time,
                         cached_cards=cached,
                     )
 
@@ -686,9 +693,7 @@ def main() -> None:
                     for err in generation_errors:
                         print(f"  ✗ {err}", file=sys.stderr)
                     generation_errors.clear()
-                cost = estimate_cost(total_usage, model)
-                print(f"Error: No practice cards were generated."
-                      f" Cost: {format_cost(cost)}", file=sys.stderr)
+                print("Error: No practice cards were generated.", file=sys.stderr)
                 sys.exit(1)
 
             # Dedup for flat/topic mode
@@ -713,9 +718,7 @@ def main() -> None:
                     model_version=model,
                 )
 
-        cost = estimate_cost(total_usage, model)
-        print(f"\nDone! Generated {len(all_cards)} practice cards."
-              f" Cost: {format_cost(cost)}")
+        print(f"\nDone! Generated {len(all_cards)} practice cards.")
         if is_url or is_yt:
             print(f"Output: {base_name}.apkg\n")
         elif single_deck:
@@ -782,21 +785,18 @@ def main() -> None:
                 all_cards.extend(cards)
                 total_usage += usage
                 if is_book_vocab:
-                    ch_cost = format_cost(estimate_cost(usage, model))
-                    cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
+                    cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
                 elif not is_single:
                     pbar.update(1)
 
             if is_book_vocab:
                 cp.close()
-                _print_summary(len(all_cards), vocab_time, total_usage, model)
+                _print_summary(len(all_cards), vocab_time)
             else:
                 pbar.close()
 
         if not all_cards:
-            cost = estimate_cost(total_usage, model)
-            print(f"Error: No vocabulary cards were generated. Cost: {format_cost(cost)}",
-                  file=sys.stderr)
+            print("Error: No vocabulary cards were generated.", file=sys.stderr)
             sys.exit(1)
 
         # Merge duplicates across chapters (same word may appear in multiple chapters)
@@ -844,9 +844,7 @@ def main() -> None:
                 model_version=model,
             )
 
-        cost = estimate_cost(total_usage, model)
-        print(f"\nDone! Generated {len(all_cards)} vocabulary cards."
-              f" Cost: {format_cost(cost)}")
+        print(f"\nDone! Generated {len(all_cards)} vocabulary cards.")
         print(f"Output: {output_path}\n")
         return
 
@@ -859,9 +857,7 @@ def main() -> None:
             topic=args.topic or "", parallel_chunks=args.parallel,
         )
         if not all_cards:
-            cost = estimate_cost(total_usage, model)
-            print(f"Error: No cards were generated. Cost: {format_cost(cost)}",
-                  file=sys.stderr)
+            print("Error: No cards were generated.", file=sys.stderr)
             sys.exit(1)
 
         base = _write_single_output(
@@ -873,8 +869,7 @@ def main() -> None:
         # Clean up temporary media files (already embedded in .apkg)
         _cleanup_media(all_media)
 
-        cost = estimate_cost(total_usage, model)
-        print(f"\nDone! Generated {len(all_cards)} cards. Cost: {format_cost(cost)}")
+        print(f"\nDone! Generated {len(all_cards)} cards.")
         print(f"Output: {base}.apkg\n")
     else:
         depth_label = f"d{args.depth}" if args.depth != 1 else ""
@@ -922,9 +917,7 @@ def main() -> None:
                 )
 
         if not all_cards:
-            cost = estimate_cost(total_usage, model)
-            print(f"Error: No cards were generated. Cost: {format_cost(cost)}",
-                  file=sys.stderr)
+            print("Error: No cards were generated.", file=sys.stderr)
             sys.exit(1)
 
         # Cross-chapter dedup for compact/topic mode
@@ -948,15 +941,14 @@ def main() -> None:
             flat=single_deck,
             media_files=all_media,
             model_version=model,
+            chapters=chapters_to_generate,
         )
 
         # Clean up temporary media files (already embedded in .apkg)
         _cleanup_media(all_media)
 
-        cost = estimate_cost(total_usage, model)
-        cost_str = f" Cost: {format_cost(cost)}" if cost > 0 else ""
         n_ch = len(chapters_to_generate)
-        print(f"\nDone! Generated {len(all_cards)} cards across {n_ch} chapter(s).{cost_str}")
+        print(f"\nDone! Generated {len(all_cards)} cards across {n_ch} chapter(s).")
         if single_deck:
             print(f"Output: {output_dir}.apkg\n")
         else:
@@ -1065,13 +1057,13 @@ class _ProgressBar:
 
 _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
-_TBL_HEADER = f"{'Chapter':<45} {'Cards':>5}  {'Time':>7}  {'Cost':>8}"
-_TBL_SEP = "-" * 45 + " " + "-" * 5 + "  " + "-" * 7 + "  " + "-" * 8
+_TBL_HEADER = f"{'Chapter':<45} {'Cards':>5}  {'Time':>7}"
+_TBL_SEP = "-" * 45 + " " + "-" * 5 + "  " + "-" * 7
 
 
-def _tbl_row(title: str, cards: str, time_s: str, cost: str) -> str:
+def _tbl_row(title: str, cards: str, time_s: str) -> str:
     short = title[:43] + "…" if len(title) > 44 else title
-    return f"{short:<45} {cards:>5}  {time_s:>7}  {cost:>8}"
+    return f"{short:<45} {cards:>5}  {time_s:>7}"
 
 
 class _ChapterProgress:
@@ -1094,7 +1086,6 @@ class _ChapterProgress:
         self._state: list[str] = []
         self._cards: list[int] = [0] * self._n
         self._elapsed: list[float] = [0.0] * self._n
-        self._cost: list[str] = [""] * self._n
         self._ch_start: list[float] = [0.0] * self._n
 
         for ch in chapters:
@@ -1130,16 +1121,16 @@ class _ChapterProgress:
         if st == "done":
             return _tbl_row(
                 title, str(self._cards[i]),
-                _fmt_elapsed(self._elapsed[i]), self._cost[i],
+                _fmt_elapsed(self._elapsed[i]),
             )
         if st == "cached":
-            return _tbl_row(title, str(self._cards[i]), "—", "—")
+            return _tbl_row(title, str(self._cards[i]), "—")
         if st == "active":
             s = _SPINNER[self._spin]
             elapsed = time.monotonic() - self._ch_start[i]
-            return _tbl_row(title, s, _fmt_elapsed(elapsed), "")
+            return _tbl_row(title, s, _fmt_elapsed(elapsed))
         # pending
-        return _tbl_row(title, "", "", "")
+        return _tbl_row(title, "", "")
 
     def _redraw(self, i: int) -> None:
         up = self._n - i
@@ -1156,7 +1147,7 @@ class _ChapterProgress:
                 self._redraw(pos)
 
     def complete_chapter(
-        self, chapter_index: int, cards: int, elapsed: float, cost: str,
+        self, chapter_index: int, cards: int, elapsed: float,
     ) -> None:
         with self._lock:
             pos = self._pos.get(chapter_index)
@@ -1164,7 +1155,6 @@ class _ChapterProgress:
                 self._state[pos] = "done"
                 self._cards[pos] = cards
                 self._elapsed[pos] = elapsed
-                self._cost[pos] = cost
                 self._redraw(pos)
 
     # ProgressBar-compatible interface for generator callbacks
@@ -1191,17 +1181,15 @@ class _ChapterProgress:
 
 
 def _print_summary(
-    total_cards: int, total_time: float, total_usage: TokenUsage, model: str,
+    total_cards: int, total_time: float,
     cached_cards: int = 0,
 ) -> None:
-    cost = estimate_cost(total_usage, model)
-    cost_str = format_cost(cost)
     cards_str = str(total_cards + cached_cards)
     if cached_cards:
         cards_str = f"{cards_str}"
     print(
         _TBL_SEP + "\n" +
-        _tbl_row("Total", cards_str, _fmt_elapsed(total_time), cost_str),
+        _tbl_row("Total", cards_str, _fmt_elapsed(total_time)),
         file=sys.stderr,
     )
 
@@ -1280,8 +1268,7 @@ def _process_sequential(
             )
 
         if is_book:
-            ch_cost = format_cost(estimate_cost(usage, model))
-            cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
+            cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
         else:
             pbar.update(1)
             pbar.set_postfix_str(f"{session_cards} cards")
@@ -1289,7 +1276,7 @@ def _process_sequential(
     if is_book:
         cp.close()
         cached = sum(existing_counts.values()) if existing_counts else 0
-        _print_summary(session_cards, total_time, total_usage, model, cached_cards=cached)
+        _print_summary(session_cards, total_time, cached_cards=cached)
     else:
         pbar.close()
     return all_cards, total_usage, all_media
@@ -1356,10 +1343,9 @@ def _process_practice_parallel(
                         model_version=model,
                     )
 
-                ch_cost = format_cost(estimate_cost(usage, model))
-                cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
+                cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
             except Exception as e:
-                cp.complete_chapter(chapter.index, 0, ch_elapsed, "error")
+                cp.complete_chapter(chapter.index, 0, ch_elapsed)
                 print(f"Warning: Failed to process \"{chapter.title}\": {e}",
                       file=sys.stderr)
 
@@ -1369,7 +1355,7 @@ def _process_practice_parallel(
         all_cards.extend(cards_by_chapter[idx])
     wall_elapsed = time.monotonic() - wall_start
     cached = sum(existing_counts.values()) if existing_counts else 0
-    _print_summary(session_cards, wall_elapsed, total_usage, model, cached_cards=cached)
+    _print_summary(session_cards, wall_elapsed, cached_cards=cached)
     return all_cards, total_usage
 
 
@@ -1380,7 +1366,6 @@ def _process_vocab_parallel(
 ) -> tuple[list[Card], TokenUsage]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
     total_usage = TokenUsage(0, 0)
-    model = provider.model_name()
     session_words = 0
     chapter_start: dict[int, float] = {}
     quiet = _QuietBar()
@@ -1419,10 +1404,9 @@ def _process_vocab_parallel(
                 session_words += len(cards)
                 total_usage += usage
 
-                ch_cost = format_cost(estimate_cost(usage, model))
-                cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
+                cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
             except Exception as e:
-                cp.complete_chapter(chapter.index, 0, ch_elapsed, "error")
+                cp.complete_chapter(chapter.index, 0, ch_elapsed)
                 print(f"Warning: Failed to process \"{chapter.title}\": {e}",
                       file=sys.stderr)
 
@@ -1431,7 +1415,7 @@ def _process_vocab_parallel(
     for idx in sorted(cards_by_chapter):
         all_cards.extend(cards_by_chapter[idx])
     wall_elapsed = time.monotonic() - wall_start
-    _print_summary(session_words, wall_elapsed, total_usage, model)
+    _print_summary(session_words, wall_elapsed)
     return all_cards, total_usage
 
 
@@ -1501,10 +1485,9 @@ def _process_parallel(
                         model_version=model,
                     )
 
-                ch_cost = format_cost(estimate_cost(usage, model))
-                cp.complete_chapter(chapter.index, len(cards), ch_elapsed, ch_cost)
+                cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
             except Exception as e:
-                cp.complete_chapter(chapter.index, 0, ch_elapsed, "error")
+                cp.complete_chapter(chapter.index, 0, ch_elapsed)
                 print(f"Warning: Failed to process \"{chapter.title}\": {e}",
                       file=sys.stderr)
 
@@ -1513,7 +1496,7 @@ def _process_parallel(
         all_cards.extend(cards_by_chapter[idx])
     wall_elapsed = time.monotonic() - wall_start
     cached = sum(existing_counts.values()) if existing_counts else 0
-    _print_summary(session_cards, wall_elapsed, total_usage, model, cached_cards=cached)
+    _print_summary(session_cards, wall_elapsed, cached_cards=cached)
     return all_cards, total_usage, all_media
 
 

@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import tempfile
@@ -14,6 +15,7 @@ from book2anki.packager import (
     _stable_id,
     chapter_filename,
     load_existing_chapters,
+    package_cards,
     package_single_chapter,
     package_vocab_production,
 )
@@ -32,6 +34,26 @@ def _note_tags(path: str) -> list[list[str]]:
     finally:
         os.unlink(tmp_path)
     return [tags.strip().split() for (tags,) in rows]
+
+
+def _deck_names(path: str) -> list[str]:
+    with zipfile.ZipFile(path, "r") as zf:
+        db_name = next(n for n in zf.namelist() if n.startswith("collection.anki2"))
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+            tmp.write(zf.read(db_name))
+            tmp_path = tmp.name
+    try:
+        conn = sqlite3.connect(tmp_path)
+        row = conn.execute("SELECT decks FROM col").fetchone()
+        conn.close()
+    finally:
+        os.unlink(tmp_path)
+    decks = json.loads(row[0])
+    return [
+        deck["name"]
+        for deck in decks.values()
+        if deck["name"] != "Default"
+    ]
 
 
 def test_stable_id_deterministic():
@@ -134,6 +156,26 @@ def test_load_existing_chapters():
         assert 1 in existing
         assert len(existing[0]) == 1
         assert existing[0][0].question == "Q1"
+
+
+def test_package_cards_preserves_original_chapter_numbers_and_order():
+    cards = [
+        Card(question="Q6", answer="A6", chapter_title="Six", book_title="Book"),
+        Card(question="Q5", answer="A5", chapter_title="Five", book_title="Book"),
+    ]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "combined.apkg")
+        package_cards(
+            cards,
+            "Book",
+            out,
+            chapter_order={"Five": 4, "Six": 5},
+        )
+
+        assert _deck_names(out) == [
+            "Book::05 - Five",
+            "Book::06 - Six",
+        ]
 
 
 def test_load_existing_chapters_empty_dir():

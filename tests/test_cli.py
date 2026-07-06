@@ -1,13 +1,15 @@
 import pytest
 
 from book2anki.cli import (
+    _TBL_HEADER,
     _apkg_output_path,
+    _create_provider,
     _prompt_deck_title,
     _use_single_deck,
     _write_output,
     parse_chapters,
 )
-from book2anki.models import Card
+from book2anki.models import Card, Chapter
 
 
 class TestParseChapters:
@@ -87,6 +89,34 @@ def test_write_output_creates_combined_deck_for_chapter_subset(tmp_path):
     assert (output_dir / "Book.apkg").exists()
 
 
+def test_write_output_passes_original_chapter_order(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_package_cards(*_args, **kwargs):
+        seen["chapter_order"] = kwargs["chapter_order"]
+
+    monkeypatch.setattr("book2anki.cli.package_cards", fake_package_cards)
+
+    _write_output(
+        [
+            Card(
+                question="Q",
+                answer="A",
+                chapter_title="Chapter 5",
+                book_title="Book",
+            ),
+        ],
+        "Book",
+        str(tmp_path / "Book"),
+        chapters=[
+            Chapter(title="Chapter 5", text="text", index=4),
+            Chapter(title="Chapter 6", text="text", index=5),
+        ],
+    )
+
+    assert seen["chapter_order"] == {"Chapter 5": 4, "Chapter 6": 5}
+
+
 def test_prompt_deck_title_is_derived_from_request():
     title = _prompt_deck_title(
         "Fundamentals of cognitive load theory for software engineering practice",
@@ -100,3 +130,22 @@ def test_apkg_output_path_accepts_file_or_directory():
     )
     assert _apkg_output_path("Deck", "custom.apkg") == "custom.apkg"
     assert _apkg_output_path("Deck", "out") == "out/Deck.apkg"
+
+
+def test_model_cli_prefix_routes_exact_model_to_claude_cli():
+    provider = _create_provider("cli:claude-fable-5")
+    assert provider.model_name() == "cli:claude-fable-5"
+
+
+def test_model_cli_prefix_keeps_cli_aliases():
+    provider = _create_provider("cli:opus")
+    assert provider.model_name() == "cli:claude-opus-4-8"
+
+
+def test_model_cli_prefix_requires_model_name():
+    with pytest.raises(ValueError, match="requires a Claude CLI model name"):
+        _create_provider("cli:")
+
+
+def test_progress_table_does_not_show_cost_column():
+    assert "Cost" not in _TBL_HEADER

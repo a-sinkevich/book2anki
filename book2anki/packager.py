@@ -393,11 +393,23 @@ def package_cards(
     cards: list[Card], book_title: str, output_path: str,
     media_files: list[str] | None = None,
     model_version: str = "",
+    chapter_order: dict[str, int] | None = None,
 ) -> None:
     """Package all cards into a single .apkg file with chapter-based subdecks."""
     grouped = _group_cards_by_chapter(cards)
+    if chapter_order:
+        grouped = sorted(
+            grouped,
+            key=lambda item: (chapter_order.get(item[0], len(chapter_order)), item[0]),
+        )
     decks = [
-        _build_chapter_deck(book_title, chapter_title, i, chapter_cards, model_version)
+        _build_chapter_deck(
+            book_title,
+            chapter_title,
+            chapter_order.get(chapter_title, i) if chapter_order else i,
+            chapter_cards,
+            model_version,
+        )
         for i, (chapter_title, chapter_cards) in enumerate(grouped)
     ]
     package = genanki.Package(decks)
