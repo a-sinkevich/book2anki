@@ -48,28 +48,33 @@ TERM_DEPTH_INSTRUCTIONS = {
 }
 
 
-def _term_cards_section(depth: int, language: str) -> str:
+_REVERSE_FORM_BODY = """An ordinary card (no "type" field) whose question \
+describes the concept and whose answer is the term and nothing else.
+
+  {"question": "What is the term for depression caused by the long-term use of the \
+antidepressants meant to treat it?", "answer": "Tardive dysphoria"}"""
+
+
+def _term_cards_section(
+    depth: int, language: str, quote_source: bool = True,
+) -> str:
     """Instructions for production-direction cards that test recall of a name.
 
     The cards produced by the main instructions run concept-name → meaning. These
     run the other way: given the meaning, produce the name. Both directions have
     to be trained separately — understanding an idea perfectly is no guarantee of
     being able to retrieve what it is called.
+
+    Cloze cards quote the source verbatim, so `quote_source` is False for sources
+    that are not authored prose (speech-to-text transcripts): those get reverse
+    questions only, rather than cards built on a machine transcription.
     """
-    return f"""
+    if quote_source:
+        forms = f"""Use whichever of these two forms fits the source text:
 
-TERM CARDS (second card type — recall the NAME)
-
-The cards described above run name → meaning. Also generate cards for the reverse \
-direction: given the meaning, recall the NAME. Understanding a concept and being able \
-to name it are separate skills, and the name is often the part that goes missing.
-
-{TERM_DEPTH_INSTRUCTIONS[depth]}
-
-Use whichever of these two forms fits the source text:
-
-**Form 1 — cloze (preferred).** Set "type": "cloze". Put a sentence from the text in \
-"question" with the term wrapped in {{{{c1::...}}}}, and a one-line gloss in "answer".
+**Form 1 — cloze (preferred).** Set "type": "cloze". Take a sentence from the source \
+text above — quote it, never compose one — wrap the term in {{{{c1::...}}}}, and put a \
+one-line gloss in "answer".
 
   THE TEST every cloze must pass: a reader who understands the concept but has \
 forgotten its name must be able to recover the term from the words that remain — and a \
@@ -82,31 +87,58 @@ treatment-resistant depressed state, the result is {{{{c1::tardive dysphoria}}}}
   Fails:  "Healy argues that {{{{c1::tardive dysphoria}}}} is a serious concern." \
 (nothing left to derive the term from — this only drills the sentence)
 
-**Form 2 — reverse question.** An ordinary card (no "type" field) whose question \
-describes the concept and whose answer is the term and nothing else. Use when the text \
-has no self-contained defining sentence.
+**Form 2 — reverse question.** {_REVERSE_FORM_BODY}
 
-  {{"question": "What is the term for depression caused by the long-term use of the \
-antidepressants meant to treat it?", "answer": "Tardive dysphoria"}}
+  Use Form 2 whenever the text has no sentence that passes the test."""
 
-Rules for term cards:
+        cloze_rules = f"""
+- **Never write the sentence yourself.** The cloze sentence is always the author's own, \
+copied from the source text above. You may resolve a pronoun or back-reference so it \
+stands alone ("it" → the thing itself, "this approach" → the named approach) and drop a \
+trailing clause that depends on earlier text. Nothing beyond that: no rephrasing, no \
+stitching two sentences together, no claims the text does not make, and nothing drawn \
+from your own knowledge of the subject. If no sentence in the text works, use Form 2 — \
+never invent a sentence in order to make a cloze possible
 - **Keep the cloze sentence in the language of the source text**, always — even though \
 the other cards are written in {language}. The hidden answer IS a source-language term, \
 so translating the sentence would destroy the card. Write "answer" and "context" in \
 {language}
 - **Exactly one {{{{c1::...}}}} per card.** Never c2, c3, or multiple deletions. Hide the \
 term only, never the surrounding explanation that makes it derivable
-- **One card per term.** Do not build several cloze cards for the same term from \
-different sentences
-- **Repair the sentence for standalone reading**: resolve pronouns and back-references \
-("it" → the thing itself, "this approach" → the named approach), and trim clauses that \
-depend on earlier text. Keep the author's wording and claims otherwise — do not invent \
-statements the text does not make
 - **"context" field**: a short orienting phrase in {language} (3-8 words) naming what \
 the sentence is about, for sentences that read as ambiguous on their own. It must NEVER \
 contain the hidden term or a translation of it, or the card gives itself away. Leave it \
 empty when the sentence already stands alone
-- **Answer side**: a one-line gloss in {language}. Do not restate the whole sentence
+- **Answer side of a cloze**: a one-line gloss in {language}. Do not restate the whole \
+sentence"""
+    else:
+        forms = f"""This source is a speech-to-text transcript rather than authored prose, so it \
+holds no wording worth quoting verbatim. Use one form only:
+
+**Reverse question.** {_REVERSE_FORM_BODY}
+
+Do NOT emit any card with "type": "cloze" for this source, and do not write a sentence \
+of your own to cloze — a transcript's phrasing is a machine's approximation of what was \
+said, and quoting it would bake transcription errors into the answer."""
+
+        cloze_rules = ""
+
+    return f"""
+
+TERM CARDS (second card type — recall the NAME)
+
+The cards described above run name → meaning. Also generate cards for the reverse \
+direction: given the meaning, recall the NAME. Understanding a concept and being able \
+to name it are separate skills, and the name is often the part that goes missing.
+
+{TERM_DEPTH_INSTRUCTIONS[depth]}
+
+{forms}
+
+Rules for term cards:{cloze_rules}
+- **A reverse question is written in {language}, but its answer is the term exactly as \
+the source spells it** — do not translate the term itself
+- **One card per term.** Do not build several term cards for the same term
 - **Only names worth retrieving.** A term card earns its place when the name is the thing \
 you would forget. Skip everyday words, and skip terms the text merely mentions without \
 explaining"""
@@ -154,6 +186,7 @@ def build_prompt(
     is_programming: bool = False,
     book_image_captions: list[tuple[str, str]] | None = None,
     topic: str = "",
+    is_transcript: bool = False,
 ) -> str:
     depth_instruction = DEPTH_INSTRUCTIONS[depth]
 
@@ -236,7 +269,9 @@ def build_prompt(
             "add both a definition card and an application card"
         )
 
-    term_section = _term_cards_section(depth, language)
+    term_section = _term_cards_section(
+        depth, language, quote_source=not is_transcript,
+    )
 
     return f"""You are an expert at creating Anki flashcards from {"articles" if is_article else "books"}.
 

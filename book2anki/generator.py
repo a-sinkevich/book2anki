@@ -294,6 +294,7 @@ def generate_cards_for_chapter(
     topic: str = "",
     on_chunk_done: Callable[[int, int], None] | None = None,
     parallel_chunks: bool = False,
+    is_transcript: bool = False,
 ) -> list[Card]:
     """Generate flashcards for a single chapter."""
     book_image_captions: list[tuple[str, str]] | None = None
@@ -311,6 +312,7 @@ def generate_cards_for_chapter(
             status_fn=status, is_article=is_article, source_url=source_url,
             is_programming=is_programming,
             book_image_captions=book_image_captions, topic=topic,
+            is_transcript=is_transcript,
         )
 
     return _chapter_cards(
@@ -390,18 +392,25 @@ def _generate_with_retries(
     is_programming: bool = False,
     book_image_captions: list[tuple[str, str]] | None = None,
     topic: str = "",
+    is_transcript: bool = False,
 ) -> list[Card]:
     """Generate cards for one piece of text, retrying transient failures."""
     prompt = build_prompt(
         book_title, chapter_title, text, depth, language,
         is_article=is_article, is_programming=is_programming,
         book_image_captions=book_image_captions, topic=topic,
+        is_transcript=is_transcript,
     )
 
     def parse(response: str) -> list[Card]:
         cards = []
         for item in _parse_json_response(response):
             if "question" not in item or "answer" not in item:
+                continue
+            if is_transcript and _CLOZE_RE.search(item["question"]):
+                # Cloze quotes the source verbatim, which a machine transcript
+                # cannot support; the prompt says so, and a stray one has no
+                # sane rendering, so drop it rather than ship a broken card.
                 continue
             question, tags = _question_and_tags(item)
             cards.append(Card(
@@ -432,14 +441,14 @@ _CLOZE_RE = re.compile(r"\{\{c\d+::(.+?)(?:::.*?)?}}", re.DOTALL)
 def _question_and_tags(item: dict[str, Any]) -> tuple[str, list[str]]:
     """Build a card's question field, marking and decorating cloze items.
 
-    A term card asking for a name is returned by the model as `"type": "cloze"`
-    with the name wrapped in `{{c1::…}}`. Its optional `context` becomes an
-    orienting line rendered above the sentence on both sides of the card. An
-    item claiming to be a cloze but carrying no deletion would produce a note
-    Anki generates no cards from, so it degrades to an ordinary card instead.
+    The deletion itself decides, not the model's `"type"` claim. A `{{c1::…}}`
+    left unlabelled would otherwise render as literal braces on a basic note,
+    and a card labelled `"cloze"` with no deletion in it would produce a note
+    Anki generates no cards from. An optional `context` becomes an orienting
+    line above the sentence, shown on both sides of the card.
     """
     question = item["question"]
-    if item.get("type") != "cloze" or not _CLOZE_RE.search(question):
+    if not _CLOZE_RE.search(question):
         return question, []
 
     context = str(item.get("context", "")).strip()

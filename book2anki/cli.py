@@ -759,6 +759,7 @@ def _run_single_source_mode(
             topic=args.topic or "",
             on_chunk_done=on_chunk,
             parallel_chunks=args.parallel,
+            is_transcript=source.is_youtube,
         ),
     )
     if not cards:

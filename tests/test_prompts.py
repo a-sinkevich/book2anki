@@ -139,3 +139,27 @@ def test_vocab_and_practice_prompts_have_no_term_cards():
     """Vocab is already production-direction; practice cards are exercises."""
     assert "TERM CARDS" not in build_practice_prompt("Book", "Ch", "text", 1)
     assert "TERM CARDS" not in build_prompt_request("Study X", 1, "en")
+
+
+def test_cloze_must_quote_the_source_never_compose():
+    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    assert "quote it, never compose one" in prompt
+    assert "Never write the sentence yourself" in prompt
+    assert "never invent a sentence in order to make a cloze possible" in prompt
+
+
+def test_transcripts_get_no_cloze_cards():
+    """A speech-to-text transcript has no authored wording worth quoting."""
+    prompt = build_prompt("Video", "Video", "text", 2, "en",
+                          is_article=True, is_transcript=True)
+    assert "TERM CARDS" in prompt          # term cards still wanted
+    assert 'Do NOT emit any card with "type": "cloze"' in prompt
+    assert "Form 1 — cloze" not in prompt
+    assert "THE TEST every cloze must pass" not in prompt
+
+
+def test_non_transcript_sources_keep_cloze():
+    for kwargs in ({}, {"is_article": True}):
+        prompt = build_prompt("S", "C", "text", 2, "en", **kwargs)
+        assert "Form 1 — cloze (preferred)" in prompt
+        assert 'Do NOT emit any card with "type": "cloze"' not in prompt

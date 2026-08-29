@@ -179,6 +179,8 @@ Decks contain two kinds of card, generated together in one run.
   The rule the generator applies is that a reader who understands the concept must be able to recover the term from the words that remain, and a reader who doesn't must not. A sentence like "Healy argues that `[...]` is a serious concern" fails that test — it only drills the sentence — so it becomes the second shape instead.
 - **Reverse question**, when no self-contained defining sentence exists: "What is the term for depression caused by the long-term use of the antidepressants meant to treat it?" → "Tardive dysphoria".
 
+**Cloze sentences are always quoted from the source, never composed.** The model may resolve a pronoun so the sentence stands alone, or drop a trailing clause that depends on earlier text — nothing more. If the source has no sentence that works, the term becomes a reverse question rather than a sentence written to order. YouTube transcripts get reverse questions only: a speech-to-text transcript is a machine's approximation of what was said, so quoting it verbatim would bake transcription errors into the answer. Any stray cloze card from a transcript is dropped rather than packaged.
+
 How many terms qualify scales with `--depth`: at `--depth 0` only the one idea the text is built around, at `--depth 3` every named concept, law, effect, study, date, and quantity.
 
 With `--lang`, the cloze sentence stays in the **source** language while the gloss and context line are written in your language — the hidden answer is a source-language term, so translating the sentence would destroy the card. Cloze cards are tagged `card::cloze`, so you can filter, reposition, or suspend them in Anki if you'd rather study them separately.
@@ -227,7 +229,7 @@ When using API providers, book2anki does not print local cost estimates because 
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Four depth levels**: essential summary, core ideas, detailed, or comprehensive
-- **Term cards** — alongside the usual concept cards, every deck gets cards that run *meaning → name*, so you can retrieve a term and not just recognise it. Cloze-deleted from a defining sentence in the book where one exists, otherwise a reverse question. See [Term cards](#term-cards)
+- **Term cards** — alongside the usual concept cards, every deck gets cards that run *meaning → name*, so you can retrieve a term and not just recognise it. Cloze-deleted from a defining sentence quoted out of the book where one exists, otherwise a reverse question. See [Term cards](#term-cards)
 - **Prompt mode** (`--prompt "..."`) — generate standalone cards from a study request using model knowledge, without a source file or URL
 - **Practice mode** (`--practice`) — generate "Implement …" programming exercise cards from a book. Each card has a precise specification as the question and complete, production-ready code as the answer. Where practical, answers include runnable demonstrations; for Java this means a complete Java 17+ example with `public static void main(String[] args)`, including realistic usage and important edge cases. Solutions use proper concurrency primitives, idiomatic patterns, and correct error handling — not textbook simplifications. Use `--code-lang java` to force a specific language
 - **Vocabulary mode** (`--vocab --level B2 --lang ru`) — extract words/phrases above your CEFR level with IPA pronunciation, etymology, example sentences, and translation

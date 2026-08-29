@@ -255,10 +255,10 @@ class TestSplitIntoChunks:
 
 
 class TestClozeCards:
-    def _generate(self, payload):
+    def _generate(self, payload, **kwargs):
         return _generate_with_retries(
             _FakeProvider([payload], "gpt-5.5"),
-            "text", "Book", "Chapter", 1, "ru",
+            "text", "Book", "Chapter", 1, "ru", **kwargs,
         )
 
     def test_cloze_item_is_tagged_and_kept_verbatim(self):
@@ -294,6 +294,25 @@ class TestClozeCards:
 
         assert not is_cloze(cards[0])
         assert cards[0].question == "The result is tardive dysphoria."
+
+    def test_deletion_wins_over_a_missing_type_label(self):
+        """Literal {{c1::...}} on a basic note would render as braces."""
+        cards = self._generate(json.dumps([{
+            "question": "The result is {{c1::tardive dysphoria}}.",
+            "answer": "gloss",
+        }]))
+
+        assert is_cloze(cards[0])
+
+    def test_transcripts_never_yield_cloze_cards(self):
+        """A machine transcript has no authored wording to quote."""
+        cards = self._generate(json.dumps([
+            {"question": "What is X?", "answer": "A"},
+            {"type": "cloze", "question": "He said {{c1::tardive dysphoria}} once.",
+             "answer": "gloss"},
+        ]), is_transcript=True)
+
+        assert [c.question for c in cards] == ["What is X?"]
 
     def test_plain_cards_are_untagged(self):
         cards = self._generate('[{"question": "What is X?", "answer": "A"}]')
