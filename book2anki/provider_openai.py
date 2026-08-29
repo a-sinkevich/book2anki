@@ -4,7 +4,6 @@ import sys
 import openai
 
 from book2anki.generator import LLMProvider
-from book2anki.models import TokenUsage
 
 
 class OpenAIProvider(LLMProvider):
@@ -39,7 +38,7 @@ class OpenAIProvider(LLMProvider):
         }
         self.model = models.get(model_name, model_name)
 
-    def generate(self, prompt: str) -> tuple[str, TokenUsage]:
+    def generate(self, prompt: str) -> str:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
@@ -47,12 +46,8 @@ class OpenAIProvider(LLMProvider):
         choice = response.choices[0]
         if choice.finish_reason == "content_filter":
             raise ValueError("Model refused the request (content_filter)")
-        text = choice.message.content or ""
-        usage = TokenUsage(
-            input_tokens=response.usage.prompt_tokens if response.usage else 0,
-            output_tokens=response.usage.completion_tokens if response.usage else 0,
-        )
-        return text, usage
+        text: str = choice.message.content or ""
+        return text
 
     def model_name(self) -> str:
         return self.model

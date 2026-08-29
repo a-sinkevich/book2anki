@@ -6,7 +6,6 @@ import subprocess
 import tempfile
 
 from book2anki.generator import LLMProvider
-from book2anki.models import TokenUsage
 
 
 class CLIProvider(LLMProvider):
@@ -24,7 +23,7 @@ class CLIProvider(LLMProvider):
             return False
         return shutil.which("claude") is not None
 
-    def generate(self, prompt: str) -> tuple[str, TokenUsage]:
+    def generate(self, prompt: str) -> str:
         # Write prompt to temp file to avoid ARG_MAX limits.
         # Then ask claude to read the file (claude -p doesn't read from stdin).
         # Use system temp dir so the claude CLI doesn't pick up the project's
@@ -65,7 +64,7 @@ class CLIProvider(LLMProvider):
             if proc.returncode != 0:
                 raise RuntimeError(
                     f"claude CLI failed: {stderr.strip()}")
-            return stdout, TokenUsage(0, 0)
+            return stdout
         finally:
             try:
                 os.unlink(prompt_path)

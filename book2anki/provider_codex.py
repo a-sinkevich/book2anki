@@ -6,7 +6,6 @@ import subprocess
 import tempfile
 
 from book2anki.generator import LLMProvider
-from book2anki.models import TokenUsage
 
 
 class CodexCLIProvider(LLMProvider):
@@ -18,7 +17,7 @@ class CodexCLIProvider(LLMProvider):
         """Check if the codex CLI is installed."""
         return shutil.which("codex") is not None
 
-    def generate(self, prompt: str) -> tuple[str, TokenUsage]:
+    def generate(self, prompt: str) -> str:
         # Write prompt to temp file to avoid ARG_MAX limits.
         # Pipe it into codex exec via stdin.
         fd, prompt_path = tempfile.mkstemp(
@@ -50,7 +49,7 @@ class CodexCLIProvider(LLMProvider):
             if proc.returncode != 0:
                 raise RuntimeError(
                     f"codex CLI failed: {stderr.strip()}")
-            return stdout, TokenUsage(0, 0)
+            return stdout
         finally:
             try:
                 os.unlink(prompt_path)

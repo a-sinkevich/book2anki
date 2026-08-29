@@ -4,9 +4,11 @@ import re
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable
 
-from book2anki.models import Card, Chapter, TokenUsage
+from book2anki.models import Card, Chapter
 from book2anki.parser_epub import parse_epub
 from book2anki.parser_pdf import parse_pdf
 from book2anki.parser_web import parse_url
@@ -197,6 +199,23 @@ def _parse_args() -> argparse.Namespace:
         parser.error("--practice only applies to source files/urls")
     if args.prompt and args.code_lang:
         parser.error("--code-lang only applies in practice mode")
+
+    # Checked here rather than after parsing, so a bad flag combination fails
+    # before spending a minute extracting text from a large PDF.
+    if not args.prompt:
+        if args.vocab and not args.level:
+            parser.error("--vocab requires --level (e.g. --vocab --level B2)")
+        if args.vocab and not args.lang:
+            parser.error("--vocab requires --lang to specify your native language "
+                         "(e.g. --vocab --level B2 --lang ru)")
+        if args.vocab_mode is not None and not args.vocab:
+            parser.error("--vocab-mode only applies in vocabulary mode (add --vocab)")
+        if args.practice and args.vocab:
+            parser.error("--practice and --vocab cannot be used together")
+        if args.code_lang and not args.practice:
+            parser.error("--code-lang only applies in practice mode (add --practice)")
+    if args.vocab_mode is None:
+        args.vocab_mode = "production"  # default when --vocab is used
     return args
 
 
@@ -280,6 +299,11 @@ _MAX_TOPIC_LEN = 25
 _MAX_PROMPT_TITLE_LEN = 80
 
 
+def _safe_name(title: str) -> str:
+    """Turn a deck title into a filesystem-safe base name."""
+    return re.sub(r'[<>:"/\\|?*]', "", title).replace(" ", "_")
+
+
 def _short_topic(topic: str) -> str:
     """Truncate topic for display in deck/file names."""
     if len(topic) <= _MAX_TOPIC_LEN:
@@ -295,11 +319,15 @@ def _prompt_deck_title(request: str) -> str:
     return f"Prompt — {title or 'Study Request'}"
 
 
+def _base_name(title: str, depth: int) -> str:
+    """Filesystem-safe stem for a deck, tagged with a non-default depth."""
+    safe = _safe_name(title)
+    return f"{safe}_d{depth}" if depth != 1 else safe
+
+
 def _apkg_output_path(base_title: str, output: str | None, depth: int = 1) -> str:
     """Build an .apkg output path from a title and optional file/directory output."""
-    safe = re.sub(r'[<>:"/\\|?*]', "", base_title).replace(" ", "_")
-    if depth != 1:
-        safe = f"{safe}_d{depth}"
+    safe = _base_name(base_title, depth)
     if not output:
         return f"{safe}.apkg"
     if output.endswith(".apkg"):
@@ -312,55 +340,6 @@ def _deck_title(book_title: str, topic: str | None) -> str:
     if not topic:
         return book_title
     return f"{book_title} — {_short_topic(topic)}"
-
-
-def _run_prompt_mode(args: argparse.Namespace) -> None:
-    """Generate a flat deck from a source-free study request."""
-    request = args.prompt.strip()
-    if not request:
-        print("Error: --prompt cannot be empty", file=sys.stderr)
-        sys.exit(1)
-
-    fallback_title = _prompt_deck_title(request)
-    lang = detect_language(request, override=args.lang)
-
-    print(f'"{fallback_title}"')
-    print(f"Mode: prompt study guide, depth={args.depth}"
-          f"{', lang=' + args.lang if args.lang else ', lang=auto'}")
-    print(f"Language: {lang}")
-    print()
-
-    try:
-        provider = _create_provider(args.model)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    model = provider.model_name()
-    print(f"Cards model: {model}")
-    print()
-
-    print("Generating...")
-    deck_title, cards, usage = generate_cards_for_prompt(
-        provider, request, fallback_title, args.depth, lang,
-        status_fn=lambda msg: print(msg, flush=True),
-    )
-
-    if not cards:
-        print("Error: No cards were generated.", file=sys.stderr)
-        sys.exit(1)
-
-    output_path = _apkg_output_path(deck_title, args.output, args.depth)
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    package_cards_flat(
-        cards, deck_title, output_path,
-        tag_prefix="prompt", model_version=model,
-    )
-
-    if deck_title != fallback_title:
-        print(f"Deck title: {deck_title}")
-    print(f"\nDone! Generated {len(cards)} cards.")
-    print(f"Output: {output_path}\n")
 
 
 def _use_single_deck(topic: str | None, flat: bool) -> bool:
@@ -389,71 +368,115 @@ def _cleanup_media(media_files: list[str]) -> None:
             pass
 
 
-def _write_single_output(
-    all_cards: list[Card], book_title: str, output: str | None,
-    is_youtube: bool = False, media_files: list[str] | None = None,
-    depth: int = 1,
-    model_version: str = "",
-) -> str:
-    """Write a single .apkg file for a URL source. Returns output path."""
-    base_name = output or re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
-    if not output and depth != 1:
-        base_name = f"{base_name}_d{depth}"
-    path = f"{base_name}.apkg"
-    if is_youtube:
-        package_cards_flat(
-            all_cards, book_title, path,
-            tag_prefix="youtube", model=YOUTUBE_MODEL,
-            media_files=media_files,
-            model_version=model_version,
-        )
-    else:
-        package_cards_flat(
-            all_cards, book_title, path, media_files=media_files,
-            model_version=model_version,
-        )
-    return base_name
+@dataclass
+class _Source:
+    """Everything the modes need to know about the parsed input."""
+    title: str
+    chapters: list[Chapter]   # the selected subset, in book order
+    lang: str
+    is_url: bool
+    is_youtube: bool
+    is_programming: bool
+    url: str = ""
+
+    @property
+    def is_single(self) -> bool:
+        """Articles and videos are one chapter with no per-chapter output."""
+        return self.is_url or self.is_youtube
 
 
-def _write_output(
-    all_cards: list[Card],
-    book_title: str,
-    output_dir: str,
-    flat: bool = False,
-    media_files: list[str] | None = None,
-    model_version: str = "",
-    chapters: list[Chapter] | None = None,
-) -> None:
-    """Write final Anki deck output files."""
-    if flat:
-        # Single flat deck — write .apkg directly, no folder needed
-        path = f"{output_dir}.apkg"
-        package_book_flat(
-            all_cards, book_title, path, media_files=media_files,
-            model_version=model_version,
-        )
-    else:
-        os.makedirs(output_dir, exist_ok=True)
-        base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(" ", "_")
-        combined_path = str(Path(output_dir) / f"{base_name}.apkg")
-        package_cards(
-            all_cards, book_title, combined_path, media_files=media_files,
-            model_version=model_version,
-            chapter_order=_chapter_order(chapters) if chapters else None,
-        )
+def _resume_existing(
+    chapters_dir: str, chapters: list[Chapter],
+) -> tuple[dict[int, list[Card]], list[Card]]:
+    """Load already-generated chapters so a re-run picks up where it stopped.
+
+    Returns the per-index map of everything on disk and the cards belonging to
+    chapters that are in scope for this run.
+    """
+    if not chapters_dir:
+        return {}, []
+
+    existing = load_existing_chapters(chapters_dir)
+    in_scope = {ch.index for ch in chapters}
+    cards = [
+        card for idx in sorted(existing)
+        if idx in in_scope
+        for card in existing[idx]
+    ]
+    done = in_scope & existing.keys()
+    if done:
+        print(f"Resuming: {len(done)}/{len(chapters)} chapters already done"
+              f" ({len(cards)} cards)")
+    return existing, cards
 
 
-def main() -> None:
-    from book2anki.envfile import load_env
-    load_env()
+def _dedup_similar(cards: list[Card]) -> list[Card]:
+    """Drop near-duplicate cards, reporting how many went."""
+    before = len(cards)
+    cards = deduplicate(cards)
+    if len(cards) < before:
+        print(f"Removed {before - len(cards)} similar cards"
+              f" ({before} → {len(cards)})")
+    return cards
 
-    args = _parse_args()
 
-    if args.prompt:
-        _run_prompt_mode(args)
-        return
+def _run_prompt_mode(args: argparse.Namespace) -> None:
+    """Generate a flat deck from a source-free study request."""
+    request = args.prompt.strip()
+    if not request:
+        print("Error: --prompt cannot be empty", file=sys.stderr)
+        sys.exit(1)
 
-    assert args.file is not None
+    fallback_title = _prompt_deck_title(request)
+    lang = detect_language(request, override=args.lang)
+
+    print(f'"{fallback_title}"')
+    print(f"Mode: prompt study guide, depth={args.depth}"
+          f"{', lang=' + args.lang if args.lang else ', lang=auto'}")
+    print(f"Language: {lang}")
+    print()
+
+    provider = _make_provider(args)
+    model = provider.model_name()
+
+    print("Generating...")
+    deck_title, cards = generate_cards_for_prompt(
+        provider, request, fallback_title, args.depth, lang,
+        status_fn=lambda msg: print(msg, flush=True),
+    )
+
+    if not cards:
+        _print_generation_errors()
+        print("Error: No cards were generated.", file=sys.stderr)
+        sys.exit(1)
+
+    output_path = _apkg_output_path(deck_title, args.output, args.depth)
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    package_cards_flat(
+        cards, deck_title, output_path,
+        tag_prefix="prompt", model_version=model,
+    )
+
+    if deck_title != fallback_title:
+        print(f"Deck title: {deck_title}")
+    print(f"\nDone! Generated {len(cards)} cards.")
+    print(f"Output: {output_path}\n")
+
+
+def _make_provider(args: argparse.Namespace) -> LLMProvider:
+    """Build the LLM provider and announce which model will be used."""
+    try:
+        provider = _create_provider(args.model)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Cards model: {provider.model_name()}")
+    print()
+    return provider
+
+
+def _parse_source(args: argparse.Namespace) -> _Source:
+    """Parse the input file/URL and pick the chapters to process."""
     is_url = _is_url(args.file)
     is_yt = is_youtube_input(args.file)
 
@@ -469,7 +492,8 @@ def main() -> None:
                 sys.exit(1)
             suffix = filepath.suffix.lower()
             if suffix not in (".epub", ".pdf"):
-                print(f"Error: Unsupported file format '{suffix}'. Use .epub or .pdf.", file=sys.stderr)
+                print(f"Error: Unsupported file format '{suffix}'. Use .epub or .pdf.",
+                      file=sys.stderr)
                 sys.exit(1)
             book_title, chapters = _parse_book(filepath)
     except ValueError as e:
@@ -480,479 +504,374 @@ def main() -> None:
         print("Error: No content could be extracted.", file=sys.stderr)
         sys.exit(1)
 
-    if args.vocab and not args.level:
-        print("Error: --vocab requires --level (e.g. --vocab --level B2)", file=sys.stderr)
-        sys.exit(1)
-    if args.vocab and not args.lang:
-        print("Error: --vocab requires --lang to specify your native language "
-              "(e.g. --vocab --level B2 --lang ru)", file=sys.stderr)
-        sys.exit(1)
-    if args.vocab_mode is not None and not args.vocab:
-        print("Error: --vocab-mode only applies in vocabulary mode (add --vocab)",
-              file=sys.stderr)
-        sys.exit(1)
-    if args.vocab_mode is None:
-        args.vocab_mode = "production"  # default when --vocab is used
-    if args.practice and args.vocab:
-        print("Error: --practice and --vocab cannot be used together",
-              file=sys.stderr)
-        sys.exit(1)
-    if args.code_lang and not args.practice:
-        print("Error: --code-lang only applies in practice mode (add --practice)",
-              file=sys.stderr)
-        sys.exit(1)
-
     if is_url or is_yt:
         print(f'"{book_title}"')
     else:
         print(f'"{book_title}" — {len(chapters)} chapter(s) extracted.')
-    if args.vocab:
-        print(f"Mode: vocabulary extraction (level {args.level})"
-              f", cards={args.vocab_mode}"
-              f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
-              f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
-              f"{', topic=' + args.topic if args.topic else ''}")
-    elif args.practice:
-        print(f"Mode: practice exercises"
-              f", depth={args.depth}"
-              f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
-              f"{', code-lang=' + args.code_lang if args.code_lang else ''}"
-              f"{', topic=' + args.topic if args.topic else ''}"
-              f"{', parallel' if args.parallel else ''}")
-    else:
-        print(f"Parameters: depth={args.depth}"
-              f"{', chapters=' + args.chapters if args.chapters else ', chapters=all'}"
-              f"{', lang=' + args.lang if args.lang else ', lang=auto'}"
-              f"{', topic=' + args.topic if args.topic else ''}"
-              f"{', parallel' if args.parallel else ''}")
+    _print_mode_line(args)
 
-    chapters_to_generate = _select_chapters(chapters, args.chapters)
-
-    all_text = "\n".join(ch.text for ch in chapters_to_generate)
+    selected = _select_chapters(chapters, args.chapters)
+    all_text = "\n".join(ch.text for ch in selected)
     lang = detect_language(all_text, override=args.lang)
     is_prog = detect_programming(all_text)
-    total_book_images = len({img.id for ch in chapters_to_generate for img in ch.images})
+
     print(f"Language: {lang}")
     if is_prog:
         print("Content: programming (code-aware cards)")
-    if total_book_images:
-        label = "Images" if is_url or is_yt else "Book images"
-        print(f"{label}: {total_book_images} figures extracted")
+    images = len({img.id for ch in selected for img in ch.images})
+    if images:
+        label = "Images" if (is_url or is_yt) else "Book images"
+        print(f"{label}: {images} figures extracted")
     print()
 
-    try:
-        provider = _create_provider(args.model)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+    url = ""
+    if is_yt:
+        url = f"https://www.youtube.com/watch?v={args.file}"
+    elif is_url:
+        url = args.file
 
-    model_name = provider.model_name()
-    print(f"Cards model: {model_name}")
-    print()
+    return _Source(
+        title=book_title, chapters=selected, lang=lang,
+        is_url=is_url, is_youtube=is_yt, is_programming=is_prog, url=url,
+    )
 
-    all_cards: list[Card] = []
-    all_media: list[str] = []
 
-    total_usage = TokenUsage(0, 0)
-    model = provider.model_name()
-    deck_title = _deck_title(book_title, args.topic)
+def _print_mode_line(args: argparse.Namespace) -> None:
+    """Echo the effective run parameters."""
+    chapters = ', chapters=' + args.chapters if args.chapters else ', chapters=all'
+    topic = ', topic=' + args.topic if args.topic else ''
+    if args.vocab:
+        print(f"Mode: vocabulary extraction (level {args.level})"
+              f", cards={args.vocab_mode}{chapters}"
+              f"{', lang=' + args.lang if args.lang else ', lang=auto'}{topic}")
+    elif args.practice:
+        print(f"Mode: practice exercises, depth={args.depth}{chapters}"
+              f"{', code-lang=' + args.code_lang if args.code_lang else ''}{topic}"
+              f"{', parallel' if args.parallel else ''}")
+    else:
+        print(f"Parameters: depth={args.depth}{chapters}"
+              f"{', lang=' + args.lang if args.lang else ', lang=auto'}{topic}"
+              f"{', parallel' if args.parallel else ''}")
 
-    if args.practice:
-        if not is_prog:
-            print("Warning: book does not appear to be about programming. "
-                  "Practice mode works best with programming books.",
-                  file=sys.stderr)
 
-        if args.code_lang:
-            practice_deck_title = f"Practice | {args.code_lang.capitalize()} | {deck_title}"
-        else:
-            practice_deck_title = f"Practice | {deck_title}"
+def main() -> None:
+    from book2anki.envfile import load_env
+    load_env()
 
-        if is_url or is_yt:
-            # URL/YouTube: single flat deck, no chapters
-            pbar = _ProgressBar(total=1)
+    args = _parse_args()
 
-            def _practice_chunk_cb(done: int, total_chunks: int) -> None:
-                if done == 0:
-                    pbar.total = total_chunks
-                    pbar.n = 0
-                else:
-                    pbar.n = done
-                pbar.refresh()
-
-            cards, usage = generate_practice_for_chapter(
-                provider, chapters_to_generate[0], book_title,
-                depth=args.depth,
-                progress_bar=pbar,
-                topic=args.topic or "",
-                code_lang=args.code_lang or "",
-                on_chunk_done=_practice_chunk_cb,
-                parallel_chunks=args.parallel,
-            )
-            pbar.close()
-            all_cards.extend(cards)
-            total_usage += usage
-
-            if not all_cards:
-                print("Error: No practice cards were generated.", file=sys.stderr)
-                sys.exit(1)
-
-            base_name = re.sub(r'[<>:"/\\|?*]', "", practice_deck_title).replace(' ', '_')
-            output_path = args.output or f"{base_name}.apkg"
-            package_practice_flat(
-                all_cards, practice_deck_title, output_path,
-                model_version=model,
-            )
-        else:
-            # Book: per-chapter saves, resume, subdecks (same as regular mode)
-            depth_label = f"d{args.depth}" if args.depth != 1 else ""
-            base_name = re.sub(r'[<>:"/\\|?*]', "", practice_deck_title).replace(' ', '_')
-            if depth_label:
-                base_name = f"{base_name}_{depth_label}"
-            output_dir = args.output or base_name
-            single_deck = args.flat
-            chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
-
-            pr_existing: dict[int, list[Card]] = {}
-            if chapters_dir:
-                pr_existing = load_existing_chapters(chapters_dir)
-                for idx, cards in sorted(pr_existing.items()):
-                    if any(ch.index == idx for ch in chapters_to_generate):
-                        all_cards.extend(cards)
-                if pr_existing:
-                    existing_in_scope = {
-                        idx for idx in pr_existing
-                        if any(ch.index == idx for ch in chapters_to_generate)
-                    }
-                    if existing_in_scope:
-                        print(f"Resuming: {len(existing_in_scope)}/{len(chapters_to_generate)}"
-                              f" chapters already done ({len(all_cards)} cards)")
-
-            pending = [ch for ch in chapters_to_generate if ch.index not in pr_existing]
-
-            pr_existing_counts: dict[int, int] | None = None
-            if pr_existing:
-                pr_existing_counts = {idx: len(cards) for idx, cards in pr_existing.items()}
-
-            if pending:
-                if args.parallel:
-                    new_cards, total_usage = _process_practice_parallel(
-                        provider, pending, book_title,
-                        depth=args.depth, topic=args.topic or "",
-                        code_lang=args.code_lang or "",
-                        chapters_dir=chapters_dir,
-                        practice_deck_title=practice_deck_title,
-                        all_chapters=chapters_to_generate,
-                        existing_counts=pr_existing_counts,
-                    )
-                    all_cards.extend(new_cards)
-                else:
-                    cp = _ChapterProgress(
-                        chapters_to_generate, existing=pr_existing_counts,
-                    )
-                    session_cards = 0
-                    practice_time = 0.0
-                    for chapter in pending:
-                        cp.start_chapter(chapter.index)
-                        ch_start = time.monotonic()
-                        cards, usage = generate_practice_for_chapter(
-                            provider, chapter, book_title,
-                            depth=args.depth,
-                            progress_bar=cp,
-                            topic=args.topic or "",
-                            code_lang=args.code_lang or "",
-                            parallel_chunks=args.parallel,
-                        )
-                        ch_elapsed = time.monotonic() - ch_start
-                        practice_time += ch_elapsed
-                        all_cards.extend(cards)
-                        session_cards += len(cards)
-                        total_usage += usage
-
-                        if cards and chapters_dir:
-                            package_practice_chapter(
-                                cards, practice_deck_title,
-                                chapter.index, chapters_dir,
-                                model_version=model,
-                            )
-
-                        cp.complete_chapter(
-                            chapter.index, len(cards), ch_elapsed,
-                        )
-
-                    cp.close()
-                    cached = sum(pr_existing_counts.values()) if pr_existing_counts else 0
-                    _print_summary(
-                        session_cards, practice_time,
-                        cached_cards=cached,
-                    )
-
-            if not all_cards:
-                if generation_errors:
-                    print("\nErrors during generation:", file=sys.stderr)
-                    for err in generation_errors:
-                        print(f"  ✗ {err}", file=sys.stderr)
-                    generation_errors.clear()
-                print("Error: No practice cards were generated.", file=sys.stderr)
-                sys.exit(1)
-
-            # Dedup for flat/topic mode
-            if single_deck and len(all_cards) > 3:
-                before = len(all_cards)
-                all_cards = deduplicate(all_cards)
-                if len(all_cards) < before:
-                    print(f"Removed {before - len(all_cards)} similar cards"
-                          f" ({before} → {len(all_cards)})")
-
-            if single_deck:
-                path = f"{output_dir}.apkg"
-                package_practice_flat(
-                    all_cards, practice_deck_title, path,
-                    model_version=model,
-                )
-            else:
-                os.makedirs(output_dir, exist_ok=True)
-                combined = str(Path(output_dir) / f"{base_name}.apkg")
-                package_practice(
-                    all_cards, practice_deck_title, combined,
-                    model_version=model,
-                )
-
-        print(f"\nDone! Generated {len(all_cards)} practice cards.")
-        if is_url or is_yt:
-            print(f"Output: {base_name}.apkg\n")
-        elif single_deck:
-            print(f"Output: {output_dir}.apkg\n")
-        else:
-            print(f"Output: {output_dir}/\n")
+    if args.prompt:
+        _run_prompt_mode(args)
         return
 
-    if args.vocab:
-        # In vocab mode: source language = book's language (auto-detected),
-        # native language = --lang override (translation target)
-        source_lang = detect_language(all_text)  # always auto-detect
-        native_lang = args.lang
+    source = _parse_source(args)
+    provider = _make_provider(args)
 
-        # Check Anki for existing vocab words to skip (normalized base forms)
-        existing_raw = read_vocab_words()
-        existing_words = {_vocab_base(w) for w in existing_raw}
-        if existing_words:
-            print(f"Existing Anki collection: {len(existing_raw)} vocab words found, "
-                  "will skip duplicates")
+    if args.practice:
+        _run_practice_mode(args, source, provider)
+    elif args.vocab:
+        _run_vocab_mode(args, source, provider)
+    elif source.is_single:
+        _run_single_source_mode(args, source, provider)
+    else:
+        _run_book_mode(args, source, provider)
 
-        total = len(chapters_to_generate)
-        if args.parallel and total > 1:
-            all_cards, total_usage = _process_vocab_parallel(
-                provider, chapters_to_generate, book_title,
-                level=args.level, native_language=native_lang,
-                total=total, is_article=(is_url or is_yt),
-                topic=args.topic or "",
-            )
-        else:
-            is_single = (is_url or is_yt)
-            is_book_vocab = not is_single and total > 1
 
-            if is_book_vocab:
-                cp = _ChapterProgress(chapters_to_generate)
-            else:
-                pbar = _ProgressBar(total=total)
+def _run_practice_mode(
+    args: argparse.Namespace, source: _Source, provider: LLMProvider,
+) -> None:
+    """Generate programming exercise cards."""
+    if not source.is_programming:
+        print("Warning: book does not appear to be about programming. "
+              "Practice mode works best with programming books.",
+              file=sys.stderr)
 
-            def _vocab_chunk_cb(done: int, total_chunks: int) -> None:
-                if done == 0:
-                    pbar.total = total_chunks
-                    pbar.n = 0
-                else:
-                    pbar.n = done
-                pbar.refresh()
+    model = provider.model_name()
+    deck_title = _deck_title(source.title, args.topic)
+    if args.code_lang:
+        deck_title = f"Practice | {args.code_lang.capitalize()} | {deck_title}"
+    else:
+        deck_title = f"Practice | {deck_title}"
 
-            vocab_time = 0.0
-            for chapter in chapters_to_generate:
-                if is_book_vocab:
-                    cp.start_chapter(chapter.index)
-                ch_start = time.monotonic()
-                progress = cp if is_book_vocab else pbar  # type: ignore[assignment]
-                cards, usage = generate_vocab_for_chapter(
-                    provider, chapter, book_title,
-                    level=args.level, native_language=native_lang,
-                    progress_bar=progress,
-                    is_article=is_single,
-                    topic=args.topic or "",
-                    on_chunk_done=_vocab_chunk_cb if is_single else None,
-                    parallel_chunks=args.parallel,
-                )
-                ch_elapsed = time.monotonic() - ch_start
-                vocab_time += ch_elapsed
-                all_cards.extend(cards)
-                total_usage += usage
-                if is_book_vocab:
-                    cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
-                elif not is_single:
-                    pbar.update(1)
+    def run(chapter: Chapter, bar: Any = None, on_chunk: Any = None) -> list[Card]:
+        return generate_practice_for_chapter(
+            provider, chapter, source.title,
+            depth=args.depth,
+            progress_bar=bar,
+            topic=args.topic or "",
+            code_lang=args.code_lang or "",
+            on_chunk_done=on_chunk,
+            parallel_chunks=args.parallel,
+        )
 
-            if is_book_vocab:
-                cp.close()
-                _print_summary(len(all_cards), vocab_time)
-            else:
-                pbar.close()
-
-        if not all_cards:
-            print("Error: No vocabulary cards were generated.", file=sys.stderr)
-            sys.exit(1)
-
-        # Merge duplicates across chapters (same word may appear in multiple chapters)
-        before = len(all_cards)
-        all_cards = deduplicate_vocab(all_cards)
-        if len(all_cards) < before:
-            print(f"Merged {before - len(all_cards)} duplicate words"
-                  f" ({before} → {len(all_cards)})")
-
-        # Skip words already in Anki
-        if existing_words:
-            before = len(all_cards)
-            all_cards = [
-                c for c in all_cards
-                if _vocab_base(vocab_word(c.question)) not in existing_words
-            ]
-            skipped = before - len(all_cards)
-            if skipped:
-                print(f"Skipped {skipped} words already in Anki"
-                      f" ({before} → {len(all_cards)})")
-
-        source_name = _lang_name(source_lang)
-        deck_parts = [f"{source_name} {args.level}", book_title]
-        if args.topic:
-            deck_parts.append(_short_topic(args.topic))
-        vocab_deck_title = " — ".join(deck_parts)
-        file_parts = list(deck_parts)
-        if args.chapters:
-            file_parts.append(f"ch.{args.chapters}")
-        file_name = " — ".join(file_parts)
-        base_name = re.sub(r'[<>:"/\\|?*]', "", file_name).replace(' ', '_')
-        output_path = args.output or f"{base_name}.apkg"
-        if not output_path.endswith(".apkg"):
-            output_path = str(Path(output_path) / f"{base_name}.apkg")
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-
-        if args.vocab_mode == "production":
-            package_vocab_production(
-                all_cards, vocab_deck_title, output_path,
-                model_version=model,
-            )
-        else:
-            package_vocab_flat(
-                all_cards, vocab_deck_title, output_path,
-                model_version=model,
-            )
-
-        print(f"\nDone! Generated {len(all_cards)} vocabulary cards.")
+    if source.is_single:
+        cards = _process_single_source(
+            lambda bar, on_chunk: run(source.chapters[0], bar, on_chunk),
+        )
+        if not cards:
+            _fail_no_cards("practice cards")
+        output_path = args.output or f"{_safe_name(deck_title)}.apkg"
+        package_practice_flat(cards, deck_title, output_path, model_version=model)
+        print(f"\nDone! Generated {len(cards)} practice cards.")
         print(f"Output: {output_path}\n")
         return
 
-    if is_url or is_yt:
-        source_url = args.file if is_url else f"https://www.youtube.com/watch?v={args.file}"
-        all_cards, total_usage, all_media = _process_sequential(
-            provider, chapters_to_generate, book_title, args.depth, lang,
-            total=1, all_cards=[], chapters_dir="", is_article=True,
-            source_url=source_url, is_programming=is_prog,
-            topic=args.topic or "", parallel_chunks=args.parallel,
-        )
-        if not all_cards:
-            print("Error: No cards were generated.", file=sys.stderr)
-            sys.exit(1)
+    base_name = _base_name(deck_title, args.depth)
+    output_dir = args.output or base_name
+    single_deck = args.flat
+    chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
 
-        base = _write_single_output(
-            all_cards, deck_title, args.output,
-            is_youtube=is_yt, media_files=all_media,
-            depth=args.depth, model_version=model,
-        )
+    existing, all_cards = _resume_existing(chapters_dir, source.chapters)
+    pending = [ch for ch in source.chapters if ch.index not in existing]
 
-        # Clean up temporary media files (already embedded in .apkg)
-        _cleanup_media(all_media)
-
-        print(f"\nDone! Generated {len(all_cards)} cards.")
-        print(f"Output: {base}.apkg\n")
-    else:
-        depth_label = f"d{args.depth}" if args.depth != 1 else ""
-        base_name = re.sub(r'[<>:"/\\|?*]', "", book_title).replace(' ', '_')
-        if depth_label:
-            base_name = f"{base_name}_{depth_label}"
-        output_dir = args.output or base_name
-        # Single compact deck only for topic mode or explicit --flat/--compact.
-        single_deck = _use_single_deck(args.topic, args.flat)
-        chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
-
-        existing: dict[int, list[Card]] = {}
+    def save(chapter: Chapter, cards: list[Card]) -> None:
         if chapters_dir:
-            existing = load_existing_chapters(chapters_dir)
-            for idx, cards in sorted(existing.items()):
-                if any(ch.index == idx for ch in chapters_to_generate):
-                    all_cards.extend(cards)
+            package_practice_chapter(
+                cards, deck_title, chapter.index, chapters_dir,
+                model_version=model,
+            )
 
-            if existing:
-                existing_in_scope = {idx for idx in existing if any(ch.index == idx for ch in chapters_to_generate)}
-                if existing_in_scope:
-                    print(f"Resuming: {len(existing_in_scope)}/{len(chapters_to_generate)} chapters already done"
-                          f" ({len(all_cards)} cards)")
-
-        pending = [ch for ch in chapters_to_generate if ch.index not in existing]
-        total = len(chapters_to_generate)
-
-        existing_counts: dict[int, int] | None = None
-        if existing:
-            existing_counts = {idx: len(cards) for idx, cards in existing.items()}
-
-        if pending:
-            if args.parallel:
-                all_cards, total_usage, all_media = _process_parallel(
-                    provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
-                    is_programming=is_prog, topic=args.topic or "",
-                    all_chapters=chapters_to_generate, existing_counts=existing_counts,
-                )
-            else:
-                all_cards, total_usage, all_media = _process_sequential(
-                    provider, pending, book_title, args.depth, lang, total, all_cards, chapters_dir,
-                    is_programming=is_prog, topic=args.topic or "",
-                    parallel_chunks=args.parallel,
-                    all_chapters=chapters_to_generate, existing_counts=existing_counts,
-                )
-
-        if not all_cards:
-            print("Error: No cards were generated.", file=sys.stderr)
-            sys.exit(1)
-
-        # Cross-chapter dedup for compact/topic mode
-        if single_deck and len(all_cards) > 3:
-            before = len(all_cards)
-            all_cards = deduplicate(all_cards)
-            if len(all_cards) < before:
-                print(f"Removed {before - len(all_cards)} similar cards"
-                      f" ({before} → {len(all_cards)})")
-            # LLM consolidation — pick best among near-duplicates
-            if args.depth == 0 or args.topic:
-                print("Consolidating cards...")
-                all_cards, cons_usage = consolidate_cards(
-                    provider, all_cards, lang,
-                )
-                total_usage += cons_usage
-                print(f"Final: {len(all_cards)} cards")
-
-        _write_output(
-            all_cards, deck_title, output_dir,
-            flat=single_deck,
-            media_files=all_media,
-            model_version=model,
-            chapters=chapters_to_generate,
+    if pending:
+        all_cards += _process_chapters(
+            pending, run, args.parallel, on_done=save,
+            all_chapters=source.chapters,
+            existing_counts={idx: len(c) for idx, c in existing.items()} or None,
         )
 
-        # Clean up temporary media files (already embedded in .apkg)
-        _cleanup_media(all_media)
+    if not all_cards:
+        _fail_no_cards("practice cards")
 
-        n_ch = len(chapters_to_generate)
-        print(f"\nDone! Generated {len(all_cards)} cards across {n_ch} chapter(s).")
-        if single_deck:
-            print(f"Output: {output_dir}.apkg\n")
-        else:
-            print(f"Output: {output_dir}/\n")
+    if single_deck and len(all_cards) > 3:
+        all_cards = _dedup_similar(all_cards)
+
+    if single_deck:
+        package_practice_flat(
+            all_cards, deck_title, f"{output_dir}.apkg", model_version=model,
+        )
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        combined = str(Path(output_dir) / f"{base_name}.apkg")
+        package_practice(
+            all_cards, deck_title, combined, model_version=model,
+            chapter_order=_chapter_order(source.chapters),
+        )
+
+    print(f"\nDone! Generated {len(all_cards)} practice cards.")
+    print(f"Output: {output_dir}.apkg\n" if single_deck else f"Output: {output_dir}/\n")
+
+
+def _run_vocab_mode(
+    args: argparse.Namespace, source: _Source, provider: LLMProvider,
+) -> None:
+    """Extract vocabulary above the learner's level into a flat deck."""
+    # Source language is always the book's own; --lang is the translation target.
+    source_lang = detect_language("\n".join(ch.text for ch in source.chapters))
+    model = provider.model_name()
+
+    # Check Anki for existing vocab words to skip (normalized base forms)
+    existing_raw = read_vocab_words()
+    existing_words = {_vocab_base(w) for w in existing_raw}
+    if existing_words:
+        print(f"Existing Anki collection: {len(existing_raw)} vocab words found, "
+              "will skip duplicates")
+
+    def run(chapter: Chapter, bar: Any = None, on_chunk: Any = None) -> list[Card]:
+        return generate_vocab_for_chapter(
+            provider, chapter, source.title,
+            level=args.level, native_language=args.lang,
+            progress_bar=bar,
+            is_article=source.is_single,
+            topic=args.topic or "",
+            on_chunk_done=on_chunk,
+            parallel_chunks=args.parallel,
+        )
+
+    if source.is_single:
+        all_cards = _process_single_source(
+            lambda bar, on_chunk: run(source.chapters[0], bar, on_chunk),
+        )
+    else:
+        all_cards = _process_chapters(source.chapters, run, args.parallel)
+
+    if not all_cards:
+        _fail_no_cards("vocabulary cards")
+
+    # Merge duplicates across chapters (same word may appear in multiple chapters)
+    before = len(all_cards)
+    all_cards = deduplicate_vocab(all_cards)
+    if len(all_cards) < before:
+        print(f"Merged {before - len(all_cards)} duplicate words"
+              f" ({before} → {len(all_cards)})")
+
+    if existing_words:
+        before = len(all_cards)
+        all_cards = [
+            c for c in all_cards
+            if _vocab_base(vocab_word(c.question)) not in existing_words
+        ]
+        if len(all_cards) < before:
+            print(f"Skipped {before - len(all_cards)} words already in Anki"
+                  f" ({before} → {len(all_cards)})")
+
+    deck_parts = [f"{_lang_name(source_lang)} {args.level}", source.title]
+    if args.topic:
+        deck_parts.append(_short_topic(args.topic))
+    deck_title = " — ".join(deck_parts)
+
+    file_parts = list(deck_parts)
+    if args.chapters:
+        file_parts.append(f"ch.{args.chapters}")
+    base_name = _safe_name(" — ".join(file_parts))
+
+    output_path = args.output or f"{base_name}.apkg"
+    if not output_path.endswith(".apkg"):
+        output_path = str(Path(output_path) / f"{base_name}.apkg")
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+    package = (
+        package_vocab_production if args.vocab_mode == "production"
+        else package_vocab_flat
+    )
+    package(all_cards, deck_title, output_path, model_version=model)
+
+    print(f"\nDone! Generated {len(all_cards)} vocabulary cards.")
+    print(f"Output: {output_path}\n")
+
+
+def _run_single_source_mode(
+    args: argparse.Namespace, source: _Source, provider: LLMProvider,
+) -> None:
+    """Generate a flat deck from a web article or YouTube transcript."""
+    model = provider.model_name()
+    deck_title = _deck_title(source.title, args.topic)
+
+    cards = _process_single_source(
+        lambda bar, on_chunk: generate_cards_for_chapter(
+            provider=provider,
+            chapter=source.chapters[0],
+            book_title=source.title,
+            depth=args.depth,
+            language=source.lang,
+            progress_bar=bar,
+            is_article=True,
+            source_url=source.url,
+            is_programming=source.is_programming,
+            topic=args.topic or "",
+            on_chunk_done=on_chunk,
+            parallel_chunks=args.parallel,
+        ),
+    )
+    if not cards:
+        _fail_no_cards("cards")
+
+    media: list[str] = []
+    if source.chapters[0].images:
+        media = process_book_images(cards, source.chapters[0].images, "media")
+
+    path = f"{args.output or _base_name(deck_title, args.depth)}.apkg"
+    if source.is_youtube:
+        package_cards_flat(
+            cards, deck_title, path, tag_prefix="youtube", model=YOUTUBE_MODEL,
+            media_files=media, model_version=model,
+        )
+    else:
+        package_cards_flat(
+            cards, deck_title, path, media_files=media, model_version=model,
+        )
+
+    # Clean up temporary media files (already embedded in .apkg)
+    _cleanup_media(media)
+
+    print(f"\nDone! Generated {len(cards)} cards.")
+    print(f"Output: {path}\n")
+
+
+def _run_book_mode(
+    args: argparse.Namespace, source: _Source, provider: LLMProvider,
+) -> None:
+    """Generate per-chapter decks (or one compact deck) from a book."""
+    model = provider.model_name()
+    deck_title = _deck_title(source.title, args.topic)
+    output_dir = args.output or _base_name(source.title, args.depth)
+    single_deck = _use_single_deck(args.topic, args.flat)
+    chapters_dir = "" if single_deck else str(Path(output_dir) / "chapters")
+
+    existing, all_cards = _resume_existing(chapters_dir, source.chapters)
+    pending = [ch for ch in source.chapters if ch.index not in existing]
+    media: list[str] = []
+
+    def run(chapter: Chapter, bar: Any = None, on_chunk: Any = None) -> list[Card]:
+        return generate_cards_for_chapter(
+            provider=provider,
+            chapter=chapter,
+            book_title=source.title,
+            depth=args.depth,
+            language=source.lang,
+            progress_bar=bar,
+            is_programming=source.is_programming,
+            topic=args.topic or "",
+            on_chunk_done=on_chunk,
+            parallel_chunks=args.parallel,
+        )
+
+    def save(chapter: Chapter, cards: list[Card]) -> None:
+        chapter_media: list[str] = []
+        if chapter.images:
+            chapter_media = process_book_images(
+                cards, chapter.images, os.path.join(chapters_dir or ".", "media"),
+            )
+            media.extend(chapter_media)
+        if chapters_dir:
+            package_single_chapter(
+                cards, source.title, chapter.index, chapters_dir,
+                media_files=chapter_media, model_version=model,
+            )
+
+    if pending:
+        all_cards += _process_chapters(
+            pending, run, args.parallel, on_done=save,
+            all_chapters=source.chapters,
+            existing_counts={idx: len(c) for idx, c in existing.items()} or None,
+        )
+
+    if not all_cards:
+        _fail_no_cards("cards")
+
+    # Cross-chapter dedup for compact/topic mode
+    if single_deck and len(all_cards) > 3:
+        all_cards = _dedup_similar(all_cards)
+        # LLM consolidation — pick best among near-duplicates
+        if args.depth == 0 or args.topic:
+            print("Consolidating cards...")
+            all_cards = consolidate_cards(provider, all_cards, source.lang)
+            print(f"Final: {len(all_cards)} cards")
+
+    if single_deck:
+        package_book_flat(
+            all_cards, deck_title, f"{output_dir}.apkg",
+            media_files=media, model_version=model,
+        )
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        combined = str(Path(output_dir) / f"{_safe_name(source.title)}.apkg")
+        package_cards(
+            all_cards, deck_title, combined, media_files=media,
+            model_version=model, chapter_order=_chapter_order(source.chapters),
+        )
+
+    # Clean up temporary media files (already embedded in .apkg)
+    _cleanup_media(media)
+
+    print(f"\nDone! Generated {len(all_cards)} cards "
+          f"across {len(source.chapters)} chapter(s).")
+    print(f"Output: {output_dir}.apkg\n" if single_deck else f"Output: {output_dir}/\n")
+
+
+def _fail_no_cards(what: str) -> None:
+    """Report generation failures and exit."""
+    _print_generation_errors()
+    print(f"Error: No {what} were generated.", file=sys.stderr)
+    sys.exit(1)
 
 
 def _fmt_elapsed(seconds: float) -> str:
@@ -1184,12 +1103,9 @@ def _print_summary(
     total_cards: int, total_time: float,
     cached_cards: int = 0,
 ) -> None:
-    cards_str = str(total_cards + cached_cards)
-    if cached_cards:
-        cards_str = f"{cards_str}"
     print(
         _TBL_SEP + "\n" +
-        _tbl_row("Total", cards_str, _fmt_elapsed(total_time)),
+        _tbl_row("Total", str(total_cards + cached_cards), _fmt_elapsed(total_time)),
         file=sys.stderr,
     )
     _print_generation_errors()
@@ -1205,94 +1121,6 @@ def _print_generation_errors() -> None:
     generation_errors.clear()
 
 
-def _process_sequential(
-    provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
-    lang: str, total: int, all_cards: list[Card], chapters_dir: str,
-    is_article: bool = False, source_url: str = "", is_programming: bool = False,
-    topic: str = "", parallel_chunks: bool = False,
-    all_chapters: list[Chapter] | None = None, existing_counts: dict[int, int] | None = None,
-) -> tuple[list[Card], TokenUsage, list[str]]:
-    session_cards = 0
-    total_usage = TokenUsage(0, 0)
-    total_time = 0.0
-    model = provider.model_name()
-    all_media: list[str] = []
-
-    is_book = not is_article
-
-    if is_book:
-        cp = _ChapterProgress(all_chapters or chapters, existing=existing_counts)
-    else:
-        pbar = _ProgressBar(total=total)
-
-    def _chunk_cb(done: int, total_chunks: int) -> None:
-        """Update progress bar based on chunk progress (for single-chapter sources)."""
-        if done == 0:
-            pbar.total = total_chunks
-            pbar.n = 0
-        else:
-            pbar.n = done
-        pbar.refresh()
-
-    for chapter in chapters:
-        if is_book:
-            cp.start_chapter(chapter.index)
-
-        ch_start = time.monotonic()
-        chunk_cb = _chunk_cb if is_article else None
-        progress = cp if is_book else pbar  # type: ignore[assignment]
-        cards, usage = generate_cards_for_chapter(
-            provider=provider,
-            chapter=chapter,
-            book_title=book_title,
-            depth=depth,
-            language=lang,
-            progress_bar=progress,
-            is_article=is_article,
-            source_url=source_url,
-            is_programming=is_programming,
-            topic=topic,
-            on_chunk_done=chunk_cb,
-            parallel_chunks=parallel_chunks,
-        )
-
-        ch_media: list[str] = []
-        media_dir = os.path.join(chapters_dir or ".", "media")
-        if cards and chapter.images:
-            book_media = process_book_images(
-                cards, chapter.images, media_dir,
-            )
-            ch_media.extend(book_media)
-            all_media.extend(book_media)
-
-        ch_elapsed = time.monotonic() - ch_start
-        total_time += ch_elapsed
-        all_cards.extend(cards)
-        session_cards += len(cards)
-        total_usage += usage
-
-        if cards and chapters_dir:
-            package_single_chapter(
-                cards, book_title, chapter.index, chapters_dir,
-                media_files=ch_media,
-                model_version=model,
-            )
-
-        if is_book:
-            cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
-        else:
-            pbar.update(1)
-            pbar.set_postfix_str(f"{session_cards} cards")
-
-    if is_book:
-        cp.close()
-        cached = sum(existing_counts.values()) if existing_counts else 0
-        _print_summary(session_cards, total_time, cached_cards=cached)
-    else:
-        pbar.close()
-    return all_cards, total_usage, all_media
-
-
 class _QuietBar:
     """No-op progress bar to suppress per-chunk status in parallel mode."""
 
@@ -1300,215 +1128,97 @@ class _QuietBar:
         pass
 
 
-def _process_practice_parallel(
-    provider: LLMProvider, chapters: list[Chapter], book_title: str,
-    depth: int = 1, topic: str = "", code_lang: str = "",
-    chapters_dir: str = "", practice_deck_title: str = "",
+ChunkCallback = Callable[[int, int], None]
+SingleSourceRun = Callable[[Any, ChunkCallback], list[Card]]
+ChapterRun = Callable[[Chapter, Any, ChunkCallback | None], list[Card]]
+
+
+def _process_single_source(generate: SingleSourceRun) -> list[Card]:
+    """Generate cards for a one-chapter source (article/video), tracking chunks.
+
+    The bar starts as a single unit and rescales itself the moment the
+    generator reports how many chunks the text actually split into.
+    """
+    pbar = _ProgressBar(total=1)
+
+    def on_chunk_done(done: int, total: int) -> None:
+        if done == 0:
+            pbar.total = total
+            pbar.n = 0
+        else:
+            pbar.n = done
+        pbar.refresh()
+
+    try:
+        return generate(pbar, on_chunk_done)
+    finally:
+        pbar.close()
+        _print_generation_errors()
+
+
+def _process_chapters(
+    chapters: list[Chapter],
+    run: ChapterRun,
+    parallel: bool,
+    on_done: Callable[[Chapter, list[Card]], None] | None = None,
     all_chapters: list[Chapter] | None = None,
     existing_counts: dict[int, int] | None = None,
-) -> tuple[list[Card], TokenUsage]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    total_usage = TokenUsage(0, 0)
-    model = provider.model_name()
-    session_cards = 0
-    chapter_start: dict[int, float] = {}
-    quiet = _QuietBar()
-    cards_by_chapter: dict[int, list[Card]] = {}
+) -> list[Card]:
+    """Generate cards chapter by chapter behind the live progress table.
 
-    wall_start = time.monotonic()
+    Returns this run's new cards in book order. `on_done` fires on the calling
+    thread as each chapter lands, so it can write that chapter's .apkg and let
+    an interrupted run resume. Failures go to `generation_errors` rather than
+    stderr, which the table owns until it closes.
+    """
     cp = _ChapterProgress(all_chapters or chapters, existing=existing_counts)
-
-    def _run_practice(ch: Chapter) -> tuple[list[Card], TokenUsage]:
-        cp.start_chapter(ch.index)
-        chapter_start[ch.index] = time.monotonic()
-        return generate_practice_for_chapter(
-            provider=provider,
-            chapter=ch,
-            book_title=book_title,
-            depth=depth,
-            progress_bar=quiet,
-            topic=topic,
-            code_lang=code_lang,
-            parallel_chunks=True,
-        )
-
-    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
-        future_to_chapter = {
-            executor.submit(_run_practice, chapter): chapter
-            for chapter in chapters
-        }
-
-        for future in as_completed(future_to_chapter):
-            chapter = future_to_chapter[future]
-            ch_elapsed = time.monotonic() - chapter_start[chapter.index]
-            try:
-                cards, usage = future.result()
-                cards_by_chapter[chapter.index] = cards
-                session_cards += len(cards)
-                total_usage += usage
-
-                if cards and chapters_dir:
-                    package_practice_chapter(
-                        cards, practice_deck_title,
-                        chapter.index, chapters_dir,
-                        model_version=model,
-                    )
-
-                cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
-            except Exception as e:
-                cp.complete_chapter(chapter.index, 0, ch_elapsed)
-                print(f"Warning: Failed to process \"{chapter.title}\": {e}",
-                      file=sys.stderr)
-
-    cp.close()
-    all_cards: list[Card] = []
-    for idx in sorted(cards_by_chapter):
-        all_cards.extend(cards_by_chapter[idx])
-    wall_elapsed = time.monotonic() - wall_start
-    cached = sum(existing_counts.values()) if existing_counts else 0
-    _print_summary(session_cards, wall_elapsed, cached_cards=cached)
-    return all_cards, total_usage
-
-
-def _process_vocab_parallel(
-    provider: LLMProvider, chapters: list[Chapter], book_title: str,
-    level: str, native_language: str, total: int,
-    is_article: bool = False, topic: str = "",
-) -> tuple[list[Card], TokenUsage]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    total_usage = TokenUsage(0, 0)
-    session_words = 0
-    chapter_start: dict[int, float] = {}
     quiet = _QuietBar()
     cards_by_chapter: dict[int, list[Card]] = {}
-
+    started: dict[int, float] = {}
     wall_start = time.monotonic()
-    cp = _ChapterProgress(chapters)
 
-    def _run_vocab(ch: Chapter) -> tuple[list[Card], TokenUsage]:
-        cp.start_chapter(ch.index)
-        chapter_start[ch.index] = time.monotonic()
-        return generate_vocab_for_chapter(
-            provider=provider,
-            chapter=ch,
-            book_title=book_title,
-            level=level,
-            native_language=native_language,
-            progress_bar=quiet,
-            is_article=is_article,
-            topic=topic,
-            parallel_chunks=True,
+    def start(chapter: Chapter) -> list[Card]:
+        cp.start_chapter(chapter.index)
+        started[chapter.index] = time.monotonic()
+        return run(chapter, quiet, None)
+
+    def collect(chapter: Chapter, cards: list[Card]) -> None:
+        cards_by_chapter[chapter.index] = cards
+        if cards and on_done:
+            on_done(chapter, cards)
+
+    def complete(chapter: Chapter) -> None:
+        cp.complete_chapter(
+            chapter.index,
+            len(cards_by_chapter.get(chapter.index, [])),
+            time.monotonic() - started.get(chapter.index, wall_start),
         )
 
-    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
-        future_to_chapter = {
-            executor.submit(_run_vocab, chapter): chapter
-            for chapter in chapters
-        }
-
-        for future in as_completed(future_to_chapter):
-            chapter = future_to_chapter[future]
-            ch_elapsed = time.monotonic() - chapter_start[chapter.index]
-            try:
-                cards, usage = future.result()
-                cards_by_chapter[chapter.index] = cards
-                session_words += len(cards)
-                total_usage += usage
-
-                cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
-            except Exception as e:
-                cp.complete_chapter(chapter.index, 0, ch_elapsed)
-                print(f"Warning: Failed to process \"{chapter.title}\": {e}",
-                      file=sys.stderr)
+    if parallel:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
+            futures = {executor.submit(start, ch): ch for ch in chapters}
+            for future in as_completed(futures):
+                chapter = futures[future]
+                try:
+                    collect(chapter, future.result())
+                except Exception as e:
+                    generation_errors.append(
+                        f'"{chapter.title}": {type(e).__name__}: {str(e)[:300]}'
+                    )
+                complete(chapter)
+    else:
+        for chapter in chapters:
+            collect(chapter, start(chapter))
+            complete(chapter)
 
     cp.close()
-    all_cards: list[Card] = []
-    for idx in sorted(cards_by_chapter):
-        all_cards.extend(cards_by_chapter[idx])
-    wall_elapsed = time.monotonic() - wall_start
-    _print_summary(session_words, wall_elapsed)
-    return all_cards, total_usage
-
-
-def _process_parallel(
-    provider: LLMProvider, chapters: list[Chapter], book_title: str, depth: int,
-    lang: str, total: int, all_cards: list[Card], chapters_dir: str,
-    is_programming: bool = False, topic: str = "",
-    all_chapters: list[Chapter] | None = None, existing_counts: dict[int, int] | None = None,
-) -> tuple[list[Card], TokenUsage, list[str]]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    session_cards = 0
-    total_usage = TokenUsage(0, 0)
-    model = provider.model_name()
-    chapter_start: dict[int, float] = {}
-    all_media: list[str] = []
-    cards_by_chapter: dict[int, list[Card]] = {}
-
-    quiet = _QuietBar()
-    wall_start = time.monotonic()
-    cp = _ChapterProgress(all_chapters or chapters, existing=existing_counts)
-
-    def _run_chapter(ch: Chapter) -> tuple[list[Card], TokenUsage]:
-        cp.start_chapter(ch.index)
-        chapter_start[ch.index] = time.monotonic()
-        return generate_cards_for_chapter(
-            provider=provider,
-            chapter=ch,
-            book_title=book_title,
-            depth=depth,
-            language=lang,
-            progress_bar=quiet,
-            is_programming=is_programming,
-            topic=topic,
-            parallel_chunks=True,
-        )
-
-    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
-        future_to_chapter = {
-            executor.submit(_run_chapter, chapter): chapter
-            for chapter in chapters
-        }
-
-        for future in as_completed(future_to_chapter):
-            chapter = future_to_chapter[future]
-            ch_elapsed = time.monotonic() - chapter_start[chapter.index]
-            try:
-                cards, usage = future.result()
-
-                ch_media: list[str] = []
-                media_dir = os.path.join(chapters_dir or ".", "media")
-                if cards and chapter.images:
-                    book_media = process_book_images(
-                        cards, chapter.images, media_dir,
-                    )
-                    ch_media.extend(book_media)
-                    all_media.extend(book_media)
-
-                cards_by_chapter[chapter.index] = cards
-                session_cards += len(cards)
-                total_usage.input_tokens += usage.input_tokens
-                total_usage.output_tokens += usage.output_tokens
-
-                if cards and chapters_dir:
-                    package_single_chapter(
-                        cards, book_title, chapter.index, chapters_dir,
-                        media_files=ch_media,
-                        model_version=model,
-                    )
-
-                cp.complete_chapter(chapter.index, len(cards), ch_elapsed)
-            except Exception as e:
-                cp.complete_chapter(chapter.index, 0, ch_elapsed)
-                print(f"Warning: Failed to process \"{chapter.title}\": {e}",
-                      file=sys.stderr)
-
-    cp.close()
-    for idx in sorted(cards_by_chapter):
-        all_cards.extend(cards_by_chapter[idx])
-    wall_elapsed = time.monotonic() - wall_start
-    cached = sum(existing_counts.values()) if existing_counts else 0
-    _print_summary(session_cards, wall_elapsed, cached_cards=cached)
-    return all_cards, total_usage, all_media
+    _print_summary(
+        sum(len(c) for c in cards_by_chapter.values()),
+        time.monotonic() - wall_start,
+        cached_cards=sum(existing_counts.values()) if existing_counts else 0,
+    )
+    return [card for idx in sorted(cards_by_chapter) for card in cards_by_chapter[idx]]
 
 
 if __name__ == "__main__":

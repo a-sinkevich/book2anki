@@ -1,4 +1,3 @@
-from book2anki.models import TokenUsage
 from book2anki.provider_cli import CLIProvider
 from book2anki.provider_codex import CodexCLIProvider
 
@@ -23,10 +22,9 @@ def test_codex_cli_passes_reported_model(monkeypatch):
     monkeypatch.setattr("book2anki.provider_codex.subprocess.Popen", FakeProc)
 
     provider = CodexCLIProvider("gpt-5.5")
-    text, usage = provider.generate("prompt")
+    text = provider.generate("prompt")
 
     assert text == "[]"
-    assert usage == TokenUsage(0, 0)
     assert provider.model_name() == "codex:gpt-5.5"
     assert seen["cmd"] == [
         "codex", "exec",

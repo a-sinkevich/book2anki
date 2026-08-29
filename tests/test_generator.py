@@ -1,5 +1,7 @@
 from book2anki.generator import (
+    GENERATION_ATTEMPTS,
     LLMProvider,
+    generation_errors,
     deduplicate as _deduplicate,
     deduplicate_vocab,
     generate_cards_for_prompt,
@@ -8,7 +10,7 @@ from book2anki.generator import (
     _split_into_chunks,
     vocab_word,
 )
-from book2anki.models import Card, TokenUsage
+from book2anki.models import Card
 
 import pytest
 
@@ -23,10 +25,10 @@ class _FakeProvider(LLMProvider):
         self.model = model
         self.calls = 0
 
-    def generate(self, prompt: str) -> tuple[str, TokenUsage]:
+    def generate(self, prompt: str) -> str:
         response = self.responses[min(self.calls, len(self.responses) - 1)]
         self.calls += 1
-        return response, TokenUsage(1, 1)
+        return response
 
     def context_window_tokens(self) -> int:
         return 100_000
@@ -72,12 +74,11 @@ class TestCliEmptyRetry:
             "cli:claude-opus-4-8",
         )
 
-        cards, usage = _generate_with_retries(
+        cards = _generate_with_retries(
             provider, "chapter text", "Book", "Chapter", 1, "en",
         )
 
         assert provider.calls == 2
-        assert usage == TokenUsage(2, 2)
         assert [card.question for card in cards] == ["Q"]
 
     def test_api_provider_does_not_retry_empty_card_result(self):
@@ -89,13 +90,77 @@ class TestCliEmptyRetry:
             "gpt-5.5",
         )
 
-        cards, usage = _generate_with_retries(
+        cards = _generate_with_retries(
             provider, "chapter text", "Book", "Chapter", 1, "en",
         )
 
         assert provider.calls == 1
-        assert usage == TokenUsage(1, 1)
         assert cards == []
+
+
+class _FlakyProvider(LLMProvider):
+    """Fails the first `failures` calls, then answers with one card."""
+
+    def __init__(self, error: Exception, failures: int, model: str = "gpt-5.5") -> None:
+        self.error = error
+        self.failures = failures
+        self.model = model
+        self.calls = 0
+
+    def generate(self, prompt: str) -> str:
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise self.error
+        return '[{"question": "Q", "answer": "A"}]'
+
+    def context_window_tokens(self) -> int:
+        return 100_000
+
+    def model_name(self) -> str:
+        return self.model
+
+
+class TestTransientFailureRetry:
+    """API providers must retry transient failures, not just CLI ones."""
+
+    def test_api_provider_retries_after_error(self, monkeypatch):
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _s: None)
+        provider = _FlakyProvider(RuntimeError("Error code: 429 rate_limit"), failures=2)
+
+        cards = _generate_with_retries(
+            provider, "chapter text", "Book", "Chapter", 1, "en",
+        )
+
+        assert provider.calls == 3
+        assert [card.question for card in cards] == ["Q"]
+
+    def test_api_provider_retries_unparseable_response(self, monkeypatch):
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _s: None)
+        provider = _FakeProvider(
+            ["not json at all", '[{"question": "Q", "answer": "A"}]'],
+            "gpt-5.5",
+        )
+
+        cards = _generate_with_retries(
+            provider, "chapter text", "Book", "Chapter", 1, "en",
+        )
+
+        assert provider.calls == 2
+        assert [card.question for card in cards] == ["Q"]
+
+    def test_gives_up_after_the_attempt_limit(self, monkeypatch):
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _s: None)
+        generation_errors.clear()
+        provider = _FlakyProvider(RuntimeError("nope"), failures=99)
+
+        cards = _generate_with_retries(
+            provider, "chapter text", "Book", "Chapter", 1, "en",
+        )
+
+        assert provider.calls == GENERATION_ATTEMPTS
+        assert cards == []
+        assert any("nope" in err for err in generation_errors)
+        generation_errors.clear()
 
 
 class TestPromptGeneration:
@@ -107,7 +172,7 @@ class TestPromptGeneration:
             "gpt-5.5",
         )
 
-        title, cards, usage = generate_cards_for_prompt(
+        title, cards = generate_cards_for_prompt(
             provider,
             "Cognitive load theory for software engineers",
             "Prompt — Cognitive load theory",
@@ -116,7 +181,6 @@ class TestPromptGeneration:
         )
 
         assert provider.calls == 1
-        assert usage == TokenUsage(1, 1)
         assert title == "Cognitive Load for Engineers"
         assert len(cards) == 1
         assert cards[0].book_title == "Cognitive Load for Engineers"
@@ -130,7 +194,7 @@ class TestPromptGeneration:
             "gpt-5.5",
         )
 
-        title, cards, usage = generate_cards_for_prompt(
+        title, cards = generate_cards_for_prompt(
             provider,
             "Long request",
             "Prompt — Long request",
@@ -138,7 +202,6 @@ class TestPromptGeneration:
             "en",
         )
 
-        assert usage == TokenUsage(1, 1)
         assert title == "Prompt — Long request"
         assert len(cards) == 1
         assert cards[0].book_title == "Prompt — Long request"
@@ -152,13 +215,12 @@ class TestPromptGeneration:
             "cli:claude-opus-4-8",
         )
 
-        cards, usage = _generate_with_retries(
+        cards = _generate_with_retries(
             provider, "chapter text", "Book", "Chapter", 1, "en",
             topic="missing topic",
         )
 
         assert provider.calls == 1
-        assert usage == TokenUsage(1, 1)
         assert cards == []
 
 
@@ -175,6 +237,12 @@ class TestSplitIntoChunks:
         # All text should be covered
         for chunk in chunks:
             assert len(chunk) <= 2200  # max_chars + some tolerance for break point
+
+    def test_overlap_larger_than_chunk_still_terminates(self):
+        """A break point can land at max_chars // 2, so the overlap must be capped."""
+        chunks = _split_into_chunks("word " * 2000, 3000, overlap_chars=2000)
+        assert len(chunks) > 1
+        assert "".join(chunks)  # completed rather than looping forever
 
     def test_overlap_exists(self):
         text = ("A" * 500 + "\n\n") * 10  # ~5020 chars with paragraph breaks

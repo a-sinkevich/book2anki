@@ -1,12 +1,11 @@
 import json
 import re
-import sys
 import time
 from abc import ABC, abstractmethod
 from difflib import SequenceMatcher
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 
-from book2anki.models import Card, Chapter, TokenUsage
+from book2anki.models import Card, Chapter
 from book2anki.prompts import (
     build_prompt, build_prompt_request, build_vocab_prompt, build_practice_prompt,
 )
@@ -15,48 +14,26 @@ CHARS_PER_TOKEN = 4
 
 # Max concurrent LLM requests when --parallel is set (chapters and chunks)
 PARALLEL_WORKERS = 8
-CLI_EMPTY_RESULT_RETRIES = 3
+
+# Attempts per request. Covers rate limits, dropped connections and unparseable
+# replies; also the claude CLI's habit of returning an empty result instantly.
+GENERATION_ATTEMPTS = 3
+
+# Pause between sequential chunks of the same chapter, to stay under rate limits
+CHUNK_PAUSE_SECONDS = 5
 
 # Errors collected during generation (printed after progress table closes)
 generation_errors: list[str] = []
 
-PRICING: dict[str, tuple[float, float]] = {
-    "claude-fable-5": (10.0, 50.0),
-    "claude-opus-5": (5.0, 25.0),
-    "claude-sonnet-5": (3.0, 15.0),
-    "claude-haiku-4-5": (1.0, 5.0),
-    "claude-sonnet-4-6": (3.0, 15.0),
-    "claude-opus-4-8": (5.0, 25.0),
-    "gpt-5.5": (5.0, 30.0),
-    "gpt-5.4": (2.5, 15.0),
-    "gpt-5.4-mini": (0.75, 4.5),
-    "gpt-4o": (2.5, 10.0),
-    "gpt-4o-mini": (0.15, 0.6),
-    "o3": (10.0, 40.0),
-    "o3-mini": (1.1, 4.4),
-    "o4-mini": (1.1, 4.4),
-}
-
-
-def estimate_cost(usage: TokenUsage, model: str) -> float:
-    """Estimate cost in USD for given token usage and model."""
-    input_rate, output_rate = PRICING.get(model, (0.0, 0.0))
-    return (usage.input_tokens * input_rate + usage.output_tokens * output_rate) / 1_000_000
-
-
-def format_cost(cost: float) -> str:
-    """Format cost as a human-readable string."""
-    if cost < 0.01:
-        return f"${cost:.4f}"
-    return f"${cost:.2f}"
+T = TypeVar("T")
 
 
 class LLMProvider(ABC):
     """Base class for LLM providers."""
 
     @abstractmethod
-    def generate(self, prompt: str) -> tuple[str, TokenUsage]:
-        """Send prompt and return (text_response, token_usage)."""
+    def generate(self, prompt: str) -> str:
+        """Send prompt and return the model's text response."""
         ...
 
     @abstractmethod
@@ -66,7 +43,7 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def model_name(self) -> str:
-        """Return the model identifier for pricing lookup."""
+        """Return the model identifier."""
         ...
 
     def max_request_tokens(self) -> int:
@@ -79,37 +56,216 @@ def _is_cli_provider(provider: LLMProvider) -> bool:
     return provider.model_name().startswith(("cli:", "codex:"))
 
 
-def _max_retries_for_provider(provider: LLMProvider, max_retries: int) -> int:
-    """CLI providers get extra chances; API providers keep caller's retry count."""
-    if _is_cli_provider(provider):
-        return max(max_retries, CLI_EMPTY_RESULT_RETRIES)
-    return max_retries
+def _retries_empty(provider: LLMProvider, topic: str) -> bool:
+    """Whether an empty-but-valid reply is worth another attempt.
+
+    Only for CLI providers, and only without a topic filter — a topic run
+    legitimately finds nothing in most chapters.
+    """
+    return _is_cli_provider(provider) and not topic
 
 
-def _should_retry_empty_cards(
+def _short_label(title: str) -> str:
+    """Truncate a chapter title for status lines."""
+    return title[:60] + "…" if len(title) > 60 else title
+
+
+def _status_fn(progress_bar: Any) -> Callable[[str], None]:
+    """Route status messages to the progress bar, or to stdout when there is none."""
+    if progress_bar is None:
+        return lambda msg: print(msg, flush=True)
+    return lambda msg: progress_bar.set_postfix_str(msg, refresh=True)
+
+
+def _backoff_seconds(error: Exception, attempt: int) -> float:
+    """How long to wait before retrying: long for rate limits, exponential otherwise."""
+    text = str(error)
+    if "rate_limit" in text or "429" in text:
+        return 60.0 * (attempt + 1)
+    return 5.0 * 2.0 ** attempt
+
+
+def _generate_parsed(
     provider: LLMProvider,
-    cards: list[Card],
-    topic: str,
-    attempt: int,
-    max_retries: int,
-) -> bool:
-    """Retry empty card results only for CLI providers and non-topic runs."""
-    return (
-        _is_cli_provider(provider)
-        and not topic
-        and not cards
-        and attempt < max_retries - 1
+    prompt: str,
+    label: str,
+    parse: Callable[[str], T],
+    status_fn: Callable[[str], None] | None = None,
+    retry_empty: bool = False,
+    report_empty: bool = False,
+    is_empty: Callable[[T], bool] | None = None,
+) -> T | None:
+    """Call the model, parse the reply, and retry transient failures.
+
+    Rate limits, dropped connections and unparseable replies are all retried up
+    to GENERATION_ATTEMPTS times. An empty-but-valid reply is only retried when
+    `retry_empty` is set: an API model that answers "[]" means it, while the
+    claude CLI returns one spuriously. `report_empty` records a final empty
+    reply in `generation_errors`, so a silently skipped chapter stays visible.
+
+    Returns None when every attempt failed; callers supply their own empty value.
+    """
+    empty = is_empty or (lambda result: not result)
+
+    def report(msg: str) -> None:
+        if status_fn:
+            status_fn(msg)
+
+    last_error = ""
+    for attempt in range(GENERATION_ATTEMPTS):
+        remaining = GENERATION_ATTEMPTS - attempt - 1
+        response = ""
+        try:
+            response = provider.generate(prompt)
+            result = parse(response)
+            if empty(result):
+                if retry_empty and remaining:
+                    report(f'"{label}" returned 0 cards, '
+                           f"retrying ({attempt + 2}/{GENERATION_ATTEMPTS})")
+                    time.sleep(1)
+                    continue
+                if report_empty:
+                    generation_errors.append(
+                        f'"{label}": model returned 0 cards '
+                        f"(response: {response[:200] or '(empty)'})"
+                    )
+            return result
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            last_error = (f"parse error: {e} | "
+                          f"response: {response[:300] or '(empty)'}")
+            wait = 1.0
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {str(e)[:500]}"
+            wait = _backoff_seconds(e, attempt)
+
+        if not remaining:
+            break
+        report(f'"{label}" failed, retry {attempt + 2}/'
+               f"{GENERATION_ATTEMPTS} in {wait:.0f}s")
+        time.sleep(wait)
+
+    report(f'"{label}" failed after {GENERATION_ATTEMPTS} attempts')
+    generation_errors.append(f'"{label}": {last_error}')
+    return None
+
+
+ChunkWork = Callable[[str, Callable[[str], None]], list[Card]]
+
+
+def _run_chunks(
+    chunks: list[str],
+    work: ChunkWork,
+    label: str,
+    status_fn: Callable[[str], None],
+    on_chunk_done: Callable[[int, int], None] | None,
+    parallel: bool,
+) -> list[Card]:
+    """Run `work` over every chunk, returning the cards in chunk order."""
+    if on_chunk_done:
+        on_chunk_done(0, len(chunks))
+    if parallel:
+        return _run_chunks_parallel(chunks, work, label, status_fn, on_chunk_done)
+    return _run_chunks_sequential(chunks, work, label, status_fn, on_chunk_done)
+
+
+def _run_chunks_sequential(
+    chunks: list[str],
+    work: ChunkWork,
+    label: str,
+    status_fn: Callable[[str], None],
+    on_chunk_done: Callable[[int, int], None] | None,
+) -> list[Card]:
+    cards: list[Card] = []
+    for i, chunk in enumerate(chunks):
+        status_fn(f'"{label}" chunk {i + 1}/{len(chunks)}')
+        if i > 0:
+            time.sleep(CHUNK_PAUSE_SECONDS)
+        cards.extend(work(chunk, status_fn))
+        if on_chunk_done:
+            on_chunk_done(i + 1, len(chunks))
+    return cards
+
+
+def _run_chunks_parallel(
+    chunks: list[str],
+    work: ChunkWork,
+    label: str,
+    status_fn: Callable[[str], None],
+    on_chunk_done: Callable[[int, int], None] | None,
+) -> list[Card]:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _quiet(_msg: str) -> None:
+        """Per-chunk status is noise once chunks interleave."""
+
+    cards_by_index: dict[int, list[Card]] = {}
+    done = 0
+
+    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
+        futures = {
+            executor.submit(work, chunk, _quiet): i
+            for i, chunk in enumerate(chunks)
+        }
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                cards_by_index[idx] = future.result()
+            except Exception as e:
+                generation_errors.append(
+                    f'"{label}" chunk {idx + 1}/{len(chunks)}: '
+                    f"{type(e).__name__}: {str(e)[:300]}"
+                )
+            done += 1
+            status_fn(f'"{label}" chunks {done}/{len(chunks)}')
+            if on_chunk_done:
+                on_chunk_done(done, len(chunks))
+
+    return [card for idx in sorted(cards_by_index) for card in cards_by_index[idx]]
+
+
+def _chunk_budget(
+    provider: LLMProvider,
+    prompt_overhead: int,
+    output_reserve: int,
+    cap: int = 0,
+) -> int:
+    """Max characters of source text to put in one request."""
+    max_text_tokens = min(
+        int(provider.context_window_tokens() * 0.8),
+        provider.max_request_tokens(),
     )
+    available_tokens = max_text_tokens - prompt_overhead - output_reserve
+    max_chars = available_tokens * CHARS_PER_TOKEN
+    if cap:
+        max_chars = min(max_chars, cap)
+    return max_chars
 
 
-def _retry_empty_cards(
-    short: str,
-    attempt: int,
-    max_retries: int,
-    report: Callable[[str], None],
-) -> None:
-    report(f"\"{short}\" returned 0 cards, retrying ({attempt + 2}/{max_retries})")
-    time.sleep(1)
+def _chapter_cards(
+    chapter: Chapter,
+    max_chars: int,
+    work: ChunkWork,
+    dedup: Callable[[list[Card]], list[Card]],
+    progress_bar: Any,
+    on_chunk_done: Callable[[int, int], None] | None,
+    parallel_chunks: bool,
+) -> list[Card]:
+    """Run `work` over a chapter, splitting the text when it exceeds max_chars."""
+    status = _status_fn(progress_bar)
+    label = _short_label(chapter.title)
+    status(f'"{label}"')
+
+    if len(chapter.text) <= max_chars:
+        cards = work(chapter.text, status)
+        if on_chunk_done:
+            on_chunk_done(1, 1)
+    else:
+        chunks = _split_into_chunks(chapter.text, max_chars)
+        cards = dedup(_run_chunks(
+            chunks, work, label, status, on_chunk_done, parallel_chunks,
+        ))
+
+    return [c for c in cards if c.question.strip() and c.answer.strip()]
 
 
 def generate_cards_for_chapter(
@@ -125,160 +281,29 @@ def generate_cards_for_chapter(
     topic: str = "",
     on_chunk_done: Callable[[int, int], None] | None = None,
     parallel_chunks: bool = False,
-) -> tuple[list[Card], TokenUsage]:
-    """Generate flashcards for a single chapter. Returns (cards, token_usage)."""
-    def _status(msg: str) -> None:
-        if progress_bar is not None:
-            progress_bar.set_postfix_str(msg, refresh=True)
-        else:
-            print(msg, flush=True)
-
-    short = chapter.title[:60] + "…" if len(chapter.title) > 60 else chapter.title
-    _status(f"\"{short}\"")
-
+) -> list[Card]:
+    """Generate flashcards for a single chapter."""
     book_image_captions: list[tuple[str, str]] | None = None
     if chapter.images:
-        book_image_captions = [
-            (img.id, img.caption) for img in chapter.images
-        ]
-
-    max_text_tokens = min(
-        int(provider.context_window_tokens() * 0.8),
-        provider.max_request_tokens(),
-    )
-    prompt_overhead = 500
-    output_reserve = 4000
-    available_tokens = max_text_tokens - prompt_overhead - output_reserve
-    max_chars = available_tokens * CHARS_PER_TOKEN
+        book_image_captions = [(img.id, img.caption) for img in chapter.images]
 
     # Comprehensive mode generates much more output per input text,
     # so use smaller chunks to avoid server-side timeouts
-    if depth == 3:
-        max_chars = min(max_chars, 20000)
+    cap = 20000 if depth == 3 else 0
+    max_chars = _chunk_budget(provider, 500, 4000, cap)
 
-    total_usage = TokenUsage(0, 0)
-
-    if len(chapter.text) <= max_chars:
-        cards, usage = _generate_with_retries(
-            provider, chapter.text, book_title, chapter.title, depth, language,
-            status_fn=_status, is_article=is_article, source_url=source_url,
+    def work(text: str, status: Callable[[str], None]) -> list[Card]:
+        return _generate_with_retries(
+            provider, text, book_title, chapter.title, depth, language,
+            status_fn=status, is_article=is_article, source_url=source_url,
             is_programming=is_programming,
             book_image_captions=book_image_captions, topic=topic,
         )
-        total_usage += usage
-        if on_chunk_done:
-            on_chunk_done(1, 1)
-    else:
-        chunks = _split_into_chunks(chapter.text, max_chars)
-        if on_chunk_done:
-            on_chunk_done(0, len(chunks))
 
-        if parallel_chunks:
-            all_cards = _process_chunks_parallel(
-                chunks, provider, book_title, chapter.title, depth, language,
-                total_usage, short, _status, on_chunk_done,
-                is_article=is_article, source_url=source_url,
-                is_programming=is_programming,
-                book_image_captions=book_image_captions, topic=topic,
-            )
-        else:
-            all_cards = _process_chunks_sequential(
-                chunks, provider, book_title, chapter.title, depth, language,
-                total_usage, short, _status, on_chunk_done,
-                is_article=is_article, source_url=source_url,
-                is_programming=is_programming,
-                book_image_captions=book_image_captions, topic=topic,
-            )
-        cards = deduplicate(all_cards)
-
-    valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
-    return valid_cards, total_usage
-
-
-def _process_chunks_sequential(
-    chunks: list[str],
-    provider: LLMProvider,
-    book_title: str,
-    chapter_title: str,
-    depth: int,
-    language: str,
-    total_usage: TokenUsage,
-    short: str,
-    status_fn: Callable[[str], None],
-    on_chunk_done: Callable[[int, int], None] | None,
-    **kwargs: Any,
-) -> list[Card]:
-    all_cards: list[Card] = []
-    for i, chunk in enumerate(chunks):
-        status_fn(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
-        if i > 0:
-            time.sleep(5)
-        chunk_cards, usage = _generate_with_retries(
-            provider, chunk, book_title, chapter_title, depth, language,
-            status_fn=status_fn, **kwargs,
-        )
-        total_usage.input_tokens += usage.input_tokens
-        total_usage.output_tokens += usage.output_tokens
-        all_cards.extend(chunk_cards)
-        if on_chunk_done:
-            on_chunk_done(i + 1, len(chunks))
-    return all_cards
-
-
-def _process_chunks_parallel(
-    chunks: list[str],
-    provider: LLMProvider,
-    book_title: str,
-    chapter_title: str,
-    depth: int,
-    language: str,
-    total_usage: TokenUsage,
-    short: str,
-    status_fn: Callable[[str], None],
-    on_chunk_done: Callable[[int, int], None] | None,
-    **kwargs: Any,
-) -> list[Card]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    # cards_by_index preserves chunk order
-    cards_by_index: dict[int, list[Card]] = {}
-    futures = {}
-    done_count = 0
-
-    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
-        for i, chunk in enumerate(chunks):
-            futures[executor.submit(
-                _generate_with_retries,
-                provider, chunk, book_title, chapter_title, depth, language,
-                status_fn=lambda _msg: None,  # suppress per-chunk status in parallel
-                **kwargs,
-            )] = i
-
-        for future in as_completed(futures):
-            idx = futures[future]
-            try:
-                chunk_cards, usage = future.result()
-                cards_by_index[idx] = chunk_cards
-                total_usage.input_tokens += usage.input_tokens
-                total_usage.output_tokens += usage.output_tokens
-                done_count += 1
-                status_fn(f"\"{short}\" chunks {done_count}/{len(chunks)}")
-                if on_chunk_done:
-                    on_chunk_done(done_count, len(chunks))
-            except Exception as e:
-                generation_errors.append(
-                    f"\"{short}\" chunk {idx + 1}/{len(chunks)}: "
-                    f"{type(e).__name__}: {str(e)[:300]}"
-                )
-                done_count += 1
-                if on_chunk_done:
-                    on_chunk_done(done_count, len(chunks))
-
-    # Return cards in chunk order
-    all_cards: list[Card] = []
-    for idx in sorted(cards_by_index):
-        all_cards.extend(cards_by_index[idx])
-    return all_cards
+    return _chapter_cards(
+        chapter, max_chars, work, deduplicate,
+        progress_bar, on_chunk_done, parallel_chunks,
+    )
 
 
 def generate_vocab_for_chapter(
@@ -292,210 +317,51 @@ def generate_vocab_for_chapter(
     topic: str = "",
     on_chunk_done: Callable[[int, int], None] | None = None,
     parallel_chunks: bool = False,
-) -> tuple[list[Card], TokenUsage]:
-    """Extract vocabulary cards for a single chapter. Returns (cards, token_usage)."""
-    def _status(msg: str) -> None:
-        if progress_bar is not None:
-            progress_bar.set_postfix_str(msg, refresh=True)
-        else:
-            print(msg, flush=True)
-
-    short = chapter.title[:60] + "…" if len(chapter.title) > 60 else chapter.title
-    _status(f"\"{short}\"")
-
-    max_text_tokens = min(
-        int(provider.context_window_tokens() * 0.8),
-        provider.max_request_tokens(),
-    )
-    prompt_overhead = 500
-    output_reserve = 4000
-    available_tokens = max_text_tokens - prompt_overhead - output_reserve
-    max_chars = available_tokens * CHARS_PER_TOKEN
-
+) -> list[Card]:
+    """Extract vocabulary cards for a single chapter."""
     # Vocab generates many fields per word — use smaller chunks
     # to avoid output truncation at max_tokens
-    max_chars = min(max_chars, 20000)
+    max_chars = _chunk_budget(provider, 500, 4000, cap=20000)
 
-    total_usage = TokenUsage(0, 0)
-
-    if len(chapter.text) <= max_chars:
-        cards, usage = _generate_vocab_with_retries(
-            provider, chapter.text, book_title, chapter.title,
-            level, native_language,
-            status_fn=_status, is_article=is_article, topic=topic,
+    def work(text: str, status: Callable[[str], None]) -> list[Card]:
+        return _generate_vocab_with_retries(
+            provider, text, book_title, chapter.title, level, native_language,
+            status_fn=status, is_article=is_article, topic=topic,
         )
-        total_usage += usage
-        if on_chunk_done:
-            on_chunk_done(1, 1)
-    else:
-        chunks = _split_into_chunks(chapter.text, max_chars)
-        if on_chunk_done:
-            on_chunk_done(0, len(chunks))
 
-        if parallel_chunks:
-            all_cards = _process_vocab_chunks_parallel(
-                chunks, provider, book_title, chapter.title,
-                level, native_language, total_usage, short, _status, on_chunk_done,
-                is_article=is_article, topic=topic,
-            )
-        else:
-            all_cards = []
-            for i, chunk in enumerate(chunks):
-                _status(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
-                if i > 0:
-                    time.sleep(5)
-                chunk_cards, usage = _generate_vocab_with_retries(
-                    provider, chunk, book_title, chapter.title,
-                    level, native_language,
-                    status_fn=_status, is_article=is_article, topic=topic,
-                )
-                total_usage += usage
-                all_cards.extend(chunk_cards)
-                if on_chunk_done:
-                    on_chunk_done(i + 1, len(chunks))
-        cards = deduplicate_vocab(all_cards)
-
-    valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
-    return valid_cards, total_usage
-
-
-def _process_vocab_chunks_parallel(
-    chunks: list[str],
-    provider: LLMProvider,
-    book_title: str,
-    chapter_title: str,
-    level: str,
-    native_language: str,
-    total_usage: TokenUsage,
-    short: str,
-    status_fn: Callable[[str], None],
-    on_chunk_done: Callable[[int, int], None] | None,
-    **kwargs: Any,
-) -> list[Card]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    cards_by_index: dict[int, list[Card]] = {}
-    futures = {}
-    done_count = 0
-
-    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
-        for i, chunk in enumerate(chunks):
-            futures[executor.submit(
-                _generate_vocab_with_retries,
-                provider, chunk, book_title, chapter_title,
-                level, native_language,
-                status_fn=lambda _msg: None,
-                **kwargs,
-            )] = i
-
-        for future in as_completed(futures):
-            idx = futures[future]
-            try:
-                chunk_cards, usage = future.result()
-                cards_by_index[idx] = chunk_cards
-                total_usage.input_tokens += usage.input_tokens
-                total_usage.output_tokens += usage.output_tokens
-                done_count += 1
-                status_fn(f"\"{short}\" chunks {done_count}/{len(chunks)}")
-                if on_chunk_done:
-                    on_chunk_done(done_count, len(chunks))
-            except Exception as e:
-                print(f"  chunk {idx + 1} failed: {e}", file=sys.stderr)
-                done_count += 1
-                if on_chunk_done:
-                    on_chunk_done(done_count, len(chunks))
-
-    all_cards: list[Card] = []
-    for idx in sorted(cards_by_index):
-        all_cards.extend(cards_by_index[idx])
-    return all_cards
-
-
-def _generate_vocab_with_retries(
-    provider: LLMProvider,
-    text: str,
-    book_title: str,
-    chapter_title: str,
-    level: str,
-    native_language: str,
-    max_retries: int = 1,
-    status_fn: Callable[[str], None] | None = None,
-    is_article: bool = False,
-    topic: str = "",
-) -> tuple[list[Card], TokenUsage]:
-    """Call LLM with vocab prompt and parse response, with retries."""
-    prompt = build_vocab_prompt(
-        book_title, chapter_title, text, level, native_language,
-        is_article=is_article, topic=topic,
+    return _chapter_cards(
+        chapter, max_chars, work, deduplicate_vocab,
+        progress_bar, on_chunk_done, parallel_chunks,
     )
-    short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title
-    cumulative = TokenUsage(0, 0)
 
-    def _report(msg: str) -> None:
-        if status_fn:
-            status_fn(msg)
 
-    max_retries = _max_retries_for_provider(provider, max_retries)
+def generate_practice_for_chapter(
+    provider: LLMProvider,
+    chapter: Chapter,
+    book_title: str,
+    depth: int,
+    progress_bar: Any = None,
+    topic: str = "",
+    code_lang: str = "",
+    on_chunk_done: Callable[[int, int], None] | None = None,
+    parallel_chunks: bool = False,
+) -> list[Card]:
+    """Generate programming practice exercise cards for a single chapter."""
+    # The practice prompt is larger and its cards (especially katas) run long,
+    # so reserve more output room; comprehensive mode runs longer still.
+    cap = 20000 if depth == 3 else 0
+    max_chars = _chunk_budget(provider, 1000, 8000, cap)
 
-    for attempt in range(max_retries):
-        try:
-            response, usage = provider.generate(prompt)
-            cumulative += usage
-            cards_data = _parse_json_response(response)
-            cards = []
-            for item in cards_data:
-                if "word" not in item:
-                    continue
-                word = item["word"]
-                pronunciation = item.get("pronunciation", "")
-                if pronunciation:
-                    word += f'<div class="ipa">{pronunciation}</div>'
-                definition = item.get("definition", "")
-                etymology = item.get("etymology", "")
-                if etymology:
-                    definition += f'<div class="etymology">{etymology}</div>'
-                cards.append(Card(
-                    question=word,
-                    answer=item.get("translation", ""),
-                    chapter_title=chapter_title,
-                    book_title=book_title,
-                    example=item.get("context", ""),
-                    image=definition,
-                    source_url=item.get("example", ""),
-                ))
-            if _should_retry_empty_cards(provider, cards, topic, attempt, max_retries):
-                _retry_empty_cards(short, attempt, max_retries, _report)
-                continue
-            return cards, cumulative
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
-            if attempt < max_retries - 1:
-                preview = response[:500] if response else "(empty)"
-                print(f"\n\"{short}\" parse error: {e}", file=sys.stderr)
-                print(f"\"{short}\" response preview: {preview}", file=sys.stderr)
-                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
-                time.sleep(1)
-                continue
-            _report(f"\"{short}\" failed after {max_retries} attempts")
-            return [], cumulative
-        except Exception as e:
-            if attempt < max_retries - 1:
-                err_str = str(e)
-                if "rate_limit" in err_str or "429" in err_str:
-                    wait = 60 * (attempt + 1)
-                    _report(f"\"{short}\" rate limited, waiting {wait}s...")
-                else:
-                    wait = 5 * (2 ** attempt)
-                    print(f"\n\"{short}\" error: {type(e).__name__}: {str(e)[:300]}",
-                          file=sys.stderr)
-                    _report(f"\"{short}\" retry in {wait}s...")
-                time.sleep(wait)
-                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
-                continue
-            print(f"\n\"{short}\" failed: {type(e).__name__}: {str(e)[:300]}",
-                  file=sys.stderr)
-            return [], cumulative
+    def work(text: str, status: Callable[[str], None]) -> list[Card]:
+        return _generate_practice_with_retries(
+            provider, text, book_title, chapter.title, depth,
+            status_fn=status, topic=topic, code_lang=code_lang,
+        )
 
-    return [], cumulative
+    return _chapter_cards(
+        chapter, max_chars, work, deduplicate,
+        progress_bar, on_chunk_done, parallel_chunks,
+    )
 
 
 def _generate_with_retries(
@@ -505,87 +371,127 @@ def _generate_with_retries(
     chapter_title: str,
     depth: int,
     language: str,
-    max_retries: int = 1,
     status_fn: Callable[[str], None] | None = None,
     is_article: bool = False,
     source_url: str = "",
     is_programming: bool = False,
     book_image_captions: list[tuple[str, str]] | None = None,
     topic: str = "",
-) -> tuple[list[Card], TokenUsage]:
-    """Call the LLM and parse JSON response, with retries for failures."""
+) -> list[Card]:
+    """Generate cards for one piece of text, retrying transient failures."""
     prompt = build_prompt(
         book_title, chapter_title, text, depth, language,
         is_article=is_article, is_programming=is_programming,
         book_image_captions=book_image_captions, topic=topic,
     )
-    short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title
-    cumulative = TokenUsage(0, 0)
 
-    def _report(msg: str) -> None:
-        if status_fn:
-            status_fn(msg)
+    def parse(response: str) -> list[Card]:
+        return [
+            Card(
+                question=item["question"],
+                answer=item["answer"],
+                chapter_title=chapter_title,
+                book_title=book_title,
+                source_url=source_url,
+                example=item.get("example", ""),
+                image=item.get("image", ""),
+            )
+            for item in _parse_json_response(response)
+            if "question" in item and "answer" in item
+        ]
 
-    max_retries = _max_retries_for_provider(provider, max_retries)
+    cards = _generate_parsed(
+        provider, prompt, _short_label(chapter_title), parse,
+        status_fn=status_fn,
+        retry_empty=_retries_empty(provider, topic),
+        report_empty=not topic,
+    )
+    return cards or []
 
-    for attempt in range(max_retries):
-        response = ""
-        try:
-            response, usage = provider.generate(prompt)
-            cumulative += usage
-            cards_data = _parse_json_response(response)
-            cards = [
-                Card(
-                    question=item["question"],
-                    answer=item["answer"],
-                    chapter_title=chapter_title,
-                    book_title=book_title,
-                    source_url=source_url,
-                    example=item.get("example", ""),
-                    image=item.get("image", ""),
-                )
-                for item in cards_data
-                if "question" in item and "answer" in item
-            ]
-            if _should_retry_empty_cards(provider, cards, topic, attempt, max_retries):
-                _retry_empty_cards(short, attempt, max_retries, _report)
+
+def _generate_vocab_with_retries(
+    provider: LLMProvider,
+    text: str,
+    book_title: str,
+    chapter_title: str,
+    level: str,
+    native_language: str,
+    status_fn: Callable[[str], None] | None = None,
+    is_article: bool = False,
+    topic: str = "",
+) -> list[Card]:
+    """Extract vocabulary from one piece of text, retrying transient failures."""
+    prompt = build_vocab_prompt(
+        book_title, chapter_title, text, level, native_language,
+        is_article=is_article, topic=topic,
+    )
+
+    def parse(response: str) -> list[Card]:
+        cards = []
+        for item in _parse_json_response(response):
+            if "word" not in item:
                 continue
-            if not cards and not topic:
-                # A chapter can silently end up empty when the model answers
-                # with "[]" — say so instead of just showing 0 in the table
-                generation_errors.append(
-                    f"\"{short}\": model returned 0 cards "
-                    f"(response: {response[:200] or '(empty)'})"
-                )
-            return cards, cumulative
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
-            preview = (response[:300] or "(empty)") if response else "(empty)"
-            last_error = f"parse error: {e} | response: {preview}"
-            if attempt < max_retries - 1:
-                _report(f"\"{short}\" parse error, retry {attempt + 2}/{max_retries}")
-                time.sleep(1)
-                continue
-            _report(f"\"{short}\" failed after {max_retries} attempts")
-            generation_errors.append(f"\"{short}\": {last_error}")
-            return [], cumulative
-        except Exception as e:
-            last_error = f"{type(e).__name__}: {str(e)[:500]}"
-            if attempt < max_retries - 1:
-                err_str = str(e)
-                if "rate_limit" in err_str or "429" in err_str:
-                    wait = 60 * (attempt + 1)
-                    _report(f"\"{short}\" rate limited, waiting {wait}s...")
-                else:
-                    wait = 5 * (2 ** attempt)
-                    _report(f"\"{short}\" error, retry in {wait}s...")
-                time.sleep(wait)
-                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
-                continue
-            _report(f"\"{short}\" failed after {max_retries} attempts")
-            generation_errors.append(f"\"{short}\": {last_error}")
-            return [], cumulative
+            word = item["word"]
+            pronunciation = item.get("pronunciation", "")
+            if pronunciation:
+                word += f'<div class="ipa">{pronunciation}</div>'
+            definition = item.get("definition", "")
+            etymology = item.get("etymology", "")
+            if etymology:
+                definition += f'<div class="etymology">{etymology}</div>'
+            cards.append(Card(
+                question=word,
+                answer=item.get("translation", ""),
+                chapter_title=chapter_title,
+                book_title=book_title,
+                example=item.get("context", ""),
+                image=definition,
+                source_url=item.get("example", ""),
+            ))
+        return cards
 
-    return [], cumulative
+    cards = _generate_parsed(
+        provider, prompt, _short_label(chapter_title), parse,
+        status_fn=status_fn,
+        retry_empty=_retries_empty(provider, topic),
+    )
+    return cards or []
+
+
+def _generate_practice_with_retries(
+    provider: LLMProvider,
+    text: str,
+    book_title: str,
+    chapter_title: str,
+    depth: int,
+    status_fn: Callable[[str], None] | None = None,
+    topic: str = "",
+    code_lang: str = "",
+) -> list[Card]:
+    """Generate practice exercises for one piece of text, retrying failures."""
+    prompt = build_practice_prompt(
+        book_title, chapter_title, text, depth, topic=topic, code_lang=code_lang,
+    )
+
+    def parse(response: str) -> list[Card]:
+        return [
+            Card(
+                question=item["question"],
+                answer=item["answer"],
+                chapter_title=chapter_title,
+                book_title=book_title,
+                example=item.get("example", ""),
+            )
+            for item in _parse_json_response(response)
+            if "question" in item and "answer" in item
+        ]
+
+    cards = _generate_parsed(
+        provider, prompt, _short_label(chapter_title), parse,
+        status_fn=status_fn,
+        retry_empty=_retries_empty(provider, topic),
+    )
+    return cards or []
 
 
 def generate_cards_for_prompt(
@@ -595,63 +501,34 @@ def generate_cards_for_prompt(
     depth: int,
     language: str,
     status_fn: Callable[[str], None] | None = None,
-) -> tuple[str, list[Card], TokenUsage]:
+) -> tuple[str, list[Card]]:
     """Generate standalone cards from a source-free study request."""
     prompt = build_prompt_request(request, depth, language)
-    short = fallback_title[:60] + "…" if len(fallback_title) > 60 else fallback_title
-    cumulative = TokenUsage(0, 0)
-    max_retries = _max_retries_for_provider(provider, 1)
 
-    def _report(msg: str) -> None:
-        if status_fn:
-            status_fn(msg)
+    def parse(response: str) -> tuple[str, list[Card]]:
+        deck_title, cards_data = _parse_prompt_response(response)
+        deck_title = deck_title or fallback_title
+        return deck_title, [
+            Card(
+                question=item["question"],
+                answer=item["answer"],
+                chapter_title="Generated Study Guide",
+                book_title=deck_title,
+                source_url=request,
+                example=item.get("example", ""),
+                tags=["source::prompt"],
+            )
+            for item in cards_data
+            if "question" in item and "answer" in item
+        ]
 
-    for attempt in range(max_retries):
-        try:
-            response, usage = provider.generate(prompt)
-            cumulative += usage
-            deck_title, cards_data = _parse_prompt_response(response)
-            deck_title = deck_title or fallback_title
-            cards = [
-                Card(
-                    question=item["question"],
-                    answer=item["answer"],
-                    chapter_title="Generated Study Guide",
-                    book_title=deck_title,
-                    source_url=request,
-                    example=item.get("example", ""),
-                    tags=["source::prompt"],
-                )
-                for item in cards_data
-                if "question" in item and "answer" in item
-            ]
-            if _should_retry_empty_cards(provider, cards, "", attempt, max_retries):
-                _retry_empty_cards(short, attempt, max_retries, _report)
-                continue
-            return deck_title, cards, cumulative
-        except (json.JSONDecodeError, KeyError, ValueError):
-            if attempt < max_retries - 1:
-                _report(f"\"{short}\" parse error, retry {attempt + 2}/{max_retries}")
-                time.sleep(1)
-                continue
-            _report(f"\"{short}\" failed after {max_retries} attempts")
-            return fallback_title, [], cumulative
-        except Exception as e:
-            if attempt < max_retries - 1:
-                err_str = str(e)
-                if "rate_limit" in err_str or "429" in err_str:
-                    wait = 60 * (attempt + 1)
-                    _report(f"\"{short}\" rate limited, waiting {wait}s...")
-                else:
-                    wait = 5 * (2 ** attempt)
-                    _report(f"\"{short}\" error, retry in {wait}s...")
-                time.sleep(wait)
-                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
-                continue
-            _report(f"\"{short}\" failed after {max_retries} attempts")
-            return fallback_title, [], cumulative
-
-    return fallback_title, [], cumulative
+    result = _generate_parsed(
+        provider, prompt, _short_label(fallback_title), parse,
+        status_fn=status_fn,
+        retry_empty=_retries_empty(provider, ""),
+        is_empty=lambda parsed: not parsed[1],
+    )
+    return result or (fallback_title, [])
 
 
 def _parse_prompt_response(response: str) -> tuple[str, list[dict[str, Any]]]:
@@ -749,7 +626,15 @@ def _salvage_truncated_json(text: str) -> list[dict[str, Any]]:
 
 
 def _split_into_chunks(text: str, max_chars: int, overlap_chars: int = 2000) -> list[str]:
-    """Split text into overlapping chunks."""
+    """Split text into overlapping chunks.
+
+    The overlap is capped at a quarter of the chunk size so every chunk starts
+    after the previous one did: a break point can land as early as
+    max_chars // 2, and a larger overlap would rewind `start` and loop forever.
+    """
+    max_chars = max(1, max_chars)
+    overlap_chars = max(0, min(overlap_chars, max_chars // 4))
+
     chunks = []
     start = 0
     while start < len(text):
@@ -925,10 +810,10 @@ def consolidate_cards(
     provider: LLMProvider,
     cards: list[Card],
     language: str,
-) -> tuple[list[Card], TokenUsage]:
+) -> list[Card]:
     """Use LLM to remove duplicate/overlapping cards, keeping the best version."""
     if len(cards) <= 3:
-        return cards, TokenUsage(0, 0)
+        return cards
 
     cards_json = json.dumps([
         {"id": i, "question": c.question, "answer": c.answer}
@@ -954,216 +839,15 @@ Cards:
 Return the JSON array of IDs to keep:"""
 
     try:
-        response, usage = provider.generate(prompt)
-        text = response.strip()
+        response = provider.generate(prompt)
         # Parse the ID list
-        match = re.search(r"\[[\d\s,]*]", text)
+        match = re.search(r"\[[\d\s,]*]", response.strip())
         if match:
             keep_ids = set(json.loads(match.group(0)))
             kept = [c for i, c in enumerate(cards) if i in keep_ids]
             if kept:
-                return kept, usage
-    except Exception:
-        pass
+                return kept
+    except Exception as e:
+        generation_errors.append(f"consolidation skipped: {type(e).__name__}: {str(e)[:200]}")
 
-    return cards, TokenUsage(0, 0)
-
-
-def _generate_practice_with_retries(
-    provider: LLMProvider,
-    text: str,
-    book_title: str,
-    chapter_title: str,
-    depth: int,
-    max_retries: int = 1,
-    status_fn: Callable[[str], None] | None = None,
-    topic: str = "",
-    code_lang: str = "",
-) -> tuple[list[Card], TokenUsage]:
-    """Call LLM with practice prompt and parse response, with retries."""
-    prompt = build_practice_prompt(
-        book_title, chapter_title, text, depth, topic=topic, code_lang=code_lang,
-    )
-    short = chapter_title[:60] + "…" if len(chapter_title) > 60 else chapter_title
-    cumulative = TokenUsage(0, 0)
-
-    def _report(msg: str) -> None:
-        if status_fn:
-            status_fn(msg)
-
-    last_error = ""
-
-    max_retries = _max_retries_for_provider(provider, max_retries)
-
-    for attempt in range(max_retries):
-        try:
-            response, usage = provider.generate(prompt)
-            cumulative += usage
-            cards_data = _parse_json_response(response)
-            cards = []
-            for item in cards_data:
-                if "question" not in item or "answer" not in item:
-                    continue
-                cards.append(Card(
-                    question=item["question"],
-                    answer=item["answer"],
-                    chapter_title=chapter_title,
-                    book_title=book_title,
-                    example=item.get("example", ""),
-                ))
-            if _should_retry_empty_cards(provider, cards, topic, attempt, max_retries):
-                _retry_empty_cards(short, attempt, max_retries, _report)
-                continue
-            return cards, cumulative
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
-            last_error = f"parse error: {e}"
-            if attempt < max_retries - 1:
-                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
-                time.sleep(1)
-                continue
-            _report(f"\"{short}\" failed after {max_retries} attempts")
-            generation_errors.append(f"\"{short}\": {last_error}")
-            return [], cumulative
-        except Exception as e:
-            last_error = f"{type(e).__name__}: {str(e)[:500]}"
-            if attempt < max_retries - 1:
-                err_str = str(e)
-                if "rate_limit" in err_str or "429" in err_str:
-                    wait = 60 * (attempt + 1)
-                    _report(f"\"{short}\" rate limited, waiting {wait}s...")
-                else:
-                    wait = 5 * (2 ** attempt)
-                    _report(f"\"{short}\" error, retry in {wait}s...")
-                time.sleep(wait)
-                _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
-                continue
-            _report(f"\"{short}\" failed after {max_retries} attempts")
-            generation_errors.append(f"\"{short}\": {last_error}")
-            return [], cumulative
-
-    return [], cumulative
-
-
-def generate_practice_for_chapter(
-    provider: LLMProvider,
-    chapter: Chapter,
-    book_title: str,
-    depth: int,
-    progress_bar: Any = None,
-    topic: str = "",
-    code_lang: str = "",
-    on_chunk_done: Callable[[int, int], None] | None = None,
-    parallel_chunks: bool = False,
-) -> tuple[list[Card], TokenUsage]:
-    """Generate programming practice exercise cards for a single chapter."""
-    def _status(msg: str) -> None:
-        if progress_bar is not None:
-            progress_bar.set_postfix_str(msg, refresh=True)
-        else:
-            print(msg, flush=True)
-
-    short = chapter.title[:60] + "…" if len(chapter.title) > 60 else chapter.title
-    _status(f"\"{short}\"")
-
-    max_text_tokens = min(
-        int(provider.context_window_tokens() * 0.8),
-        provider.max_request_tokens(),
-    )
-    prompt_overhead = 1000  # practice prompt is larger
-    output_reserve = 8000  # practice cards (esp. katas) produce longer output
-    available_tokens = max_text_tokens - prompt_overhead - output_reserve
-    max_chars = available_tokens * CHARS_PER_TOKEN
-
-    # Comprehensive mode generates very long output per chunk
-    if depth == 3:
-        max_chars = min(max_chars, 20000)
-
-    total_usage = TokenUsage(0, 0)
-
-    if len(chapter.text) <= max_chars:
-        cards, usage = _generate_practice_with_retries(
-            provider, chapter.text, book_title, chapter.title, depth,
-            status_fn=_status, topic=topic, code_lang=code_lang,
-        )
-        total_usage += usage
-        if on_chunk_done:
-            on_chunk_done(1, 1)
-    else:
-        chunks = _split_into_chunks(chapter.text, max_chars)
-        if on_chunk_done:
-            on_chunk_done(0, len(chunks))
-
-        if parallel_chunks:
-            all_cards = _process_practice_chunks_parallel(
-                chunks, provider, book_title, chapter.title, depth,
-                total_usage, short, _status, on_chunk_done,
-                topic=topic, code_lang=code_lang,
-            )
-        else:
-            all_cards = []
-            for i, chunk in enumerate(chunks):
-                _status(f"\"{short}\" chunk {i + 1}/{len(chunks)}")
-                if i > 0:
-                    time.sleep(5)
-                chunk_cards, usage = _generate_practice_with_retries(
-                    provider, chunk, book_title, chapter.title, depth,
-                    status_fn=_status, topic=topic, code_lang=code_lang,
-                )
-                total_usage += usage
-                all_cards.extend(chunk_cards)
-                if on_chunk_done:
-                    on_chunk_done(i + 1, len(chunks))
-        cards = deduplicate(all_cards)
-
-    valid_cards = [c for c in cards if c.question.strip() and c.answer.strip()]
-    return valid_cards, total_usage
-
-
-def _process_practice_chunks_parallel(
-    chunks: list[str],
-    provider: LLMProvider,
-    book_title: str,
-    chapter_title: str,
-    depth: int,
-    total_usage: TokenUsage,
-    short: str,
-    status_fn: Callable[[str], None],
-    on_chunk_done: Callable[[int, int], None] | None,
-    **kwargs: Any,
-) -> list[Card]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    cards_by_index: dict[int, list[Card]] = {}
-    futures = {}
-    done_count = 0
-
-    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as executor:
-        for i, chunk in enumerate(chunks):
-            futures[executor.submit(
-                _generate_practice_with_retries,
-                provider, chunk, book_title, chapter_title, depth,
-                status_fn=lambda _msg: None,
-                **kwargs,
-            )] = i
-
-        for future in as_completed(futures):
-            idx = futures[future]
-            try:
-                chunk_cards, usage = future.result()
-                cards_by_index[idx] = chunk_cards
-                total_usage.input_tokens += usage.input_tokens
-                total_usage.output_tokens += usage.output_tokens
-                done_count += 1
-                status_fn(f"\"{short}\" chunks {done_count}/{len(chunks)}")
-                if on_chunk_done:
-                    on_chunk_done(done_count, len(chunks))
-            except Exception as e:
-                print(f"  chunk {idx + 1} failed: {e}", file=sys.stderr)
-                done_count += 1
-                if on_chunk_done:
-                    on_chunk_done(done_count, len(chunks))
-
-    all_cards: list[Card] = []
-    for idx in sorted(cards_by_index):
-        all_cards.extend(cards_by_index[idx])
-    return all_cards
+    return cards

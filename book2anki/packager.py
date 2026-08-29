@@ -389,6 +389,28 @@ def _build_chapter_deck(
     return deck
 
 
+def _ordered_chapter_groups(
+    cards: list[Card], chapter_order: dict[str, int] | None,
+) -> list[tuple[str, int, list[Card]]]:
+    """Group cards by chapter as (title, book index, cards), in book order.
+
+    Without a chapter_order map, chapters fall back to being numbered by first
+    appearance. Passing one keeps the combined deck's "01 - ", "02 - " prefixes
+    aligned with the per-chapter files, which are named from the real index —
+    otherwise `--chapters 5-7` writes `05 - …` files but `01 - …` subdecks.
+    """
+    grouped = _group_cards_by_chapter(cards)
+    if chapter_order:
+        grouped = sorted(
+            grouped,
+            key=lambda item: (chapter_order.get(item[0], len(chapter_order)), item[0]),
+        )
+    return [
+        (title, chapter_order.get(title, i) if chapter_order else i, chapter_cards)
+        for i, (title, chapter_cards) in enumerate(grouped)
+    ]
+
+
 def package_cards(
     cards: list[Card], book_title: str, output_path: str,
     media_files: list[str] | None = None,
@@ -396,21 +418,12 @@ def package_cards(
     chapter_order: dict[str, int] | None = None,
 ) -> None:
     """Package all cards into a single .apkg file with chapter-based subdecks."""
-    grouped = _group_cards_by_chapter(cards)
-    if chapter_order:
-        grouped = sorted(
-            grouped,
-            key=lambda item: (chapter_order.get(item[0], len(chapter_order)), item[0]),
-        )
     decks = [
         _build_chapter_deck(
-            book_title,
-            chapter_title,
-            chapter_order.get(chapter_title, i) if chapter_order else i,
-            chapter_cards,
-            model_version,
+            book_title, chapter_title, index, chapter_cards, model_version,
         )
-        for i, (chapter_title, chapter_cards) in enumerate(grouped)
+        for chapter_title, index, chapter_cards
+        in _ordered_chapter_groups(cards, chapter_order)
     ]
     package = genanki.Package(decks)
     if media_files:
@@ -492,16 +505,22 @@ def _practice_note(
     )
 
 
+def _practice_subdeck_name(deck_name: str, chapter_title: str, index: int) -> str:
+    """Name a practice subdeck, numbered by the chapter's position in the book."""
+    padded = str(index + 1).zfill(2)
+    return f"{deck_name}::{padded} - {_strip_chapter_prefix(chapter_title)}"
+
+
 def package_practice(
     cards: list[Card], deck_name: str, output_path: str, model_version: str = "",
+    chapter_order: dict[str, int] | None = None,
 ) -> None:
     """Package all practice cards into a single .apkg with chapter subdecks."""
-    grouped = _group_cards_by_chapter(cards)
     decks = []
-    for i, (chapter_title, chapter_cards) in enumerate(grouped):
-        padded = str(i + 1).zfill(2)
-        clean = _strip_chapter_prefix(chapter_title)
-        subdeck = f"{deck_name}::{padded} - {clean}"
+    for chapter_title, index, chapter_cards in _ordered_chapter_groups(
+        cards, chapter_order,
+    ):
+        subdeck = _practice_subdeck_name(deck_name, chapter_title, index)
         deck = genanki.Deck(deck_id=_stable_id(subdeck), name=subdeck)
         for card in chapter_cards:
             deck.add_note(_practice_note(card, deck_name, model_version))
@@ -528,9 +547,7 @@ def package_practice_chapter(
     """Save a single chapter's practice cards. Returns filepath."""
     os.makedirs(output_dir, exist_ok=True)
     chapter_title = cards[0].chapter_title
-    padded = str(chapter_index + 1).zfill(2)
-    clean = _strip_chapter_prefix(chapter_title)
-    subdeck = f"{deck_name}::{padded} - {clean}"
+    subdeck = _practice_subdeck_name(deck_name, chapter_title, chapter_index)
     deck = genanki.Deck(deck_id=_stable_id(subdeck), name=subdeck)
     for card in cards:
         deck.add_note(_practice_note(card, deck_name, model_version))

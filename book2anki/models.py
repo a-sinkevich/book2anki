@@ -21,17 +21,6 @@ class Chapter:
 
 
 @dataclass
-class TokenUsage:
-    input_tokens: int
-    output_tokens: int
-
-    def __iadd__(self, other: "TokenUsage") -> "TokenUsage":
-        self.input_tokens += other.input_tokens
-        self.output_tokens += other.output_tokens
-        return self
-
-
-@dataclass
 class Card:
     question: str
     answer: str

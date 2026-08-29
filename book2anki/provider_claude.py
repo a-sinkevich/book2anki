@@ -4,7 +4,6 @@ import sys
 import anthropic
 
 from book2anki.generator import LLMProvider
-from book2anki.models import TokenUsage
 
 
 class ClaudeProvider(LLMProvider):
@@ -45,7 +44,7 @@ class ClaudeProvider(LLMProvider):
         }
         self.model = models.get(model_name, model_name)
 
-    def generate(self, prompt: str) -> tuple[str, TokenUsage]:
+    def generate(self, prompt: str) -> str:
         # Stream, don't wait: a comprehensive chapter can take the model
         # minutes to answer, and a non-streaming request that long gets its
         # idle connection dropped (APIConnectionError) before the reply lands.
@@ -55,16 +54,13 @@ class ClaudeProvider(LLMProvider):
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
             response = stream.get_final_message()
-        usage = TokenUsage(
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-        )
         if response.stop_reason == "refusal":
             raise ValueError("Model refused the request (stop_reason=refusal)")
         # Find the first TextBlock — some models return ThinkingBlock(s) first
         for block in response.content:
             if hasattr(block, "text"):
-                return block.text, usage
+                text: str = block.text
+                return text
         raise ValueError(
             f"No text in response, got: "
             f"{[type(b).__name__ for b in response.content]}"

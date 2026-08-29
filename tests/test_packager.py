@@ -16,6 +16,8 @@ from book2anki.packager import (
     chapter_filename,
     load_existing_chapters,
     package_cards,
+    package_practice,
+    package_practice_chapter,
     package_single_chapter,
     package_vocab_production,
 )
@@ -175,6 +177,58 @@ def test_package_cards_preserves_original_chapter_numbers_and_order():
         assert _deck_names(out) == [
             "Book::05 - Five",
             "Book::06 - Six",
+        ]
+
+
+def test_package_practice_preserves_original_chapter_numbers_and_order():
+    cards = [
+        Card(question="Q6", answer="A6", chapter_title="Six", book_title="Book"),
+        Card(question="Q5", answer="A5", chapter_title="Five", book_title="Book"),
+    ]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "practice.apkg")
+        package_practice(
+            cards,
+            "Practice | Book",
+            out,
+            chapter_order={"Five": 4, "Six": 5},
+        )
+
+        assert _deck_names(out) == [
+            "Practice | Book::05 - Five",
+            "Practice | Book::06 - Six",
+        ]
+
+
+def test_package_practice_subdecks_match_per_chapter_filenames():
+    """The combined deck and the per-chapter file must agree on the number."""
+    cards = [Card(question="Q", answer="A", chapter_title="Five", book_title="Book")]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        combined = os.path.join(tmpdir, "practice.apkg")
+        package_practice(
+            cards, "Practice | Book", combined, chapter_order={"Five": 4},
+        )
+        chapter_path = package_practice_chapter(
+            cards, "Practice | Book", 4, os.path.join(tmpdir, "chapters"),
+        )
+
+        assert _deck_names(combined) == ["Practice | Book::05 - Five"]
+        assert _deck_names(chapter_path) == ["Practice | Book::05 - Five"]
+        assert os.path.basename(chapter_path).startswith("05 - ")
+
+
+def test_package_practice_falls_back_to_first_appearance_order():
+    cards = [
+        Card(question="Q1", answer="A1", chapter_title="Alpha", book_title="Book"),
+        Card(question="Q2", answer="A2", chapter_title="Beta", book_title="Book"),
+    ]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "practice.apkg")
+        package_practice(cards, "Practice | Book", out)
+
+        assert _deck_names(out) == [
+            "Practice | Book::01 - Alpha",
+            "Practice | Book::02 - Beta",
         ]
 
 
