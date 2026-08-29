@@ -27,6 +27,19 @@ generation_errors: list[str] = []
 
 T = TypeVar("T")
 
+# Short names accepted by --model, resolved to exact model IDs. Bump these when
+# a new generation ships: the CLI and API providers both read this map, so the
+# two cannot drift apart.
+MODEL_ALIASES = {
+    "opus": "claude-opus-5",
+    "sonnet": "claude-sonnet-5",
+}
+
+
+def resolve_model(name: str) -> str:
+    """Resolve a --model shortcut to an exact model ID; pass exact IDs through."""
+    return MODEL_ALIASES.get(name, name)
+
 
 class LLMProvider(ABC):
     """Base class for LLM providers."""

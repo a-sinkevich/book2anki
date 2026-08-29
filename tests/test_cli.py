@@ -160,7 +160,7 @@ def test_model_cli_prefix_routes_exact_model_to_claude_cli():
 
 def test_model_cli_prefix_keeps_cli_aliases():
     provider = _create_provider("cli:opus")
-    assert provider.model_name() == "cli:claude-opus-4-8"
+    assert provider.model_name() == "cli:claude-opus-5"
 
 
 def test_model_cli_prefix_requires_model_name():

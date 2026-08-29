@@ -72,7 +72,7 @@ class TestCliEmptyRetry:
                 "[]",
                 '[{"question": "Q", "answer": "A"}]',
             ],
-            "cli:claude-opus-4-8",
+            "cli:claude-opus-5",
         )
 
         cards = _generate_with_retries(
@@ -213,7 +213,7 @@ class TestPromptGeneration:
                 "[]",
                 '[{"question": "Q", "answer": "A"}]',
             ],
-            "cli:claude-opus-4-8",
+            "cli:claude-opus-5",
         )
 
         cards = _generate_with_retries(

@@ -3,8 +3,8 @@ from book2anki.provider_codex import CodexCLIProvider
 
 
 def test_claude_cli_model_name_uses_exact_alias():
-    assert CLIProvider("opus").model_name() == "cli:claude-opus-4-8"
-    assert CLIProvider("sonnet").model_name() == "cli:claude-sonnet-4-6"
+    assert CLIProvider("opus").model_name() == "cli:claude-opus-5"
+    assert CLIProvider("sonnet").model_name() == "cli:claude-sonnet-5"
 
 
 def test_codex_cli_passes_reported_model(monkeypatch):

@@ -5,16 +5,12 @@ import shutil
 import subprocess
 import tempfile
 
-from book2anki.generator import LLMProvider
+from book2anki.generator import LLMProvider, resolve_model
 
 
 class CLIProvider(LLMProvider):
     def __init__(self, model: str = "opus") -> None:
-        models = {
-            "sonnet": "claude-sonnet-4-6",
-            "opus": "claude-opus-4-8",
-        }
-        self.model = models.get(model, model)
+        self.model = resolve_model(model)
 
     @staticmethod
     def is_available() -> bool:

@@ -121,7 +121,7 @@ book2anki mybook.epub --model gpt4o               # GPT-4o (requires OPENAI_API_
 book2anki mybook.epub --model gpt5.5              # GPT-5.5 (default for OpenAI)
 book2anki mybook.epub --model o3                  # OpenAI o3
 book2anki mybook.epub --model o4-mini             # OpenAI o4-mini
-book2anki mybook.epub --model claude-opus-4-7     # Any exact model ID
+book2anki mybook.epub --model claude-opus-5       # Any exact model ID
 
 # Combine flags
 book2anki mybook.epub --depth 0 --topic "agriculture"  # only essential ideas about agriculture

@@ -3,7 +3,7 @@ import sys
 
 import anthropic
 
-from book2anki.generator import LLMProvider
+from book2anki.generator import LLMProvider, resolve_model
 
 
 class ClaudeProvider(LLMProvider):
@@ -34,15 +34,12 @@ class ClaudeProvider(LLMProvider):
                 "   ANTHROPIC_API_KEY=sk-ant-...\n"
             )
 
-        self.model = "claude-sonnet-4-6"
+        # Sonnet by default here, unlike the CLI's Opus: API calls are billed.
+        self.model = resolve_model("sonnet")
 
     def set_model(self, model_name: str) -> None:
         """Switch to a different model."""
-        models = {
-            "sonnet": "claude-sonnet-4-6",
-            "opus": "claude-opus-4-8",
-        }
-        self.model = models.get(model_name, model_name)
+        self.model = resolve_model(model_name)
 
     def generate(self, prompt: str) -> str:
         # Stream, don't wait: a comprehensive chapter can take the model

@@ -182,7 +182,7 @@ def _parse_args() -> argparse.Namespace:
         help="Model to use: sonnet, opus, cli (Claude CLI), codex (Codex CLI), "
              "gpt5.5, gpt5.4, gpt4o, o3, o4-mini, "
              "cli:<model> for exact Claude CLI models, "
-             "or any exact API model ID (e.g. claude-opus-4-7, gpt-5.4-mini)",
+             "or any exact API model ID (e.g. claude-opus-5, gpt-5.4-mini)",
     )
     args = parser.parse_args()
     if not args.file and not args.prompt:
