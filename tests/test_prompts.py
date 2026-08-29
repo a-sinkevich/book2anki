@@ -1,3 +1,4 @@
+import re
 import json
 
 from book2anki.prompts import (
@@ -178,3 +179,30 @@ def test_reverse_question_form_is_labelled_for_counting():
     for kwargs in ({}, {"is_transcript": True}):
         prompt = build_prompt("S", "C", "text", 2, "en", **kwargs)
         assert 'Set "type": "term"' in prompt
+
+
+class TestDepthLadder:
+    """Each level must exclude what the next level adds, or it leaks upward.
+
+    Depth 1 used to bar only "minor" supporting details while depth 2 added the
+    "key"/"notable"/"important" ones, so important supporting material was
+    excluded by neither level and drifted into depth 1 — worst on dense text,
+    which has the most of it.
+    """
+
+    def test_depth_1_excludes_what_depth_2_adds(self):
+        d1 = DEPTH_INSTRUCTIONS[1]
+        assert "Leave out supporting evidence, examples, distinctions" in d1
+        assert "including the important ones" in d1
+
+    def test_depth_2_excludes_what_depth_3_adds(self):
+        d2 = DEPTH_INSTRUCTIONS[2]
+        assert "Leave out specific data points, case studies" in d2
+
+    def test_no_depth_sets_a_card_quota(self):
+        """Count follows the material; the level constrains kind, not quantity."""
+        for depth, text in DEPTH_INSTRUCTIONS.items():
+            assert not re.search(r"\b\d+\s*(-\s*\d+)?\s+cards\b", text), depth
+
+    def test_depth_1_lets_density_drive_the_count(self):
+        assert "Let the material decide how many" in DEPTH_INSTRUCTIONS[1]

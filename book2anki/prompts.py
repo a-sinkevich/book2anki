@@ -10,12 +10,18 @@ DEPTH_INSTRUCTIONS = {
     1: (
         "Generate cards that test understanding of the chapter's core ideas: "
         "the main thesis, key arguments, and central takeaways. "
-        "Do not create separate cards for minor supporting details, examples, or nuances — "
-        "focus the questions only on what's essential."
+        "Leave out supporting evidence, examples, distinctions and secondary arguments — "
+        "including the important ones, which belong to a more detailed pass — and never "
+        "add a card merely because the chapter names or mentions something. "
+        "Let the material decide how many cards that is: a dense chapter genuinely has "
+        "more core ideas than a thin one. But every card must be one of those ideas, "
+        "not a detail that arrived alongside one."
     ),
     2: (
         "Generate cards that test understanding of core ideas plus important supporting material: "
         "key evidence, notable examples, important distinctions, and secondary arguments. "
+        "Leave out specific data points, case studies, named frameworks and quotes unless "
+        "each carries an idea of its own — a comprehensive pass covers those. "
         "Skip minor details and tangential asides."
     ),
     3: (
