@@ -21,8 +21,12 @@ CLI_EMPTY_RESULT_RETRIES = 3
 generation_errors: list[str] = []
 
 PRICING: dict[str, tuple[float, float]] = {
+    "claude-fable-5": (10.0, 50.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-sonnet-5": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
     "claude-sonnet-4-6": (3.0, 15.0),
-    "claude-opus-4-8": (15.0, 75.0),
+    "claude-opus-4-8": (5.0, 25.0),
     "gpt-5.5": (5.0, 30.0),
     "gpt-5.4": (2.5, 15.0),
     "gpt-5.4-mini": (0.75, 4.5),
@@ -262,7 +266,10 @@ def _process_chunks_parallel(
                 if on_chunk_done:
                     on_chunk_done(done_count, len(chunks))
             except Exception as e:
-                print(f"  chunk {idx + 1} failed: {e}", file=sys.stderr)
+                generation_errors.append(
+                    f"\"{short}\" chunk {idx + 1}/{len(chunks)}: "
+                    f"{type(e).__name__}: {str(e)[:300]}"
+                )
                 done_count += 1
                 if on_chunk_done:
                     on_chunk_done(done_count, len(chunks))
@@ -522,6 +529,7 @@ def _generate_with_retries(
     max_retries = _max_retries_for_provider(provider, max_retries)
 
     for attempt in range(max_retries):
+        response = ""
         try:
             response, usage = provider.generate(prompt)
             cumulative += usage
@@ -542,15 +550,26 @@ def _generate_with_retries(
             if _should_retry_empty_cards(provider, cards, topic, attempt, max_retries):
                 _retry_empty_cards(short, attempt, max_retries, _report)
                 continue
+            if not cards and not topic:
+                # A chapter can silently end up empty when the model answers
+                # with "[]" — say so instead of just showing 0 in the table
+                generation_errors.append(
+                    f"\"{short}\": model returned 0 cards "
+                    f"(response: {response[:200] or '(empty)'})"
+                )
             return cards, cumulative
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            preview = (response[:300] or "(empty)") if response else "(empty)"
+            last_error = f"parse error: {e} | response: {preview}"
             if attempt < max_retries - 1:
                 _report(f"\"{short}\" parse error, retry {attempt + 2}/{max_retries}")
                 time.sleep(1)
                 continue
             _report(f"\"{short}\" failed after {max_retries} attempts")
+            generation_errors.append(f"\"{short}\": {last_error}")
             return [], cumulative
         except Exception as e:
+            last_error = f"{type(e).__name__}: {str(e)[:500]}"
             if attempt < max_retries - 1:
                 err_str = str(e)
                 if "rate_limit" in err_str or "429" in err_str:
@@ -563,6 +582,7 @@ def _generate_with_retries(
                 _report(f"\"{short}\" retrying ({attempt + 2}/{max_retries})")
                 continue
             _report(f"\"{short}\" failed after {max_retries} attempts")
+            generation_errors.append(f"\"{short}\": {last_error}")
             return [], cumulative
 
     return [], cumulative

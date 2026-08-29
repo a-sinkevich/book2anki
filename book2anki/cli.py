@@ -1192,6 +1192,17 @@ def _print_summary(
         _tbl_row("Total", cards_str, _fmt_elapsed(total_time)),
         file=sys.stderr,
     )
+    _print_generation_errors()
+
+
+def _print_generation_errors() -> None:
+    """Report failures collected while the live table owned the terminal."""
+    if not generation_errors:
+        return
+    print("\nProblems during generation:", file=sys.stderr)
+    for err in generation_errors:
+        print(f"  ✗ {err}", file=sys.stderr)
+    generation_errors.clear()
 
 
 def _process_sequential(

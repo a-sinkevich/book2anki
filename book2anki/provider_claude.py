@@ -46,11 +46,15 @@ class ClaudeProvider(LLMProvider):
         self.model = models.get(model_name, model_name)
 
     def generate(self, prompt: str) -> tuple[str, TokenUsage]:
-        response = self.client.messages.create(
+        # Stream, don't wait: a comprehensive chapter can take the model
+        # minutes to answer, and a non-streaming request that long gets its
+        # idle connection dropped (APIConnectionError) before the reply lands.
+        with self.client.messages.stream(
             model=self.model,
-            max_tokens=16384,
+            max_tokens=64000,
             messages=[{"role": "user", "content": prompt}],
-        )
+        ) as stream:
+            response = stream.get_final_message()
         usage = TokenUsage(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,

@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from typing import Any
 
 import fitz  # PyMuPDF
 
@@ -12,6 +13,20 @@ _FIGURE_RE = re.compile(
 )
 
 CHUNK_SIZE = 20  # pages per chunk in fallback mode
+
+# Outline sections longer than this are split into their subsections
+MAX_CHAPTER_CHARS = 30000
+_FRONT_MATTER_MAX_CHARS = 5000  # cover/contents entry repeating the book title
+
+_COVER_PAGES = 3  # pages scanned for a cover title
+_COVER_TITLE_MAX_CHARS = 150
+
+# "Chapter 1: ...", "Part 2", "3. ...", "5.1: ..." — a section heading, not a book title
+_SECTION_TITLE_RE = re.compile(
+    r"^(chapter|part|section|глава|раздел)\s+\d+"
+    r"|^\d{1,2}(\.\d+)*\s*[.:]\s*\S",
+    re.IGNORECASE,
+)
 
 CHAPTER_PATTERNS = [
     re.compile(r"^chapter\s+\d+", re.IGNORECASE),
@@ -42,7 +57,7 @@ def parse_pdf(filepath: str) -> tuple[str, list[Chapter]]:
             "Consider using an OCR tool first."
         )
 
-    chapters = _from_outline(doc)
+    chapters = _from_outline(doc, book_title)
     if not chapters:
         chapters = _from_heuristics(doc)
     if not chapters:
@@ -57,45 +72,90 @@ def parse_pdf(filepath: str) -> tuple[str, list[Chapter]]:
 def _extract_title(doc: fitz.Document, filepath: str) -> str:
     metadata = doc.metadata
     title = (metadata.get("title") or "").strip() if metadata else ""
-    if title and not re.match(r"^[\d\-]+(\.\w+)?$", title) and "." not in title:
+    if (
+        title
+        and not re.match(r"^[\d\-]+(\.\w+)?$", title)
+        and "." not in title
+        and not _SECTION_TITLE_RE.match(title)
+    ):
         return title
+    cover_title = _title_from_cover(doc)
+    if cover_title:
+        return cover_title
     return Path(filepath).stem.replace("-", " ").replace("_", " ").title()
 
 
-def _from_outline(doc: fitz.Document) -> list[Chapter]:
+def _title_from_cover(doc: fitz.Document) -> str:
+    """Read the book title from the largest text on the opening pages."""
+    try:
+        parts = _largest_text_on_cover(doc)
+    except Exception:
+        return ""  # unusual or damaged PDF — let the caller fall back
+    title = re.sub(r"\s+", " ", " ".join(parts)).strip()
+    if len(title) < 4 or len(title) > _COVER_TITLE_MAX_CHARS:
+        return ""
+    if not re.search(r"[^\W\d_]", title):  # no letters — page numbers, decoration
+        return ""
+    if _SECTION_TITLE_RE.match(title):  # first page is a chapter, not a cover
+        return ""
+    return title
+
+
+def _largest_text_on_cover(doc: fitz.Document) -> list[str]:
+    """Collect the text spans set in the biggest font size on the opening pages."""
+    best_size = 0.0
+    best_parts: list[str] = []
+
+    for page_num in range(min(_COVER_PAGES, len(doc))):
+        by_size: dict[float, list[str]] = {}
+        for block in doc[page_num].get_text("dict")["blocks"]:
+            if "lines" not in block:
+                continue
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    text = _collapse_spaced(span["text"].replace("\xad", "").strip())
+                    if len(text) < 2 or len(text) > _COVER_TITLE_MAX_CHARS:
+                        continue
+                    by_size.setdefault(round(span["size"], 1), []).append(text)
+
+        for size, parts in by_size.items():
+            if size > best_size:
+                best_size, best_parts = size, parts
+
+    return best_parts
+
+
+class _Section:
+    """An outline entry with its page range and nested subsections."""
+
+    def __init__(self, title: str, level: int, start_page: int) -> None:
+        self.title = title
+        self.level = level
+        self.start_page = start_page
+        self.end_page = start_page
+        self.children: list["_Section"] = []
+
+
+def _from_outline(doc: fitz.Document, book_title: str = "") -> list[Chapter]:
     """Extract chapters from the PDF's bookmark/outline tree."""
     toc = doc.get_toc()  # list of [level, title, page_number]
     if not toc:
         return []
 
-    level1 = [(title, page - 1) for level, title, page in toc if level == 1]
-    level2 = [(title, page - 1) for level, title, page in toc if level == 2]
-
-    has_parts = any(re.match(r"^part\s+", t, re.IGNORECASE) for t, _ in level1)
-    has_chapter_l2 = any(re.match(r"^chapter\s+", t, re.IGNORECASE) for t, _ in level2)
-    if has_chapter_l2:
-        # Use only "Chapter N" entries — skip preface/appendix sub-sections
-        entries = [(t, p) for t, p in level2 if re.match(r"^chapter\s+", t, re.IGNORECASE)]
-    elif level2 and has_parts:
-        entries = level2
-    elif len(level1) >= 2:
-        entries = level1
-    elif level2:
-        entries = level2
-    else:
-        return []
-
-    if len(entries) < 2:
+    sections = _build_outline_tree(toc, len(doc))
+    selected = _select_outline_level(sections)
+    if len(selected) < 2:
         return []
 
     chapters = []
     index = 0
-    for i, (title, start_page) in enumerate(entries):
-        end_page = entries[i + 1][1] if i + 1 < len(entries) else len(doc)
+    for title, start_page, end_page in _split_oversized(doc, selected):
         text = _extract_page_range(doc, start_page, end_page)
         if not text.strip():
             continue
-        if should_skip_chapter(title, text):
+        if should_skip_chapter(title, text, book_title):
+            continue
+        if index == 0 and _is_front_matter(title, text, book_title):
             continue
         images = _extract_images_from_pages(doc, start_page, end_page)
         chapters.append(Chapter(
@@ -104,6 +164,109 @@ def _from_outline(doc: fitz.Document) -> list[Chapter]:
         index += 1
 
     return chapters
+
+
+def _build_outline_tree(toc: list[Any], page_count: int) -> list[_Section]:
+    """Nest the flat TOC by level and fill in page ranges. Returns sections in TOC order."""
+    flat: list[_Section] = []
+    roots: list[_Section] = []
+    stack: list[_Section] = []
+
+    for level, title, page in toc:
+        section = _Section(title, level, max(page - 1, 0))
+        while stack and stack[-1].level >= level:
+            stack.pop()
+        siblings = stack[-1].children if stack else roots
+        siblings.append(section)
+        stack.append(section)
+        flat.append(section)
+
+    _close_page_ranges(roots, page_count)
+    return flat
+
+
+def _close_page_ranges(sections: list[_Section], parent_end: int) -> None:
+    """A section runs until its next sibling starts, or until its parent ends."""
+    for i, section in enumerate(sections):
+        section.end_page = (
+            sections[i + 1].start_page if i + 1 < len(sections) else parent_end
+        )
+        _close_page_ranges(section.children, section.end_page)
+
+
+def _select_outline_level(sections: list[_Section]) -> list[_Section]:
+    """Pick the outline level that holds the book's chapters."""
+    level1 = [s for s in sections if s.level == 1]
+    level2 = [s for s in sections if s.level == 2]
+
+    def is_chapter(section: _Section) -> bool:
+        return bool(re.match(r"^chapter\s+", section.title, re.IGNORECASE))
+
+    has_parts = any(re.match(r"^part\s+", s.title, re.IGNORECASE) for s in level1)
+    if any(is_chapter(s) for s in level2):
+        # Use only "Chapter N" entries — skip preface/appendix sub-sections
+        return [s for s in level2 if is_chapter(s)]
+    if level2 and has_parts:
+        return level2
+    if len(level1) >= 2:
+        return level1
+    return level2
+
+
+def _split_oversized(
+    doc: fitz.Document, sections: list[_Section], parent_title: str = "",
+) -> list[tuple[str, int, int]]:
+    """Flatten sections to (title, start_page, end_page), splitting big ones by subsection.
+
+    A chapter far larger than the rest of the book (a "3. A long and illustrious
+    history" that spans a third of the pages) makes the LLM drop most of its
+    content, so it becomes one chapter per subsection instead.
+    """
+    segments: list[tuple[str, int, int]] = []
+
+    for section in sections:
+        title = _qualified_title(parent_title, section.title)
+        text = _extract_page_range(doc, section.start_page, section.end_page)
+        if len(text) <= MAX_CHAPTER_CHARS or not _can_subdivide(section):
+            segments.append((title, section.start_page, section.end_page))
+            continue
+
+        # Text before the first subsection (a chapter intro) stays under the parent
+        first_child = section.children[0]
+        if first_child.start_page > section.start_page:
+            segments.append((title, section.start_page, first_child.start_page))
+        segments.extend(_split_oversized(doc, section.children, title))
+
+    return segments
+
+
+def _can_subdivide(section: _Section) -> bool:
+    """True if some level below this section splits it into more than one piece."""
+    if len(section.children) >= 2:
+        return True
+    # A lone subsection adds nothing by itself, but its own children may
+    return bool(section.children) and _can_subdivide(section.children[0])
+
+
+def _qualified_title(parent_title: str, title: str) -> str:
+    """Prefix a subsection with its parent chapter unless it already says so."""
+    title = title.strip()
+    parent = parent_title.strip()
+    if not parent:
+        return title
+    number = re.match(r"^\d+(\.\d+)*", parent)
+    if number and title.startswith(number.group(0) + "."):
+        return title  # "3. A long history" → "3.2 Britain since 1945"
+    if title.lower().startswith(parent.lower()):
+        return title
+    return f"{parent} — {title}"
+
+
+def _is_front_matter(title: str, text: str, book_title: str) -> bool:
+    """The opening outline entry named after the book is a cover/contents page."""
+    if not book_title or title.strip().lower() != book_title.strip().lower():
+        return False
+    return len(text) < _FRONT_MATTER_MAX_CHARS
 
 
 def _detect_body_size(doc: fitz.Document) -> float:
