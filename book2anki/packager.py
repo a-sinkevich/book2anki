@@ -8,7 +8,7 @@ import zipfile
 
 import genanki
 
-from book2anki.models import Card
+from book2anki.models import Card, is_cloze
 
 _SAFE_TAGS = {"pre", "code", "/pre", "/code", "b", "/b", "br", "br/",
               "ul", "/ul", "ol", "/ol", "li", "/li", "p", "/p",
@@ -123,6 +123,81 @@ CARD_MODEL = genanki.Model(
     ],
     css=CARD_CSS,
 )
+
+_CLOZE_CSS = """\
+.cloze {
+    font-weight: bold;
+    color: #0b6ec4;
+}
+.card.night_mode .cloze {
+    color: #6cb6ff;
+}
+.cloze-context {
+    font-size: 15px;
+    color: #888;
+    margin-bottom: 10px;
+}
+.card.night_mode .cloze-context {
+    color: #999;
+}
+.cloze-gloss {
+    font-size: 17px;
+    color: #666;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(128, 128, 128, 0.4);
+}
+.card.night_mode .cloze-gloss {
+    color: #999;
+}
+"""
+
+# Term cards: the sentence carries the deletion, so the "question" field is
+# rendered through {{cloze:...}} on both sides. Fields deliberately mirror
+# CARD_MODEL's layout and order so a deck containing both note types reads back
+# through _read_cards_from_apkg unchanged, which is what resume relies on.
+CLOZE_MODEL = genanki.Model(
+    model_id=1607392326,
+    name="book2anki Cloze",
+    fields=[
+        {"name": "Question"},
+        {"name": "Answer"},
+        {"name": "Example"},
+        {"name": "Image"},
+        {"name": "Chapter"},
+        {"name": "Book"},
+    ],
+    templates=[
+        {
+            "name": "Cloze",
+            "qfmt": '<div class="question">{{cloze:Question}}</div>',
+            "afmt": (
+                '<div class="question">{{cloze:Question}}</div>'
+                '{{#Answer}}<div class="cloze-gloss">{{Answer}}</div>{{/Answer}}'
+                '{{#Example}}<div class="example">{{Example}}</div>{{/Example}}'
+                '{{#Image}}<div class="image">{{Image}}</div>{{/Image}}'
+            ),
+        },
+    ],
+    css=CARD_CSS + _CLOZE_CSS,
+    model_type=genanki.Model.CLOZE,
+)
+
+
+def _note_model(card: Card, default: genanki.Model) -> genanki.Model:
+    """Cloze cards need Anki's cloze note type; everything else uses `default`."""
+    return CLOZE_MODEL if is_cloze(card) else default
+
+
+def _escaped_body(card: Card) -> list[str]:
+    """The four rendered fields shared by every question/answer note type."""
+    return [
+        _escape_field(card.question),
+        _escape_field(card.answer),
+        _escape_field(card.example) if card.example else "",
+        _escape_field(card.image) if card.image else "",
+    ]
+
 
 ARTICLE_MODEL = genanki.Model(
     model_id=1607392323,
@@ -374,13 +449,9 @@ def _build_chapter_deck(
     book_tag = f"book::{_slugify(book_title)}"
 
     for card in chapter_cards:
-        q = _escape_field(card.question)
-        a = _escape_field(card.answer)
-        ex = _escape_field(card.example) if card.example else ""
-        dg = _escape_field(card.image) if card.image else ""
         note = genanki.Note(
-            model=CARD_MODEL,
-            fields=[q, a, ex, dg, card.chapter_title, card.book_title],
+            model=_note_model(card, CARD_MODEL),
+            fields=[*_escaped_body(card), card.chapter_title, card.book_title],
             tags=_note_tags(book_tag, card, model_version),
             guid=genanki.guid_for(card.question, card.book_title, card.chapter_title),
         )
@@ -441,13 +512,9 @@ def package_book_flat(
     tag = f"book::{_slugify(book_title)}"
 
     for card in cards:
-        q = _escape_field(card.question)
-        a = _escape_field(card.answer)
-        ex = _escape_field(card.example) if card.example else ""
-        dg = _escape_field(card.image) if card.image else ""
         note = genanki.Note(
-            model=CARD_MODEL,
-            fields=[q, a, ex, dg, card.chapter_title, card.book_title],
+            model=_note_model(card, CARD_MODEL),
+            fields=[*_escaped_body(card), card.chapter_title, card.book_title],
             tags=_note_tags(tag, card, model_version),
             guid=genanki.guid_for(card.question, card.book_title, card.chapter_title),
         )
@@ -471,13 +538,9 @@ def package_cards_flat(
     source_url = cards[0].source_url if cards else ""
 
     for card in cards:
-        q = _escape_field(card.question)
-        a = _escape_field(card.answer)
-        ex = _escape_field(card.example) if card.example else ""
-        dg = _escape_field(card.image) if card.image else ""
         note = genanki.Note(
-            model=model,
-            fields=[q, a, ex, dg, deck_name, source_url],
+            model=_note_model(card, model),
+            fields=[*_escaped_body(card), deck_name, source_url],
             tags=_note_tags(tag, card, model_version),
             guid=genanki.guid_for(card.question, deck_name, source_url),
         )

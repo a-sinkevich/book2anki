@@ -2,6 +2,7 @@ import json
 
 from book2anki.prompts import (
     DEPTH_INSTRUCTIONS,
+    TERM_DEPTH_INSTRUCTIONS,
     build_practice_prompt,
     build_prompt,
     build_prompt_request,
@@ -95,3 +96,46 @@ def test_practice_prompt_prefers_runnable_java_examples():
     assert sample_cards[0]["question"].startswith(
         "<b>Implement a Builder for NutritionFacts</b>"
     )
+
+
+def test_build_prompt_asks_for_term_cards_at_every_depth():
+    for depth in (0, 1, 2, 3):
+        prompt = build_prompt("Book", "Ch", "text", depth, "en")
+        assert TERM_DEPTH_INSTRUCTIONS[depth][:30] in prompt
+
+
+def test_term_cards_show_literal_cloze_syntax():
+    """The f-string braces must survive as a real {{c1::...}} example."""
+    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    assert "{{c1::...}}" in prompt
+    assert "{{c1::tardive dysphoria}}" in prompt
+    # No stray single braces left over from escaping.
+    assert "{c1::" not in prompt.replace("{{c1::", "")
+
+
+def test_term_cards_keep_cloze_in_source_language():
+    prompt = build_prompt("Book", "Ch", "text", 1, "ru")
+    assert "Keep the cloze sentence in the language of the source text" in prompt
+    assert 'Write "answer" and "context" in ru' in prompt
+
+
+def test_term_cards_state_the_derivability_test():
+    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    assert "THE TEST every cloze must pass" in prompt
+    assert "Passes:" in prompt and "Fails:" in prompt
+
+
+def test_term_cards_forbid_multiple_deletions():
+    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    assert "Never c2, c3, or multiple deletions" in prompt
+
+
+def test_output_contract_mentions_type_and_context():
+    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    assert '"type" and "context"' in prompt
+
+
+def test_vocab_and_practice_prompts_have_no_term_cards():
+    """Vocab is already production-direction; practice cards are exercises."""
+    assert "TERM CARDS" not in build_practice_prompt("Book", "Ch", "text", 1)
+    assert "TERM CARDS" not in build_prompt_request("Study X", 1, "en")

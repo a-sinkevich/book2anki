@@ -25,6 +25,93 @@ DEPTH_INSTRUCTIONS = {
     ),
 }
 
+# How many terms are worth recalling *by name* at each depth. Depth 0 is a
+# minimal summary, so it earns a term card only for the one idea the section is
+# built around.
+TERM_DEPTH_INSTRUCTIONS = {
+    0: (
+        "Only if the single central idea of this text has a proper name, add one term card "
+        "for that name. Otherwise add none."
+    ),
+    1: (
+        "Add term cards only for names central to the text's argument — the terms a reader "
+        "would need to use to discuss it. Skip passing jargon."
+    ),
+    2: (
+        "Add term cards for the central names plus important secondary terminology, "
+        "named studies, effects, and key dates or quantities."
+    ),
+    3: (
+        "Add term cards for every named concept, coined term, principle, law, effect, "
+        "syndrome, framework, study, date, and quantity worth recalling by name."
+    ),
+}
+
+
+def _term_cards_section(depth: int, language: str) -> str:
+    """Instructions for production-direction cards that test recall of a name.
+
+    The cards produced by the main instructions run concept-name → meaning. These
+    run the other way: given the meaning, produce the name. Both directions have
+    to be trained separately — understanding an idea perfectly is no guarantee of
+    being able to retrieve what it is called.
+    """
+    return f"""
+
+TERM CARDS (second card type — recall the NAME)
+
+The cards described above run name → meaning. Also generate cards for the reverse \
+direction: given the meaning, recall the NAME. Understanding a concept and being able \
+to name it are separate skills, and the name is often the part that goes missing.
+
+{TERM_DEPTH_INSTRUCTIONS[depth]}
+
+Use whichever of these two forms fits the source text:
+
+**Form 1 — cloze (preferred).** Set "type": "cloze". Put a sentence from the text in \
+"question" with the term wrapped in {{{{c1::...}}}}, and a one-line gloss in "answer".
+
+  THE TEST every cloze must pass: a reader who understands the concept but has \
+forgotten its name must be able to recover the term from the words that remain — and a \
+reader who does not know the concept must not be able to guess it. If the rest of the \
+sentence does not define or strongly characterise the term, the card only teaches the \
+sentence. Use Form 2 instead.
+
+  Passes: "When long-term antidepressant use itself produces a chronic, \
+treatment-resistant depressed state, the result is {{{{c1::tardive dysphoria}}}}."
+  Fails:  "Healy argues that {{{{c1::tardive dysphoria}}}} is a serious concern." \
+(nothing left to derive the term from — this only drills the sentence)
+
+**Form 2 — reverse question.** An ordinary card (no "type" field) whose question \
+describes the concept and whose answer is the term and nothing else. Use when the text \
+has no self-contained defining sentence.
+
+  {{"question": "What is the term for depression caused by the long-term use of the \
+antidepressants meant to treat it?", "answer": "Tardive dysphoria"}}
+
+Rules for term cards:
+- **Keep the cloze sentence in the language of the source text**, always — even though \
+the other cards are written in {language}. The hidden answer IS a source-language term, \
+so translating the sentence would destroy the card. Write "answer" and "context" in \
+{language}
+- **Exactly one {{{{c1::...}}}} per card.** Never c2, c3, or multiple deletions. Hide the \
+term only, never the surrounding explanation that makes it derivable
+- **One card per term.** Do not build several cloze cards for the same term from \
+different sentences
+- **Repair the sentence for standalone reading**: resolve pronouns and back-references \
+("it" → the thing itself, "this approach" → the named approach), and trim clauses that \
+depend on earlier text. Keep the author's wording and claims otherwise — do not invent \
+statements the text does not make
+- **"context" field**: a short orienting phrase in {language} (3-8 words) naming what \
+the sentence is about, for sentences that read as ambiguous on their own. It must NEVER \
+contain the hidden term or a translation of it, or the card gives itself away. Leave it \
+empty when the sentence already stands alone
+- **Answer side**: a one-line gloss in {language}. Do not restate the whole sentence
+- **Only names worth retrieving.** A term card earns its place when the name is the thing \
+you would forget. Skip everyday words, and skip terms the text merely mentions without \
+explaining"""
+
+
 _CODE_INDICATORS = re.compile(
     r"(?:"
     r"(?:^|\n)\s*(?:def |class |import |from .+ import |public |private |protected |void |int |return )"
@@ -149,6 +236,8 @@ def build_prompt(
             "add both a definition card and an application card"
         )
 
+    term_section = _term_cards_section(depth, language)
+
     return f"""You are an expert at creating Anki flashcards from {"articles" if is_article else "books"}.
 
 {source_header}
@@ -170,13 +259,16 @@ Guidelines:
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
 - **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{redundancy_rule}{example_rule}{image_rule}
+{term_section}
 
-{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example"{' and "image"' if has_book_images else ''} fields. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
+{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example", "type" and "context"{' and "image"' if has_book_images else ''} fields. Both kinds of card go in the SAME array, ordered so each term card follows the concept card it relates to. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
 
 Example format:
 [
   {{"question": "What is X?", "answer": "X is...", "example": ""{', "image": ""' if has_book_images else ''}}},
-  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "[BOOK-IMG-1] Description of the figure"' if has_book_images else ''}}}
+  {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "[BOOK-IMG-1] Description of the figure"' if has_book_images else ''}}},
+  {{"type": "cloze", "question": "A sentence from the text in which the defined term is replaced by {{{{c1::the term}}}}.", "answer": "One-line gloss in {language}.", "context": "short orienting phrase"}},
+  {{"question": "What is the term for <description of the concept>?", "answer": "The term"}}
 ]
 
 {text_label}:

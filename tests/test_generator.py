@@ -10,8 +10,9 @@ from book2anki.generator import (
     _split_into_chunks,
     vocab_word,
 )
-from book2anki.models import Card
+from book2anki.models import CLOZE_TAG, Card, is_cloze
 
+import json
 import pytest
 
 
@@ -253,7 +254,83 @@ class TestSplitIntoChunks:
             assert end_of_first in chunks[1]
 
 
+class TestClozeCards:
+    def _generate(self, payload):
+        return _generate_with_retries(
+            _FakeProvider([payload], "gpt-5.5"),
+            "text", "Book", "Chapter", 1, "ru",
+        )
+
+    def test_cloze_item_is_tagged_and_kept_verbatim(self):
+        cards = self._generate(json.dumps([{
+            "type": "cloze",
+            "question": "The result is {{c1::tardive dysphoria}}.",
+            "answer": "Ухудшение депрессии.",
+        }]))
+
+        assert is_cloze(cards[0])
+        assert cards[0].question == "The result is {{c1::tardive dysphoria}}."
+
+    def test_context_is_rendered_above_the_sentence(self):
+        cards = self._generate(json.dumps([{
+            "type": "cloze",
+            "question": "The result is {{c1::tardive dysphoria}}.",
+            "answer": "gloss",
+            "context": "Долгосрочный приём антидепрессантов",
+        }]))
+
+        assert cards[0].question == (
+            '<div class="cloze-context">Долгосрочный приём антидепрессантов</div>'
+            "The result is {{c1::tardive dysphoria}}."
+        )
+
+    def test_cloze_without_a_deletion_degrades_to_a_normal_card(self):
+        """Anki generates no cards from a cloze note with no deletion in it."""
+        cards = self._generate(json.dumps([{
+            "type": "cloze",
+            "question": "The result is tardive dysphoria.",
+            "answer": "gloss",
+        }]))
+
+        assert not is_cloze(cards[0])
+        assert cards[0].question == "The result is tardive dysphoria."
+
+    def test_plain_cards_are_untagged(self):
+        cards = self._generate('[{"question": "What is X?", "answer": "A"}]')
+
+        assert not is_cloze(cards[0])
+        assert cards[0].tags == []
+
+    def test_term_and_concept_cards_survive_together(self):
+        """The two directions are the point — dedup must not collapse them."""
+        cards = self._generate(json.dumps([
+            {"question": "What is tardive dysphoria?", "answer": "A drug-induced state."},
+            {"type": "cloze", "question": "The result is {{c1::tardive dysphoria}}.",
+             "answer": "gloss"},
+        ]))
+
+        assert len(_deduplicate(cards)) == 2
+
+
 class TestDeduplicate:
+    def test_cloze_cards_hiding_the_same_term_are_merged(self):
+        cards = [
+            Card(question="One sentence about {{c1::anchoring}}.", answer="a",
+                 chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+            Card(question="A completely different sentence on {{c1::Anchoring}} here.",
+                 answer="a", chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+        ]
+        assert len(_deduplicate(cards)) == 1
+
+    def test_cloze_cards_hiding_different_terms_are_kept(self):
+        cards = [
+            Card(question="A sentence about {{c1::anchoring}}.", answer="a",
+                 chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+            Card(question="A sentence about {{c1::priming}}.", answer="a",
+                 chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+        ]
+        assert len(_deduplicate(cards)) == 2
+
     def test_no_duplicates(self):
         cards = [_card("What is photosynthesis?"), _card("How does gravity work?")]
         result = _deduplicate(cards)

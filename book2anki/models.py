@@ -32,6 +32,17 @@ class Card:
     tags: list[str] = field(default_factory=list)
 
 
+# Marks a card whose `question` holds an Anki cloze deletion rather than a
+# question. Carried as a tag so it survives the .apkg round trip that resume
+# depends on, and so cloze cards stay filterable in Anki.
+CLOZE_TAG = "card::cloze"
+
+
+def is_cloze(card: Card) -> bool:
+    """Whether a card should be packaged with Anki's cloze note type."""
+    return CLOZE_TAG in card.tags
+
+
 SKIP_TITLES = {
     "copyright", "dedication", "epigraph", "contents", "table of contents",
     "also by", "series", "series page", "title page", "titlepage",

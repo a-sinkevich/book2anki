@@ -165,6 +165,24 @@ Book output uses per-chapter files by default for every depth, including `--dept
 The combined deck contains the processed chapter set, so `--chapters 3-5` also writes one combined deck for chapters 3-5.
 Use `--compact`/`--flat` for a single flat deck. `--topic` also outputs a single flat deck.
 
+## Term cards
+
+Decks contain two kinds of card, generated together in one run.
+
+**Concept cards** run *name → meaning*: "What is tardive dysphoria?" → an explanation.
+
+**Term cards** run the other way, *meaning → name*, because understanding an idea and being able to retrieve what it is called are separate skills — and the name is usually the part that goes missing. Each term card takes one of two shapes, whichever the source supports:
+
+- **Cloze**, when the text has a sentence that actually defines the term:
+  > When long-term antidepressant use itself produces a chronic, treatment-resistant depressed state, the result is `[...]`.
+
+  The rule the generator applies is that a reader who understands the concept must be able to recover the term from the words that remain, and a reader who doesn't must not. A sentence like "Healy argues that `[...]` is a serious concern" fails that test — it only drills the sentence — so it becomes the second shape instead.
+- **Reverse question**, when no self-contained defining sentence exists: "What is the term for depression caused by the long-term use of the antidepressants meant to treat it?" → "Tardive dysphoria".
+
+How many terms qualify scales with `--depth`: at `--depth 0` only the one idea the text is built around, at `--depth 3` every named concept, law, effect, study, date, and quantity.
+
+With `--lang`, the cloze sentence stays in the **source** language while the gloss and context line are written in your language — the hidden answer is a source-language term, so translating the sentence would destroy the card. Cloze cards are tagged `card::cloze`, so you can filter, reposition, or suspend them in Anki if you'd rather study them separately.
+
 Prompt mode (`--prompt`) outputs a flat deck from model knowledge, asks the model for a concise deck title, and tags notes with `source::prompt`. Use it when you want standalone study material without providing a book, article, or video.
 
 Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` (e.g. `English B2 — The Great Gatsby`). Running for different chapter ranges produces files that merge into the same Anki deck on import.
@@ -176,7 +194,7 @@ Vocabulary mode outputs a flat deck named `{Language} {Level} — {Book Title}` 
 1. **Parse** — EPUB chapters via TOC, PDF via heading detection, web via article extraction + `srcset` for high-res images, YouTube via transcript API
 2. **Chunk** — split chapters into overlapping segments fitting the model's context window (~80% of limit minus output reserve)
 3. **Generate** — each chunk → Claude (Opus via CLI or Sonnet via API) with depth/language/content-type-aware prompt; image captions included so the model can reference figures
-4. **Dedup** — `SequenceMatcher`-based similarity dedup within chunks; LLM consolidation pass across chapters in compact/topic modes
+4. **Dedup** — `SequenceMatcher`-based similarity dedup within chunks, plus term-based dedup for cloze cards; LLM consolidation pass across chapters in compact/topic modes
 5. **Package** — `.apkg` via [genanki](https://github.com/kerrickstaley/genanki); per-chapter subdecks for books, flat deck for articles/topic/compact output
 
 Chapters are saved individually on completion — interrupt and resume without re-generating.
@@ -209,6 +227,7 @@ When using API providers, book2anki does not print local cost estimates because 
 
 - **EPUB, PDF, URL & YouTube** — books, web articles, or video transcripts
 - **Four depth levels**: essential summary, core ideas, detailed, or comprehensive
+- **Term cards** — alongside the usual concept cards, every deck gets cards that run *meaning → name*, so you can retrieve a term and not just recognise it. Cloze-deleted from a defining sentence in the book where one exists, otherwise a reverse question. See [Term cards](#term-cards)
 - **Prompt mode** (`--prompt "..."`) — generate standalone cards from a study request using model knowledge, without a source file or URL
 - **Practice mode** (`--practice`) — generate "Implement …" programming exercise cards from a book. Each card has a precise specification as the question and complete, production-ready code as the answer. Where practical, answers include runnable demonstrations; for Java this means a complete Java 17+ example with `public static void main(String[] args)`, including realistic usage and important edge cases. Solutions use proper concurrency primitives, idiomatic patterns, and correct error handling — not textbook simplifications. Use `--code-lang java` to force a specific language
 - **Vocabulary mode** (`--vocab --level B2 --lang ru`) — extract words/phrases above your CEFR level with IPA pronunciation, etymology, example sentences, and translation
@@ -216,7 +235,7 @@ When using API providers, book2anki does not print local cost estimates because 
 - **Anki-aware dedup** — reads your existing Anki collection to skip words you already have
 - **Topic filter** (`--topic`) — generate cards only about a specific subject (works with both regular and vocab modes)
 - **Images** — extracts figures from EPUB books and web articles, includes them in relevant cards
-- **Smart dedup** — similarity-based dedup within chunks; LLM consolidation across chapters in compact/topic modes; vocab duplicates merged with multiple contexts
+- **Smart dedup** — similarity-based dedup within chunks; cloze cards deduped by the term they hide; LLM consolidation across chapters in compact/topic modes; vocab duplicates merged with multiple contexts
 - **Dark & light theme** — cards adapt to your Anki theme
 - **Parallel processing** (`--parallel`) — process multiple chapters simultaneously
 - **Claude CLI support** — auto-detects `claude` CLI for subscription-based generation, falls back to API

@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from difflib import SequenceMatcher
 from typing import Any, Callable, TypeVar
 
-from book2anki.models import Card, Chapter
+from book2anki.models import CLOZE_TAG, Card, Chapter
 from book2anki.prompts import (
     build_prompt, build_prompt_request, build_vocab_prompt, build_practice_prompt,
 )
@@ -386,19 +386,22 @@ def _generate_with_retries(
     )
 
     def parse(response: str) -> list[Card]:
-        return [
-            Card(
-                question=item["question"],
+        cards = []
+        for item in _parse_json_response(response):
+            if "question" not in item or "answer" not in item:
+                continue
+            question, tags = _question_and_tags(item)
+            cards.append(Card(
+                question=question,
                 answer=item["answer"],
                 chapter_title=chapter_title,
                 book_title=book_title,
                 source_url=source_url,
                 example=item.get("example", ""),
                 image=item.get("image", ""),
-            )
-            for item in _parse_json_response(response)
-            if "question" in item and "answer" in item
-        ]
+                tags=tags,
+            ))
+        return cards
 
     cards = _generate_parsed(
         provider, prompt, _short_label(chapter_title), parse,
@@ -407,6 +410,37 @@ def _generate_with_retries(
         report_empty=not topic,
     )
     return cards or []
+
+
+# Anki cloze deletion: {{c1::answer}} or {{c1::answer::hint}}
+_CLOZE_RE = re.compile(r"\{\{c\d+::(.+?)(?:::.*?)?}}", re.DOTALL)
+
+
+def _question_and_tags(item: dict[str, Any]) -> tuple[str, list[str]]:
+    """Build a card's question field, marking and decorating cloze items.
+
+    A term card asking for a name is returned by the model as `"type": "cloze"`
+    with the name wrapped in `{{c1::…}}`. Its optional `context` becomes an
+    orienting line rendered above the sentence on both sides of the card. An
+    item claiming to be a cloze but carrying no deletion would produce a note
+    Anki generates no cards from, so it degrades to an ordinary card instead.
+    """
+    question = item["question"]
+    if item.get("type") != "cloze" or not _CLOZE_RE.search(question):
+        return question, []
+
+    context = str(item.get("context", "")).strip()
+    if context:
+        question = f'<div class="cloze-context">{context}</div>{question}'
+    return question, [CLOZE_TAG]
+
+
+def _cloze_terms(question: str) -> set[str]:
+    """The hidden answers in a cloze question, normalized for comparison."""
+    return {
+        re.sub(r"<[^>]+>", "", term).strip().lower()
+        for term in _CLOZE_RE.findall(question)
+    }
 
 
 def _generate_vocab_with_retries(
@@ -656,11 +690,28 @@ def _split_into_chunks(text: str, max_chars: int, overlap_chars: int = 2000) -> 
 
 
 def deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
-    """Remove duplicate cards based on question similarity."""
+    """Remove duplicate cards.
+
+    Cloze cards are matched on the term they hide, since two different sentences
+    concealing the same word teach the same thing and their surrounding text is
+    too dissimilar for the similarity check to catch. Everything else is matched
+    on question similarity. A cloze card never displaces the concept card about
+    the same term — those are the two directions we deliberately want.
+    """
     unique: list[Card] = []
+    seen_terms: set[str] = set()
     for card in cards:
+        terms = _cloze_terms(card.question)
+        if terms:
+            if terms & seen_terms:
+                continue
+            seen_terms |= terms
+            unique.append(card)
+            continue
         is_dup = False
         for existing in unique:
+            if _cloze_terms(existing.question):
+                continue
             similarity = SequenceMatcher(None, card.question.lower(), existing.question.lower()).ratio()
             if similarity >= threshold:
                 is_dup = True

@@ -4,8 +4,10 @@ import sqlite3
 import tempfile
 import zipfile
 
-from book2anki.models import Card
+from book2anki.models import CLOZE_TAG, Card, is_cloze
 from book2anki.packager import (
+    CARD_MODEL,
+    CLOZE_MODEL,
     _gap_context,
     _model_tag,
     _split_etymology,
@@ -230,6 +232,99 @@ def test_package_practice_falls_back_to_first_appearance_order():
             "Practice | Book::01 - Alpha",
             "Practice | Book::02 - Beta",
         ]
+
+
+def _note_types(path: str) -> list[tuple[str, int]]:
+    """(note type name, Anki model type) per note; model type 1 means cloze."""
+    with zipfile.ZipFile(path, "r") as zf:
+        db_name = next(n for n in zf.namelist() if n.startswith("collection.anki2"))
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+            tmp.write(zf.read(db_name))
+            tmp_path = tmp.name
+    try:
+        conn = sqlite3.connect(tmp_path)
+        models = json.loads(conn.execute("SELECT models FROM col").fetchone()[0])
+        rows = conn.execute("SELECT mid FROM notes ORDER BY id").fetchall()
+        conn.close()
+    finally:
+        os.unlink(tmp_path)
+    return [(models[str(mid)]["name"], models[str(mid)]["type"]) for (mid,) in rows]
+
+
+def _card_count(path: str) -> int:
+    with zipfile.ZipFile(path, "r") as zf:
+        db_name = next(n for n in zf.namelist() if n.startswith("collection.anki2"))
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+            tmp.write(zf.read(db_name))
+            tmp_path = tmp.name
+    try:
+        conn = sqlite3.connect(tmp_path)
+        n = conn.execute("SELECT count(*) FROM cards").fetchone()[0]
+        conn.close()
+    finally:
+        os.unlink(tmp_path)
+    return int(n)
+
+
+def _mixed_cards() -> list[Card]:
+    return [
+        Card(question="What is tardive dysphoria?", answer="A drug-induced state.",
+             chapter_title="Ch", book_title="Book"),
+        Card(question="The result is {{c1::tardive dysphoria}}.", answer="Gloss",
+             chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+    ]
+
+
+def test_cloze_cards_use_the_cloze_note_type():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "mixed.apkg")
+        package_cards(_mixed_cards(), "Book", out)
+
+        assert _note_types(out) == [
+            ("book2anki Basic", 0),
+            ("book2anki Cloze", 1),
+        ]
+        # One deletion per note, so one Anki card per note.
+        assert _card_count(out) == 2
+
+
+def test_cloze_deletion_survives_field_escaping():
+    cards = [Card(question="A <b>bold</b> claim & {{c1::the term}} here.",
+                  answer="g", chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG])]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "cloze.apkg")
+        package_cards(cards, "Book", out)
+
+        text = _read_cards_from_apkg(out)[0].question
+        assert "{{c1::the term}}" in text
+        assert "<b>bold</b>" in text
+        assert "&amp;" in text
+
+
+def test_mixed_deck_round_trips_through_resume():
+    """Resume reads chapters back from disk; the note type must not be lost."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        chapters_dir = os.path.join(tmpdir, "chapters")
+        package_single_chapter(_mixed_cards(), "Book", 0, chapters_dir)
+
+        resumed = load_existing_chapters(chapters_dir)[0]
+        assert [is_cloze(c) for c in resumed] == [False, True]
+
+        # And again, so a twice-resumed run still packages the right note types.
+        out = os.path.join(tmpdir, "again.apkg")
+        package_cards(resumed, "Book", out)
+        assert _note_types(out) == [
+            ("book2anki Basic", 0),
+            ("book2anki Cloze", 1),
+        ]
+
+
+def test_cloze_note_type_matches_basic_field_layout():
+    """Same fields in the same order, so _read_cards_from_apkg needs no branch."""
+    assert (
+        [f["name"] for f in CLOZE_MODEL.fields]
+        == [f["name"] for f in CARD_MODEL.fields]
+    )
 
 
 def test_load_existing_chapters_empty_dir():
