@@ -163,3 +163,18 @@ def test_non_transcript_sources_keep_cloze():
         prompt = build_prompt("S", "C", "text", 2, "en", **kwargs)
         assert "Form 1 — cloze (preferred)" in prompt
         assert 'Do NOT emit any card with "type": "cloze"' not in prompt
+
+
+def test_term_cards_must_not_inflate_concept_card_count():
+    """The ordering hint used to read as a one-concept-per-term requirement."""
+    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    assert "The depth instruction alone decides how many of those to write" in prompt
+    assert "never add a concept card so that a term card has something to pair with" in prompt
+    assert "do not give every concept a term card" in prompt
+    assert "ordered so each term card follows the concept card" not in prompt
+
+
+def test_reverse_question_form_is_labelled_for_counting():
+    for kwargs in ({}, {"is_transcript": True}):
+        prompt = build_prompt("S", "C", "text", 2, "en", **kwargs)
+        assert 'Set "type": "term"' in prompt

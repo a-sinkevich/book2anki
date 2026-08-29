@@ -10,7 +10,7 @@ from book2anki.generator import (
     _split_into_chunks,
     vocab_word,
 )
-from book2anki.models import CLOZE_TAG, Card, is_cloze
+from book2anki.models import CLOZE_TAG, TERM_TAG, Card, is_cloze
 
 import json
 import pytest
@@ -313,6 +313,26 @@ class TestClozeCards:
         ]), is_transcript=True)
 
         assert [c.question for c in cards] == ["What is X?"]
+
+    def test_reverse_question_term_cards_are_tagged(self):
+        """Both term-card forms must be countable as one set in Anki."""
+        cards = self._generate(json.dumps([{
+            "type": "term",
+            "question": "What is the term for a drug-induced depressed state?",
+            "answer": "Tardive dysphoria",
+        }]))
+
+        assert not is_cloze(cards[0])
+        assert cards[0].tags == [TERM_TAG]
+
+    def test_cloze_term_cards_carry_both_tags(self):
+        cards = self._generate(json.dumps([{
+            "type": "cloze",
+            "question": "The result is {{c1::tardive dysphoria}}.",
+            "answer": "gloss",
+        }]))
+
+        assert cards[0].tags == [CLOZE_TAG, TERM_TAG]
 
     def test_plain_cards_are_untagged(self):
         cards = self._generate('[{"question": "What is X?", "answer": "A"}]')

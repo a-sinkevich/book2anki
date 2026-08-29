@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from difflib import SequenceMatcher
 from typing import Any, Callable, TypeVar
 
-from book2anki.models import CLOZE_TAG, Card, Chapter
+from book2anki.models import CLOZE_TAG, TERM_TAG, Card, Chapter
 from book2anki.prompts import (
     build_prompt, build_prompt_request, build_vocab_prompt, build_practice_prompt,
 )
@@ -449,12 +449,12 @@ def _question_and_tags(item: dict[str, Any]) -> tuple[str, list[str]]:
     """
     question = item["question"]
     if not _CLOZE_RE.search(question):
-        return question, []
+        return question, [TERM_TAG] if item.get("type") == "term" else []
 
     context = str(item.get("context", "")).strip()
     if context:
         question = f'<div class="cloze-context">{context}</div>{question}'
-    return question, [CLOZE_TAG]
+    return question, [CLOZE_TAG, TERM_TAG]
 
 
 def _cloze_terms(question: str) -> set[str]:

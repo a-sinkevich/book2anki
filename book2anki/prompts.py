@@ -48,11 +48,11 @@ TERM_DEPTH_INSTRUCTIONS = {
 }
 
 
-_REVERSE_FORM_BODY = """An ordinary card (no "type" field) whose question \
-describes the concept and whose answer is the term and nothing else.
+_REVERSE_FORM_BODY = """Set "type": "term". The question describes the concept; \
+the answer is the term and nothing else.
 
-  {"question": "What is the term for depression caused by the long-term use of the \
-antidepressants meant to treat it?", "answer": "Tardive dysphoria"}"""
+  {"type": "term", "question": "What is the term for depression caused by the long-term \
+use of the antidepressants meant to treat it?", "answer": "Tardive dysphoria"}"""
 
 
 def _term_cards_section(
@@ -130,6 +130,12 @@ TERM CARDS (second card type — recall the NAME)
 The cards described above run name → meaning. Also generate cards for the reverse \
 direction: given the meaning, recall the NAME. Understanding a concept and being able \
 to name it are separate skills, and the name is often the part that goes missing.
+
+These are an ADDITION to the cards above and change nothing about them. The depth \
+instruction alone decides how many of those to write — adding term cards is not a \
+reason to write more. In particular: never add a concept card so that a term card has \
+something to pair with, and do not give every concept a term card. The two sets overlap \
+only where a concept happens to have a name worth recalling.
 
 {TERM_DEPTH_INSTRUCTIONS[depth]}
 
@@ -296,14 +302,14 @@ Guidelines:
 - **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{redundancy_rule}{example_rule}{image_rule}
 {term_section}
 
-{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example", "type" and "context"{' and "image"' if has_book_images else ''} fields. Both kinds of card go in the SAME array, ordered so each term card follows the concept card it relates to. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
+{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example", "type" and "context"{' and "image"' if has_book_images else ''} fields. Both kinds of card go in the SAME array; where a term card happens to relate to one of the cards above, place it directly after that card. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
 
 Example format:
 [
   {{"question": "What is X?", "answer": "X is...", "example": ""{', "image": ""' if has_book_images else ''}}},
   {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "[BOOK-IMG-1] Description of the figure"' if has_book_images else ''}}},
   {{"type": "cloze", "question": "A sentence from the text in which the defined term is replaced by {{{{c1::the term}}}}.", "answer": "One-line gloss in {language}.", "context": "short orienting phrase"}},
-  {{"question": "What is the term for <description of the concept>?", "answer": "The term"}}
+  {{"type": "term", "question": "What is the term for <description of the concept>?", "answer": "The term"}}
 ]
 
 {text_label}:

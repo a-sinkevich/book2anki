@@ -37,6 +37,12 @@ class Card:
 # depends on, and so cloze cards stay filterable in Anki.
 CLOZE_TAG = "card::cloze"
 
+# Marks a card that tests recall of a NAME (meaning → term), in either of its
+# forms: a cloze deletion or a reverse question. Cloze term cards carry both
+# tags — CLOZE_TAG selects the note type, this one describes the purpose — so
+# `tag:card::term` in Anki counts the whole second card type.
+TERM_TAG = "card::term"
+
 
 def is_cloze(card: Card) -> bool:
     """Whether a card should be packaged with Anki's cloze note type."""
