@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from difflib import SequenceMatcher
 from typing import Any, Callable, TypeVar
 
-from book2anki.models import CLOZE_TAG, TERM_TAG, Card, Chapter
+from book2anki.models import CLOZE_RE, Card, Chapter
 from book2anki.prompts import (
     build_prompt, build_prompt_request, build_vocab_prompt, build_practice_prompt,
 )
@@ -407,21 +407,19 @@ def _generate_with_retries(
         for item in _parse_json_response(response):
             if "question" not in item or "answer" not in item:
                 continue
-            if is_transcript and _CLOZE_RE.search(item["question"]):
+            if is_transcript and CLOZE_RE.search(item["question"]):
                 # Cloze quotes the source verbatim, which a machine transcript
                 # cannot support; the prompt says so, and a stray one has no
                 # sane rendering, so drop it rather than ship a broken card.
                 continue
-            question, tags = _question_and_tags(item)
             cards.append(Card(
-                question=question,
+                question=_question_field(item),
                 answer=item["answer"],
                 chapter_title=chapter_title,
                 book_title=book_title,
                 source_url=source_url,
                 example=item.get("example", ""),
                 image=item.get("image", ""),
-                tags=tags,
             ))
         return cards
 
@@ -434,34 +432,28 @@ def _generate_with_retries(
     return cards or []
 
 
-# Anki cloze deletion: {{c1::answer}} or {{c1::answer::hint}}
-_CLOZE_RE = re.compile(r"\{\{c\d+::(.+?)(?:::.*?)?}}", re.DOTALL)
+def _question_field(item: dict[str, Any]) -> str:
+    """Build a card's question field, decorating cloze items with their context.
 
-
-def _question_and_tags(item: dict[str, Any]) -> tuple[str, list[str]]:
-    """Build a card's question field, marking and decorating cloze items.
-
-    The deletion itself decides, not the model's `"type"` claim. A `{{c1::…}}`
-    left unlabelled would otherwise render as literal braces on a basic note,
-    and a card labelled `"cloze"` with no deletion in it would produce a note
-    Anki generates no cards from. An optional `context` becomes an orienting
-    line above the sentence, shown on both sides of the card.
+    The deletion in the text is what makes a card a cloze — not the model's
+    `"type"` claim, which `is_cloze` never consults. An optional `context`
+    becomes an orienting line above the sentence, shown on both sides.
     """
-    question = item["question"]
-    if not _CLOZE_RE.search(question):
-        return question, [TERM_TAG] if item.get("type") == "term" else []
+    question: str = item["question"]
+    if not CLOZE_RE.search(question):
+        return question
 
     context = str(item.get("context", "")).strip()
     if context:
         question = f'<div class="cloze-context">{context}</div>{question}'
-    return question, [CLOZE_TAG, TERM_TAG]
+    return question
 
 
 def _cloze_terms(question: str) -> set[str]:
     """The hidden answers in a cloze question, normalized for comparison."""
     return {
         re.sub(r"<[^>]+>", "", term).strip().lower()
-        for term in _CLOZE_RE.findall(question)
+        for term in CLOZE_RE.findall(question)
     }
 
 

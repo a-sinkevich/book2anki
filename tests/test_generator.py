@@ -10,7 +10,7 @@ from book2anki.generator import (
     _split_into_chunks,
     vocab_word,
 )
-from book2anki.models import CLOZE_TAG, TERM_TAG, Card, is_cloze
+from book2anki.models import Card, is_cloze
 
 import json
 import pytest
@@ -261,7 +261,7 @@ class TestClozeCards:
             "text", "Book", "Chapter", 1, "ru", **kwargs,
         )
 
-    def test_cloze_item_is_tagged_and_kept_verbatim(self):
+    def test_cloze_item_is_detected_and_kept_verbatim(self):
         cards = self._generate(json.dumps([{
             "type": "cloze",
             "question": "The result is {{c1::tardive dysphoria}}.",
@@ -314,8 +314,8 @@ class TestClozeCards:
 
         assert [c.question for c in cards] == ["What is X?"]
 
-    def test_reverse_question_term_cards_are_tagged(self):
-        """Both term-card forms must be countable as one set in Anki."""
+    def test_reverse_question_term_cards_are_plain_cards(self):
+        """A term card with no deletion is a basic note like any other."""
         cards = self._generate(json.dumps([{
             "type": "term",
             "question": "What is the term for a drug-induced depressed state?",
@@ -323,22 +323,16 @@ class TestClozeCards:
         }]))
 
         assert not is_cloze(cards[0])
-        assert cards[0].tags == [TERM_TAG]
 
-    def test_cloze_term_cards_carry_both_tags(self):
-        cards = self._generate(json.dumps([{
-            "type": "cloze",
-            "question": "The result is {{c1::tardive dysphoria}}.",
-            "answer": "gloss",
-        }]))
+    def test_no_card_type_carries_a_marker_tag(self):
+        """The question text is the single source of truth for the note type."""
+        cards = self._generate(json.dumps([
+            {"question": "What is X?", "answer": "A"},
+            {"type": "term", "question": "What is the term for X?", "answer": "Xitis"},
+            {"type": "cloze", "question": "The result is {{c1::Xitis}}.", "answer": "gloss"},
+        ]))
 
-        assert cards[0].tags == [CLOZE_TAG, TERM_TAG]
-
-    def test_plain_cards_are_untagged(self):
-        cards = self._generate('[{"question": "What is X?", "answer": "A"}]')
-
-        assert not is_cloze(cards[0])
-        assert cards[0].tags == []
+        assert [c.tags for c in cards] == [[], [], []]
 
     def test_term_and_concept_cards_survive_together(self):
         """The two directions are the point — dedup must not collapse them."""
@@ -355,18 +349,18 @@ class TestDeduplicate:
     def test_cloze_cards_hiding_the_same_term_are_merged(self):
         cards = [
             Card(question="One sentence about {{c1::anchoring}}.", answer="a",
-                 chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+                 chapter_title="Ch", book_title="Book"),
             Card(question="A completely different sentence on {{c1::Anchoring}} here.",
-                 answer="a", chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+                 answer="a", chapter_title="Ch", book_title="Book"),
         ]
         assert len(_deduplicate(cards)) == 1
 
     def test_cloze_cards_hiding_different_terms_are_kept(self):
         cards = [
             Card(question="A sentence about {{c1::anchoring}}.", answer="a",
-                 chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+                 chapter_title="Ch", book_title="Book"),
             Card(question="A sentence about {{c1::priming}}.", answer="a",
-                 chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+                 chapter_title="Ch", book_title="Book"),
         ]
         assert len(_deduplicate(cards)) == 2
 

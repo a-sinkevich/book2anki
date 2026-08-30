@@ -4,7 +4,7 @@ import sqlite3
 import tempfile
 import zipfile
 
-from book2anki.models import CLOZE_TAG, Card, is_cloze
+from book2anki.models import Card, is_cloze
 from book2anki.packager import (
     CARD_MODEL,
     CLOZE_MODEL,
@@ -271,7 +271,7 @@ def _mixed_cards() -> list[Card]:
         Card(question="What is tardive dysphoria?", answer="A drug-induced state.",
              chapter_title="Ch", book_title="Book"),
         Card(question="The result is {{c1::tardive dysphoria}}.", answer="Gloss",
-             chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG]),
+             chapter_title="Ch", book_title="Book"),
     ]
 
 
@@ -290,7 +290,7 @@ def test_cloze_cards_use_the_cloze_note_type():
 
 def test_cloze_deletion_survives_field_escaping():
     cards = [Card(question="A <b>bold</b> claim & {{c1::the term}} here.",
-                  answer="g", chapter_title="Ch", book_title="Book", tags=[CLOZE_TAG])]
+                  answer="g", chapter_title="Ch", book_title="Book")]
     with tempfile.TemporaryDirectory() as tmpdir:
         out = os.path.join(tmpdir, "cloze.apkg")
         package_cards(cards, "Book", out)

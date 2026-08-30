@@ -183,7 +183,7 @@ Decks contain two kinds of card, generated together in one run.
 
 How many terms qualify scales with `--depth`: at `--depth 0` only the one idea the text is built around, at `--depth 3` every named concept, law, effect, study, date, and quantity.
 
-With `--lang`, the cloze sentence stays in the **source** language while the gloss and context line are written in your language — the hidden answer is a source-language term, so translating the sentence would destroy the card. Every term card is tagged `card::term`, and the cloze ones additionally `card::cloze`. So `tag:card::term` in Anki counts the whole second card type — useful for checking the concept/term split of a generated deck — and lets you reposition or suspend them as a group if you'd rather study them separately.
+With `--lang`, the cloze sentence stays in the **source** language while the gloss and context line are written in your language — the hidden answer is a source-language term, so translating the sentence would destroy the card. Cloze cards get their own Anki note type, so `note:"book2anki Cloze"` in the browser selects them as a group if you want to count, reposition or suspend them.
 
 Prompt mode (`--prompt`) outputs a flat deck from model knowledge, asks the model for a concise deck title, and tags notes with `source::prompt`. Use it when you want standalone study material without providing a book, article, or video.
 

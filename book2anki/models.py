@@ -32,21 +32,21 @@ class Card:
     tags: list[str] = field(default_factory=list)
 
 
-# Marks a card whose `question` holds an Anki cloze deletion rather than a
-# question. Carried as a tag so it survives the .apkg round trip that resume
-# depends on, and so cloze cards stay filterable in Anki.
-CLOZE_TAG = "card::cloze"
-
-# Marks a card that tests recall of a NAME (meaning → term), in either of its
-# forms: a cloze deletion or a reverse question. Cloze term cards carry both
-# tags — CLOZE_TAG selects the note type, this one describes the purpose — so
-# `tag:card::term` in Anki counts the whole second card type.
-TERM_TAG = "card::term"
+# Anki cloze deletion: {{c1::answer}} or {{c1::answer::hint}}. Lives here
+# because the generator matches it against raw question text, before a Card
+# exists, and the packager needs it to pick a note type afterwards.
+CLOZE_RE = re.compile(r"\{\{c\d+::(.+?)(?:::.*?)?}}", re.DOTALL)
 
 
 def is_cloze(card: Card) -> bool:
-    """Whether a card should be packaged with Anki's cloze note type."""
-    return CLOZE_TAG in card.tags
+    """Whether a card should be packaged with Anki's cloze note type.
+
+    Read off the question rather than a marker tag: the deletion is the only
+    thing that makes the cloze note type correct, it survives the .apkg round
+    trip that resume depends on, and a separate flag could only ever drift out
+    of agreement with the text it describes.
+    """
+    return bool(CLOZE_RE.search(card.question))
 
 
 SKIP_TITLES = {
