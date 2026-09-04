@@ -19,7 +19,7 @@ from book2anki.generator import (
     generate_practice_for_chapter, generate_cards_for_prompt,
     deduplicate, deduplicate_vocab,
     consolidate_cards, vocab_word, _vocab_base, PARALLEL_WORKERS,
-    generation_errors,
+    generation_errors, fatal_error, clear_fatal_error,
 )
 from book2anki.anki_reader import read_vocab_words
 from book2anki.prompts import detect_programming
@@ -1114,12 +1114,16 @@ def _print_summary(
 
 def _print_generation_errors() -> None:
     """Report failures collected while the live table owned the terminal."""
-    if not generation_errors:
-        return
-    print("\nProblems during generation:", file=sys.stderr)
-    for err in generation_errors:
-        print(f"  ✗ {err}", file=sys.stderr)
-    generation_errors.clear()
+    if generation_errors:
+        print("\nProblems during generation:", file=sys.stderr)
+        for err in generation_errors:
+            print(f"  ✗ {err}", file=sys.stderr)
+        generation_errors.clear()
+    if fatal_error():
+        print(f"\nStopped: {fatal_error()}", file=sys.stderr)
+        print("Every remaining chapter would fail the same way, so none were "
+              "attempted. Check --model and your API key.", file=sys.stderr)
+        clear_fatal_error()
 
 
 class _QuietBar:

@@ -11,6 +11,7 @@ from book2anki.generator import (
     vocab_word,
 )
 from book2anki.models import Card, is_cloze
+from book2anki import generator
 
 import json
 import pytest
@@ -162,6 +163,80 @@ class TestTransientFailureRetry:
         assert cards == []
         assert any("nope" in err for err in generation_errors)
         generation_errors.clear()
+
+
+class TestPermanentFailures:
+    """A wrong model or key is not a bad moment — retrying it just burns time."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_state(self):
+        generator._fatal_error = ""
+        generation_errors.clear()
+        yield
+        generator._fatal_error = ""
+        generation_errors.clear()
+
+    def _run(self, provider, chapter="Chapter"):
+        return _generate_with_retries(
+            provider, "chapter text", "Book", chapter, 1, "en",
+        )
+
+    def test_missing_model_is_not_retried(self, monkeypatch):
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _s: None)
+        provider = _FlakyProvider(
+            RuntimeError("Error code: 404 - {'error': {'code': 'model_not_found'}}"),
+            failures=99,
+        )
+
+        assert self._run(provider) == []
+        assert provider.calls == 1
+
+    def test_a_fatal_error_is_not_also_reported_per_chapter(self, monkeypatch):
+        """It belongs to the account; the reporter prints it once for the run."""
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _s: None)
+        provider = _FlakyProvider(
+            RuntimeError("Error code: 404 - {'code': 'model_not_found'}"),
+            failures=99,
+        )
+
+        self._run(provider)
+
+        assert generation_errors == []
+        assert "model_not_found" in generator.fatal_error()
+
+    def test_a_rejected_request_is_not_retried_but_stays_local(self, monkeypatch):
+        """A refused prompt dooms its own call, not the rest of the book."""
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _s: None)
+        provider = _FlakyProvider(
+            RuntimeError("Error code: 400 - invalid_request_error: too long"),
+            failures=99,
+        )
+
+        assert self._run(provider) == []
+        assert provider.calls == 1
+        assert generator.fatal_error() == ""
+        assert any("too long" in err for err in generation_errors)
+
+    def test_later_chapters_are_skipped_without_calling_the_model(self, monkeypatch):
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _s: None)
+        provider = _FlakyProvider(RuntimeError("Error code: 401 - invalid_api_key"),
+                                  failures=99)
+
+        self._run(provider, chapter="One")
+        assert provider.calls == 1
+        assert "invalid_api_key" in generator.fatal_error()
+
+        assert self._run(provider, chapter="Two") == []
+        assert provider.calls == 1  # never asked again
+
+    def test_transient_errors_still_retry(self, monkeypatch):
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _s: None)
+        provider = _FlakyProvider(RuntimeError("Error code: 503 - overloaded"),
+                                  failures=99)
+
+        assert self._run(provider) == []
+        assert provider.calls == GENERATION_ATTEMPTS
+        assert generator.fatal_error() == ""
 
 
 class TestPromptGeneration:

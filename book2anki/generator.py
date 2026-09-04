@@ -25,6 +25,23 @@ CHUNK_PAUSE_SECONDS = 5
 # Errors collected during generation (printed after progress table closes)
 generation_errors: list[str] = []
 
+# First error that no later call can survive either — a model that does not
+# exist, a key the API will not take. Recorded so the remaining chapters fail
+# instantly instead of each burning the full retry backoff on the same wall.
+_fatal_error: str = ""
+
+
+def fatal_error() -> str:
+    """The error that made the rest of the run pointless, if one occurred."""
+    return _fatal_error
+
+
+def clear_fatal_error() -> None:
+    """Forget the fatal error, so the reporter prints it exactly once."""
+    global _fatal_error
+    _fatal_error = ""
+
+
 T = TypeVar("T")
 
 # Short names accepted by --model, resolved to exact model IDs. Bump these when
@@ -98,6 +115,28 @@ def _backoff_seconds(error: Exception, attempt: int) -> float:
     return 5.0 * 2.0 ** attempt
 
 
+# The account or the request is wrong, not the moment: a missing model, a
+# rejected key, a prompt the API refuses outright. Sleeping and asking again
+# gets the same answer, so these skip the retry ladder entirely.
+_FATAL_MARKERS = (
+    "model_not_found", "invalid_api_key", "authentication_error",
+    "permission_denied", "error code: 401", "error code: 403", "error code: 404",
+)
+_PERMANENT_MARKERS = _FATAL_MARKERS + ("invalid_request_error", "error code: 400")
+
+
+def _is_fatal(error: Exception) -> bool:
+    """Whether this error will also break every remaining chapter."""
+    text = str(error).lower()
+    return any(marker in text for marker in _FATAL_MARKERS)
+
+
+def _is_permanent(error: Exception) -> bool:
+    """Whether retrying this exact call is pointless."""
+    text = str(error).lower()
+    return any(marker in text for marker in _PERMANENT_MARKERS)
+
+
 def _generate_parsed(
     provider: LLMProvider,
     prompt: str,
@@ -118,13 +157,19 @@ def _generate_parsed(
 
     Returns None when every attempt failed; callers supply their own empty value.
     """
+    global _fatal_error
     empty = is_empty or (lambda result: not result)
 
     def report(msg: str) -> None:
         if status_fn:
             status_fn(msg)
 
+    if _fatal_error:
+        # Reported once for the whole run, not once per chapter.
+        return None
+
     last_error = ""
+    fatal = False
     for attempt in range(GENERATION_ATTEMPTS):
         remaining = GENERATION_ATTEMPTS - attempt - 1
         response = ""
@@ -149,6 +194,11 @@ def _generate_parsed(
             wait = 1.0
         except Exception as e:
             last_error = f"{type(e).__name__}: {str(e)[:500]}"
+            if _is_permanent(e):
+                fatal = _is_fatal(e)
+                if fatal and not _fatal_error:
+                    _fatal_error = last_error
+                break
             wait = _backoff_seconds(e, attempt)
 
         if not remaining:
@@ -157,8 +207,11 @@ def _generate_parsed(
                f"{GENERATION_ATTEMPTS} in {wait:.0f}s")
         time.sleep(wait)
 
-    report(f'"{label}" failed after {GENERATION_ATTEMPTS} attempts')
-    generation_errors.append(f'"{label}": {last_error}')
+    report(f'"{label}" failed: {last_error[:120]}')
+    if not fatal:
+        # A fatal error belongs to the account, not to this chapter, and the
+        # reporter prints it once for the whole run.
+        generation_errors.append(f'"{label}": {last_error}')
     return None
 
 
