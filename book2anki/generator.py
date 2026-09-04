@@ -327,10 +327,14 @@ def _chapter_cards(
             on_chunk_done(1, 1)
     else:
         chunks = _split_into_chunks(chapter.text, max_chars)
-        cards = dedup(_run_chunks(
+        cards = _run_chunks(
             chunks, work, label, status, on_chunk_done, parallel_chunks,
-        ))
+        )
 
+    # Deduplicate either way. Overlapping chunks are the obvious source of
+    # repeats, but a single model call repeats itself too — a chapter that fits
+    # in one chunk used to skip this entirely and ship the duplicates.
+    cards = dedup(cards)
     return [c for c in cards if c.question.strip() and c.answer.strip()]
 
 
@@ -756,6 +760,42 @@ def _split_into_chunks(text: str, max_chars: int, overlap_chars: int = 2000) -> 
     return chunks
 
 
+_CONTEXT_DIV_RE = re.compile(r'<div class="cloze-context">.*?</div>', re.DOTALL)
+
+
+def _plain(text: str) -> str:
+    """Text with markup and whitespace normalised away, for comparison."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text)).strip().lower()
+
+
+def _cloze_sentence(question: str) -> str:
+    """The cloze sentence with its deletion filled back in and context dropped."""
+    body = _CONTEXT_DIV_RE.sub("", question)
+    return _plain(CLOZE_RE.sub(lambda m: m.group(1), body))
+
+
+# Lower than the question-similarity threshold on purpose. This compares a
+# quoted sentence against an answer, and an answer routinely drops a leading
+# clause the sentence carries ("To maintain compatibility, you may add…" vs
+# "You may add…"), which costs similarity without changing what is tested. On
+# the one confirmed duplicate the pair scored 0.816 while the nearest genuine
+# concept card scored 0.416, so the gap is wide enough to sit in the middle of.
+_RESTATEMENT_THRESHOLD = 0.7
+
+
+def _restates(sentence: str, answer: str) -> bool:
+    """Whether a cloze sentence and a plain card's answer carry the same piece.
+
+    A reverse question's answer *is* the fact ("You may add or remove only a
+    field that has a default value"), so it comes out near-identical to the
+    sentence a cloze on the same fact quotes. A concept card's answer explains
+    instead of restating, and scores far lower.
+    """
+    if not sentence or not answer:
+        return False
+    return SequenceMatcher(None, sentence, answer).ratio() >= _RESTATEMENT_THRESHOLD
+
+
 def deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
     """Remove duplicate cards.
 
@@ -764,6 +804,11 @@ def deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
     too dissimilar for the similarity check to catch. Everything else is matched
     on question similarity. A cloze card never displaces the concept card about
     the same term — those are the two directions we deliberately want.
+
+    A cloze and a reverse question *are* the same direction, though, so one also
+    displaces the other when the reverse question's answer just restates the
+    sentence the cloze quotes. Checked both ways round, since either may be
+    generated first.
     """
     unique: list[Card] = []
     seen_terms: set[str] = set()
@@ -772,8 +817,16 @@ def deduplicate(cards: list[Card], threshold: float = 0.8) -> list[Card]:
         if terms:
             if terms & seen_terms:
                 continue
+            sentence = _cloze_sentence(card.question)
+            if any(not _cloze_terms(e.question) and _restates(sentence, _plain(e.answer))
+                   for e in unique):
+                continue
             seen_terms |= terms
             unique.append(card)
+            continue
+        answer = _plain(card.answer)
+        if any(_cloze_terms(e.question) and _restates(_cloze_sentence(e.question), answer)
+               for e in unique):
             continue
         is_dup = False
         for existing in unique:

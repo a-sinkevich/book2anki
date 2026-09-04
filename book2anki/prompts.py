@@ -218,7 +218,14 @@ for
 - **Drop anything you could not grade.** If a reader could answer defensibly in several \
 ways and the sentence does not force one of them, there is no card. A name has one \
 right answer; a property only sometimes does, and the ones that do not are worse than \
-nothing"""
+nothing
+
+  Passes: "You need backward compatibility only on {{c1::requests}}, and forward \
+compatibility on responses." (the contrast forces exactly one answer)
+  Fails:  "You can think of storing something in the database as {{c1::sending a \
+message to your future self}}." (a metaphor has no single right wording — a reader who \
+understands the point perfectly still cannot reproduce that phrase, so the card marks \
+them wrong for knowing it)"""
     if not quote_source:
         return rules
     return rules + """

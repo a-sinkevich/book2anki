@@ -1,5 +1,6 @@
 from book2anki.generator import (
     GENERATION_ATTEMPTS,
+    _chapter_cards,
     LLMProvider,
     generation_errors,
     deduplicate as _deduplicate,
@@ -10,7 +11,7 @@ from book2anki.generator import (
     _split_into_chunks,
     vocab_word,
 )
-from book2anki.models import Card, is_cloze
+from book2anki.models import Card, Chapter, is_cloze
 from book2anki import generator
 
 import json
@@ -444,10 +445,78 @@ class TestDeduplicate:
         result = _deduplicate(cards)
         assert len(result) == 2
 
+    def test_a_reverse_question_restating_a_cloze_sentence_is_dropped(self):
+        """Both run meaning -> answer, so the pair drills one piece twice."""
+        reverse = Card(
+            question="What is the fundamental rule for adding or removing fields in Avro?",
+            answer="You may add or remove only a field that has a default value.",
+            chapter_title="Ch", book_title="Book")
+        cloze = Card(
+            question='<div class="cloze-context">Avro schema evolution</div>'
+                     "To maintain compatibility, you may add or remove only a field "
+                     "that has {{c1::a default value}}.",
+            answer="Avro's rule for compatible field changes.",
+            chapter_title="Ch", book_title="Book")
+
+        assert _deduplicate([reverse, cloze]) == [reverse]
+        assert _deduplicate([cloze, reverse]) == [cloze]
+
+    def test_a_concept_card_explaining_the_same_fact_survives(self):
+        """A concept card's answer explains rather than restating the sentence."""
+        concept = Card(
+            question="In Avro, which compatibility breaks when a field is added "
+                     "without a default value?",
+            answer="Adding a field without a default breaks backward compatibility "
+                   "(new readers cannot fill it in for old data), and removing one "
+                   "breaks forward compatibility.",
+            chapter_title="Ch", book_title="Book")
+        cloze = Card(
+            question="To maintain compatibility, you may add or remove only a field "
+                     "that has {{c1::a default value}}.",
+            answer="gloss", chapter_title="Ch", book_title="Book")
+
+        assert len(_deduplicate([concept, cloze])) == 2
+
     def test_exact_duplicate(self):
         cards = [_card("What is X?"), _card("What is X?")]
         result = _deduplicate(cards)
         assert len(result) == 1
+
+
+class TestChapterCards:
+    class _Bar:
+        def set_postfix_str(self, msg, refresh=False):
+            pass
+
+    @pytest.fixture(autouse=True)
+    def _no_chunk_pause(self, monkeypatch):
+        """Sequential chunks sleep CHUNK_PAUSE_SECONDS between calls."""
+        monkeypatch.setattr("book2anki.generator.time.sleep", lambda _s: None)
+
+    def _run(self, text, max_chars, produce):
+        return _chapter_cards(
+            Chapter(title="Ch", text=text, index=0), max_chars,
+            produce, _deduplicate, self._Bar(), None, False,
+        )
+
+    def test_a_chapter_that_fits_in_one_chunk_is_still_deduplicated(self):
+        """One model call repeats itself too; this path used to skip dedup."""
+        result = self._run("short text", 1000,
+                           lambda _t, _s: [_card("What is X?"), _card("What is X?")])
+
+        assert len(result) == 1
+
+    def test_a_split_chapter_is_deduplicated_across_chunks(self):
+        result = self._run("word " * 400, 200,
+                           lambda _t, _s: [_card("What is X?")])
+
+        assert len(result) == 1
+
+    def test_blank_cards_are_dropped(self):
+        result = self._run("short text", 1000,
+                           lambda _t, _s: [_card("Real?"), _card("   ")])
+
+        assert [c.question for c in result] == ["Real?"]
 
     def test_similar_duplicate(self):
         cards = [_card("What is X?"), _card("What is X")]
