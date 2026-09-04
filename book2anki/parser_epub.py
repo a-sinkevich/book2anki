@@ -9,6 +9,7 @@ import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup, Tag
 
+from book2anki.html_text import html_to_text
 from book2anki.models import BookImage, Chapter, SKIP_TITLES, MIN_CHAPTER_LENGTH, should_skip_chapter, _is_skip_match
 
 _MIN_IMAGE_BYTES = 5000  # skip icons/spacers smaller than 5KB
@@ -571,9 +572,8 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
 
 
 def _html_to_text(html_content: bytes) -> str:
-    """Strip HTML tags and return clean text."""
-    soup = BeautifulSoup(html_content, "html.parser")
-    return soup.get_text(separator="\n", strip=True)
+    """Render chapter HTML as text, keeping sentences whole and emphasis marked."""
+    return html_to_text(html_content)
 
 
 def _strip_references(text: str) -> str:

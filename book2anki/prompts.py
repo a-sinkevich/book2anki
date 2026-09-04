@@ -305,7 +305,7 @@ Guidelines:
 - **Logical order**: arrange cards so foundational concepts come first — definitions before applications, causes before effects
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
-- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting{programming_rules}{redundancy_rule}{example_rule}{image_rule}
+- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting. Where the source text below carries <em> or <strong>, that is the author's own emphasis, preserved so you can see which words they stressed — it is information for you, not markup to copy. Leave the tags out of every card you write{programming_rules}{redundancy_rule}{example_rule}{image_rule}
 {term_section}
 
 {_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example", "type" and "context"{' and "image"' if has_book_images else ''} fields. Both kinds of card go in the SAME array; where a term card happens to relate to one of the cards above, place it directly after that card. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}

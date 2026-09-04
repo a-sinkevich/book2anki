@@ -3,11 +3,9 @@ from book2anki.parser_epub import _html_to_text, _strip_references, _title_from_
 
 
 class TestHtmlToText:
-    def test_strips_tags(self):
-        html = b"<p>Hello <b>world</b></p>"
-        assert "Hello" in _html_to_text(html)
-        assert "world" in _html_to_text(html)
-        assert "<" not in _html_to_text(html)
+    def test_strips_layout_tags(self):
+        html = b"<p>Hello <span class='x'>world</span></p>"
+        assert _html_to_text(html) == "Hello world"
 
     def test_empty_html(self):
         assert _html_to_text(b"") == ""

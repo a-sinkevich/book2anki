@@ -13,6 +13,10 @@ from book2anki.models import Card, is_cloze
 _SAFE_TAGS = {"pre", "code", "/pre", "/code", "b", "/b", "br", "br/",
               "ul", "/ul", "ol", "/ol", "li", "/li", "p", "/p",
               "div", "/div",
+              # The parsers carry the author's emphasis into the chapter text,
+              # so a verbatim quote can bring <em> along; render it rather than
+              # showing the reader an escaped tag.
+              "em", "/em", "i", "/i",
               "strong", "/strong", "img",
               "svg", "/svg", "rect", "/rect", "circle", "/circle",
               "ellipse", "/ellipse", "line", "/line", "polyline", "/polyline",

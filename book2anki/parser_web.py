@@ -6,6 +6,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
+from book2anki.html_text import html_to_text
 from book2anki.models import BookImage, Chapter
 
 _MIN_IMAGE_DIMENSION = 100  # skip tiny icons/decorations
@@ -134,7 +135,7 @@ def _extract_article_text(soup: BeautifulSoup) -> str:
     target = _find_article(soup)
     if not isinstance(target, Tag):
         target = soup.body or soup
-    return target.get_text(separator="\n", strip=True)
+    return html_to_text(target)
 
 
 def _extract_images(soup: BeautifulSoup, page_url: str) -> list[BookImage]:
