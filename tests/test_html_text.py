@@ -62,6 +62,18 @@ class TestEmphasis:
     def test_empty_emphasis_is_dropped(self):
         assert html_to_text(b"<p>a<em>  </em>b</p>") == "a b"
 
+    def test_a_span_filling_its_whole_block_is_not_emphasis(self):
+        """A bolded heading in a <p> and an italic epigraph are not stressed words."""
+        assert html_to_text(b"<p><b>Storage and Retrieval</b></p>") == "Storage and Retrieval"
+        assert html_to_text(b"<p><em>Cratylus</em></p>") == "Cratylus"
+
+    def test_a_span_within_a_sentence_still_is(self):
+        html = b"<p>Avro suits <b>dynamically generated</b> schemas.</p>"
+
+        assert html_to_text(html) == (
+            "Avro suits <strong>dynamically generated</strong> schemas."
+        )
+
 
 class TestNoise:
     def test_scripts_and_styles_are_dropped(self):

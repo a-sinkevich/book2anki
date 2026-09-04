@@ -97,6 +97,17 @@ def _render(node: BeautifulSoup | Tag, out: list[str], in_pre: bool) -> None:
 
 
 def _is_marked_emphasis(tag: Tag) -> bool:
-    """Whether this emphasis span is a phrase worth flagging, not page styling."""
+    """Whether this emphasis span is a phrase worth flagging, not page styling.
+
+    Emphasis means the author picked words *out of* a sentence. A span that is
+    the whole of its block was not picked out of anything: that is a heading set
+    in bold instead of an <h2>, an epigraph in italic, a run-in label. Books do
+    this constantly, and marking it would bury the spans that carry signal.
+    """
     inner = tag.get_text(strip=True)
-    return bool(inner) and len(inner) <= _MAX_EMPHASIS_CHARS
+    if not inner or len(inner) > _MAX_EMPHASIS_CHARS:
+        return False
+    parent = tag.parent
+    if parent is not None and (parent.name or "").lower() in _BLOCK_TAGS:
+        return parent.get_text(strip=True) != inner
+    return True

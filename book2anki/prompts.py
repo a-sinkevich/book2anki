@@ -54,46 +54,73 @@ TERM_DEPTH_INSTRUCTIONS = {
 }
 
 
-_REVERSE_FORM_BODY = """Set "type": "term". The question describes the concept; \
-the answer is the term and nothing else.
+# Distinguishing properties are supporting material by the depth ladder — depth 1
+# is told in so many words to leave distinctions out — so these cards start at
+# depth 2, where the concept cards covering the same material start. An empty
+# string drops the whole category from the prompt.
+PROPERTY_DEPTH_INSTRUCTIONS = {
+    0: "",
+    1: "",
+    2: (
+        "Add property cards for the distinctions the chapter's argument turns on: what "
+        "separates two approaches it compares, and the conditions it gives for when a "
+        "result holds. Skip distinctions the text draws only in passing."
+    ),
+    3: (
+        "Add property cards for every distinction and condition worth recalling, "
+        "including secondary comparisons and the qualifications attached to a claim."
+    ),
+}
+
+
+_REVERSE_FORM_BODY = """Set "type": "term". The question describes everything \
+except the missing piece; the answer is that piece and nothing else.
 
   {"type": "term", "question": "What is the term for depression caused by the long-term \
 use of the antidepressants meant to treat it?", "answer": "Tardive dysphoria"}"""
+
+_REVERSE_PROPERTY_EXAMPLE = """
+  {"type": "term", "question": "Sparse indexes save memory over dense ones — at the \
+cost of what?", "answer": "A short scan of the segment after the nearest indexed key"}"""
 
 
 def _term_cards_section(
     depth: int, language: str, quote_source: bool = True,
 ) -> str:
-    """Instructions for production-direction cards that test recall of a name.
+    """Instructions for production-direction cards: retrieve, don't recognise.
 
-    The cards produced by the main instructions run concept-name → meaning. These
-    run the other way: given the meaning, produce the name. Both directions have
-    to be trained separately — understanding an idea perfectly is no guarantee of
-    being able to retrieve what it is called.
+    The cards produced by the main instructions run question → answer, and they
+    routinely name the retrievable part inside the question. These run the other
+    way: given everything else, produce the missing piece. Two kinds of piece
+    qualify — a name, and (from depth 2) the property a claim turns on. Both
+    directions have to be trained separately: understanding an idea perfectly is
+    no guarantee of being able to retrieve what it is called or what it hinges on.
 
     Cloze cards quote the source verbatim, so `quote_source` is False for sources
     that are not authored prose (speech-to-text transcripts): those get reverse
     questions only, rather than cards built on a machine transcription.
     """
+    property_depth = PROPERTY_DEPTH_INSTRUCTIONS[depth]
     if quote_source:
         forms = f"""Use whichever of these two forms fits the source text:
 
 **Form 1 — cloze (preferred).** Set "type": "cloze". Take a sentence from the source \
-text above — quote it, never compose one — wrap the term in {{{{c1::...}}}}, and put a \
-one-line gloss in "answer".
+text above — quote it, never compose one — wrap the missing piece in {{{{c1::...}}}}, and \
+put a one-line gloss in "answer".
 
-  THE TEST every cloze must pass: a reader who understands the concept but has \
-forgotten its name must be able to recover the term from the words that remain — and a \
-reader who does not know the concept must not be able to guess it. If the rest of the \
-sentence does not define or strongly characterise the term, the card only teaches the \
-sentence. Use Form 2 instead.
+  THE TEST every cloze must pass: a reader who understands the material but has \
+forgotten this particular piece must be able to recover it from the words that remain — \
+and a reader who does not understand the material must not be able to guess it. If the \
+rest of the sentence does not pin the answer down, the card only teaches the sentence. \
+Use Form 2 instead.
 
   Passes: "When long-term antidepressant use itself produces a chronic, \
 treatment-resistant depressed state, the result is {{{{c1::tardive dysphoria}}}}."
   Fails:  "Healy argues that {{{{c1::tardive dysphoria}}}} is a serious concern." \
 (nothing left to derive the term from — this only drills the sentence)
 
-**Form 2 — reverse question.** {_REVERSE_FORM_BODY}
+**Form 2 — reverse question.** {_REVERSE_FORM_BODY}\
+{_REVERSE_PROPERTY_EXAMPLE if property_depth else ""}
 
   Use Form 2 whenever the text has no sentence that passes the test."""
 
@@ -106,15 +133,15 @@ stitching two sentences together, no claims the text does not make, and nothing 
 from your own knowledge of the subject. If no sentence in the text works, use Form 2 — \
 never invent a sentence in order to make a cloze possible
 - **Keep the cloze sentence in the language of the source text**, always — even though \
-the other cards are written in {language}. The hidden answer IS a source-language term, \
-so translating the sentence would destroy the card. Write "answer" and "context" in \
-{language}
+the other cards are written in {language}. The hidden answer IS the source's own \
+wording, so translating the sentence would destroy the card. Write "answer" and \
+"context" in {language}
 - **Exactly one {{{{c1::...}}}} per card.** Never c2, c3, or multiple deletions. Hide the \
-term only, never the surrounding explanation that makes it derivable
+missing piece only, never the surrounding words that make it derivable
 - **"context" field**: a short orienting phrase in {language} (3-8 words) naming what \
 the sentence is about, for sentences that read as ambiguous on their own. It must NEVER \
-contain the hidden term or a translation of it, or the card gives itself away. Leave it \
-empty when the sentence already stands alone
+contain the hidden words or a translation of them, or the card gives itself away. Leave \
+it empty when the sentence already stands alone
 - **Answer side of a cloze**: a one-line gloss in {language}. Do not restate the whole \
 sentence"""
     else:
@@ -131,29 +158,78 @@ said, and quoting it would bake transcription errors into the answer."""
 
     return f"""
 
-TERM CARDS (second card type — recall the NAME)
+PRODUCTION CARDS (second card type — retrieve it, don't just recognise it)
 
-The cards described above run name → meaning. Also generate cards for the reverse \
-direction: given the meaning, recall the NAME. Understanding a concept and being able \
-to name it are separate skills, and the name is often the part that goes missing.
+The cards described above hand you the answer's subject inside the question. Also \
+generate cards for the other direction: given everything else, produce the missing \
+piece. Recognising something and retrieving it are separate skills, and the retrievable \
+part is the one that goes missing.
+
+{_targets_section(property_depth)}
 
 These are an ADDITION to the cards above and change nothing about them. The depth \
-instruction alone decides how many of those to write — adding term cards is not a \
-reason to write more. In particular: never add a concept card so that a term card has \
-something to pair with, and do not give every concept a term card. The two sets overlap \
-only where a concept happens to have a name worth recalling.
+instruction alone decides how many of those to write — adding production cards is not a \
+reason to write more. In particular: never add a concept card so that a production card \
+has something to pair with, do not give every concept a name card, and do not give \
+every emphasised phrase a property card.
 
-{TERM_DEPTH_INSTRUCTIONS[depth]}
+{TERM_DEPTH_INSTRUCTIONS[depth]}{f" {property_depth}" if property_depth else ""}
 
 {forms}
 
-Rules for term cards:{cloze_rules}
-- **A reverse question is written in {language}, but its answer is the term exactly as \
-the source spells it** — do not translate the term itself
-- **One card per term.** Do not build several term cards for the same term
-- **Only names worth retrieving.** A term card earns its place when the name is the thing \
-you would forget. Skip everyday words, and skip terms the text merely mentions without \
-explaining"""
+Rules for production cards:{cloze_rules}
+- **A reverse question is written in {language}, but a name in its answer keeps the \
+source's own spelling** — do not translate the term itself
+- **One card per missing piece.** Do not build several cards testing the same name or \
+the same property
+- **Only what is worth retrieving.** A name card earns its place when the name is the \
+thing you would forget. Skip everyday words, and skip terms the text merely mentions \
+without explaining{_property_rules(property_depth, quote_source)}"""
+
+
+def _targets_section(property_depth: str) -> str:
+    """The kinds of missing piece a production card may test."""
+    name_target = """Exactly one kind of missing piece qualifies, and nothing else does:
+
+  A NAME — what the thing is called."""
+    if not property_depth:
+        return name_target
+    return """Exactly two kinds of missing piece qualify, and nothing else does:
+
+  1. A NAME — what the thing is called.
+  2. A DISTINGUISHING PROPERTY — the specific thing a claim turns on: which case a \
+technique suits, what separates two approaches the text compares, the condition under \
+which a result holds."""
+
+
+def _property_rules(property_depth: str, quote_source: bool) -> str:
+    """Eligibility rules that keep property cards from swallowing every sentence.
+
+    The two rules about the deleted span and about `<em>` only apply where cloze
+    is on the table and the source carries markup — that is, not to transcripts.
+    """
+    if not property_depth:
+        return ""
+    rules = """
+- **A property card needs a contrast or a condition.** The sentence has to separate \
+this from that, or say when something holds. A sentence that merely states an idea, \
+however important, holds no property card — stating ideas is what the cards above are \
+for
+- **Drop anything you could not grade.** If a reader could answer defensibly in several \
+ways and the sentence does not force one of them, there is no card. A name has one \
+right answer; a property only sometimes does, and the ones that do not are worse than \
+nothing"""
+    if not quote_source:
+        return rules
+    return rules + """
+- **Hide a phrase, not a clause.** The deletion is a noun phrase or a qualifier: a few \
+words. If you find yourself deleting half a sentence, there is no card here — that is \
+transcription, not recall
+- **Author emphasis is a hint, not a licence.** Where the source marks a phrase with \
+<em> or <strong> — books use italic and bold for the same job — that is often exactly \
+the span a property card should hide, and it is the best clue available. But the same \
+markup also marks a term at its first use, a merely stressed word, and placeholders \
+inside code — and most emphasised phrases earn no card at all"""
 
 
 _CODE_INDICATORS = re.compile(

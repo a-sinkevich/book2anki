@@ -3,6 +3,7 @@ import json
 
 from book2anki.prompts import (
     DEPTH_INSTRUCTIONS,
+    PROPERTY_DEPTH_INSTRUCTIONS,
     TERM_DEPTH_INSTRUCTIONS,
     build_practice_prompt,
     build_prompt,
@@ -138,8 +139,8 @@ def test_output_contract_mentions_type_and_context():
 
 def test_vocab_and_practice_prompts_have_no_term_cards():
     """Vocab is already production-direction; practice cards are exercises."""
-    assert "TERM CARDS" not in build_practice_prompt("Book", "Ch", "text", 1)
-    assert "TERM CARDS" not in build_prompt_request("Study X", 1, "en")
+    assert "PRODUCTION CARDS" not in build_practice_prompt("Book", "Ch", "text", 1)
+    assert "PRODUCTION CARDS" not in build_prompt_request("Study X", 1, "en")
 
 
 def test_cloze_must_quote_the_source_never_compose():
@@ -153,7 +154,7 @@ def test_transcripts_get_no_cloze_cards():
     """A speech-to-text transcript has no authored wording worth quoting."""
     prompt = build_prompt("Video", "Video", "text", 2, "en",
                           is_article=True, is_transcript=True)
-    assert "TERM CARDS" in prompt          # term cards still wanted
+    assert "PRODUCTION CARDS" in prompt    # the second card type is still wanted
     assert 'Do NOT emit any card with "type": "cloze"' in prompt
     assert "Form 1 — cloze" not in prompt
     assert "THE TEST every cloze must pass" not in prompt
@@ -170,9 +171,60 @@ def test_term_cards_must_not_inflate_concept_card_count():
     """The ordering hint used to read as a one-concept-per-term requirement."""
     prompt = build_prompt("Book", "Ch", "text", 1, "en")
     assert "The depth instruction alone decides how many of those to write" in prompt
-    assert "never add a concept card so that a term card has something to pair with" in prompt
-    assert "do not give every concept a term card" in prompt
+    assert ("never add a concept card so that a production card has something to pair with"
+            in prompt)
+    assert "do not give every concept a name card" in prompt
     assert "ordered so each term card follows the concept card" not in prompt
+
+
+class TestPropertyCards:
+    """Cloze/reverse cards for the property a claim turns on, not just its name."""
+
+    def test_absent_below_depth_2(self):
+        """Depth 1 is told to leave distinctions out; these are distinctions."""
+        for depth in (0, 1):
+            prompt = build_prompt("Book", "Ch", "text", depth, "en")
+            assert "DISTINGUISHING PROPERTY" not in prompt
+            assert "A property card needs a contrast or a condition" not in prompt
+            assert "Exactly one kind of missing piece qualifies" in prompt
+
+    def test_present_from_depth_2(self):
+        for depth in (2, 3):
+            prompt = build_prompt("Book", "Ch", "text", depth, "en")
+            assert "DISTINGUISHING PROPERTY" in prompt
+            assert "Exactly two kinds of missing piece qualify" in prompt
+            assert PROPERTY_DEPTH_INSTRUCTIONS[depth][:40] in prompt
+
+    def test_the_span_must_be_short_enough_to_grade(self):
+        prompt = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "Hide a phrase, not a clause" in prompt
+        assert "Drop anything you could not grade" in prompt
+
+    def test_emphasis_is_a_hint_not_a_licence(self):
+        """The parsers now carry <em> through, but it marks three different things."""
+        prompt = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "Author emphasis is a hint, not a licence" in prompt
+        assert "most emphasised phrases earn no card at all" in prompt
+
+    def test_transcripts_get_the_rules_that_still_apply(self):
+        """No cloze and no markup there, so two of the four rules are dead text."""
+        prompt = build_prompt("Video", "Video", "text", 2, "en",
+                              is_article=True, is_transcript=True)
+        assert "A property card needs a contrast or a condition" in prompt
+        assert "Drop anything you could not grade" in prompt
+        assert "Hide a phrase, not a clause" not in prompt
+        assert "Author emphasis is a hint" not in prompt
+
+    def test_emphasis_markers_are_explained_but_not_to_be_copied(self):
+        prompt = build_prompt("Book", "Ch", "text", 1, "en")
+        assert "the author's own emphasis" in prompt
+        assert "Leave the tags out of every card you write" in prompt
+
+    def test_they_do_not_get_their_own_depth_ladder_rung(self):
+        """A property card is still bound by the depth instruction above it."""
+        prompt = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "adding production cards is not a reason to write more" in prompt
+        assert "do not give every emphasised phrase a property card" in prompt
 
 
 def test_reverse_question_form_is_labelled_for_counting():
