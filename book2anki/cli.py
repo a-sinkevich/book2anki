@@ -446,9 +446,7 @@ def _run_prompt_mode(args: argparse.Namespace) -> None:
     )
 
     if not cards:
-        _print_generation_errors()
-        print("Error: No cards were generated.", file=sys.stderr)
-        sys.exit(1)
+        _fail_no_cards("cards")
 
     output_path = _apkg_output_path(deck_title, args.output, args.depth)
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -869,9 +867,19 @@ def _run_book_mode(
 
 
 def _fail_no_cards(what: str) -> None:
-    """Report generation failures and exit."""
+    """Report why nothing was produced and exit non-zero.
+
+    An empty run is an outcome, not a diagnosis: whatever actually went wrong
+    has already been printed above, so this line says what it cost rather than
+    labelling itself the error. The exit status still marks the run as failed,
+    since no deck was written.
+    """
     _print_generation_errors()
-    print(f"Error: No {what} were generated.", file=sys.stderr)
+    if _reported_problem:
+        print(f"No {what} were generated — nothing was written.", file=sys.stderr)
+    else:
+        print(f"No {what} were generated: the model returned nothing usable, "
+              "and reported no error.", file=sys.stderr)
     sys.exit(1)
 
 
@@ -1112,14 +1120,20 @@ def _print_summary(
     _print_generation_errors()
 
 
+_reported_problem = False
+
+
 def _print_generation_errors() -> None:
     """Report failures collected while the live table owned the terminal."""
+    global _reported_problem
     if generation_errors:
+        _reported_problem = True
         print("\nProblems during generation:", file=sys.stderr)
         for err in generation_errors:
             print(f"  ✗ {err}", file=sys.stderr)
         generation_errors.clear()
     if fatal_error():
+        _reported_problem = True
         print(f"\nStopped: {fatal_error()}", file=sys.stderr)
         print("Every remaining chapter would fail the same way, so none were "
               "attempted. Check --model and your API key.", file=sys.stderr)

@@ -5,12 +5,15 @@ from book2anki.cli import (
     _apkg_output_path,
     _chapter_order,
     _create_provider,
+    _fail_no_cards,
     _process_chapters,
     _prompt_deck_title,
     _use_single_deck,
     parse_chapters,
 )
+from book2anki.generator import generation_errors
 from book2anki.models import Card, Chapter
+from book2anki import cli, generator
 
 
 class TestParseChapters:
@@ -170,3 +173,46 @@ def test_model_cli_prefix_requires_model_name():
 
 def test_progress_table_does_not_show_cost_column():
     assert "Cost" not in _TBL_HEADER
+
+
+class TestEmptyRunReporting:
+    """An empty run is an outcome; the reason above it is the error."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_state(self):
+        cli._reported_problem = False
+        generation_errors.clear()
+        generator.clear_fatal_error()
+        yield
+        cli._reported_problem = False
+        generation_errors.clear()
+        generator.clear_fatal_error()
+
+    def _run(self, capsys):
+        with pytest.raises(SystemExit) as exit_info:
+            _fail_no_cards("cards")
+        return exit_info.value.code, capsys.readouterr().err
+
+    def test_does_not_restate_itself_as_the_error(self, capsys):
+        generation_errors.append('"Ch": boom')
+
+        code, err = self._run(capsys)
+
+        assert code == 1
+        assert "Error:" not in err
+        assert "nothing was written" in err
+
+    def test_says_so_when_nothing_explained_the_emptiness(self, capsys):
+        code, err = self._run(capsys)
+
+        assert code == 1
+        assert "reported no error" in err
+
+    def test_a_fatal_error_still_counts_as_an_explanation(self, capsys):
+        """The reporter clears the fatal, so the flag has to outlive it."""
+        generator._fatal_error = "NotFoundError: model_not_found"
+
+        _, err = self._run(capsys)
+
+        assert "nothing was written" in err
+        assert "reported no error" not in err
