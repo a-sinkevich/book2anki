@@ -260,12 +260,23 @@ class TestDepthLadder:
         """
         d2 = DEPTH_INSTRUCTIONS[2]
         assert "the alternative ways of doing something, the set is an idea" in d2
-        assert "A product named in passing is still not a card" in d2
+
+    def test_depth_2_names_the_tools_people_reach_for(self):
+        """Chapter 5 names 30 products; grouping by category is what keeps it sane."""
+        d2 = DEPTH_INSTRUCTIONS[2]
+        assert "tools, databases or libraries" in d2
+        assert "a single card per category" in d2
+        assert "never a card per product" in d2
+
+    def test_depth_2_still_refuses_a_product_mentioned_in_passing(self):
+        """73% of that chapter's product names appear once or twice."""
+        assert "appears only as an aside still earns nothing" in DEPTH_INSTRUCTIONS[2]
 
     def test_only_depth_2_needs_the_enumeration_carve_out(self):
         """Depth 3 already takes everything; depth 0 and 1 must not widen."""
         for depth in (0, 1):
             assert "alternative ways of doing something" not in DEPTH_INSTRUCTIONS[depth]
+            assert "tools, databases or libraries" not in DEPTH_INSTRUCTIONS[depth]
 
     def test_no_depth_sets_a_card_quota(self):
         """Count follows the material; the level constrains kind, not quantity."""

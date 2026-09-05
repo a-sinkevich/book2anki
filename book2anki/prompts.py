@@ -25,7 +25,11 @@ DEPTH_INSTRUCTIONS = {
         "Skip minor details and tangential asides. "
         "But where the text lays out the alternative ways of doing something, the set is an "
         "idea in its own right: cover what the options are and what separates them, even where "
-        "one option is thin taken alone. A product named in passing is still not a card."
+        "one option is thin taken alone. Where it also names the tools, databases or libraries "
+        "people use for one of those options, name them — in a single card per category, listing "
+        "them together, never a card per product. Knowing what the category is called is half of "
+        "it; knowing what practitioners reach for is the other half. A product that appears only "
+        "as an aside still earns nothing."
     ),
     3: (
         "Generate cards that test thorough understanding of the chapter: "
