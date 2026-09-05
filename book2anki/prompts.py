@@ -26,10 +26,13 @@ DEPTH_INSTRUCTIONS = {
         "But where the text lays out the alternative ways of doing something, the set is an "
         "idea in its own right: cover what the options are and what separates them, even where "
         "one option is thin taken alone. Where it also names the tools, databases or libraries "
-        "people use for one of those options, name them — in a single card per category, listing "
-        "them together, never a card per product. Knowing what the category is called is half of "
-        "it; knowing what practitioners reach for is the other half. A product that appears only "
-        "as an aside still earns nothing."
+        "people use for one of those options, give THAT option its own card asking which tools "
+        "serve it, with the names as the answer — 'Which systems are used as centralized service "
+        "registries?' → 'etcd, Apache ZooKeeper'. One such card per category, listing that "
+        "category's tools together; never a card per product, and never only a passing mention "
+        "inside some longer answer, which asks the reader to recall nothing. Knowing what the "
+        "category is called is half of it; being able to name what practitioners reach for is "
+        "the other half. A product that appears only as an aside still earns nothing."
     ),
     3: (
         "Generate cards that test thorough understanding of the chapter: "

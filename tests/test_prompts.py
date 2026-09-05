@@ -265,8 +265,17 @@ class TestDepthLadder:
         """Chapter 5 names 30 products; grouping by category is what keeps it sane."""
         d2 = DEPTH_INSTRUCTIONS[2]
         assert "tools, databases or libraries" in d2
-        assert "a single card per category" in d2
+        assert "One such card per category" in d2
         assert "never a card per product" in d2
+
+    def test_depth_2_makes_the_tool_names_the_answer(self):
+        """"A single card per category" was read as one card for the whole list,
+        so the names ended up as a clause inside a five-part answer — present,
+        but never actually recalled.
+        """
+        d2 = DEPTH_INSTRUCTIONS[2]
+        assert "with the names as the answer" in d2
+        assert "never only a passing mention inside some longer answer" in d2
 
     def test_depth_2_still_refuses_a_product_mentioned_in_passing(self):
         """73% of that chapter's product names appear once or twice."""
