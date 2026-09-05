@@ -22,7 +22,10 @@ DEPTH_INSTRUCTIONS = {
         "key evidence, notable examples, important distinctions, and secondary arguments. "
         "Leave out specific data points, case studies, named frameworks and quotes unless "
         "each carries an idea of its own — a comprehensive pass covers those. "
-        "Skip minor details and tangential asides."
+        "Skip minor details and tangential asides. "
+        "But where the text lays out the alternative ways of doing something, the set is an "
+        "idea in its own right: cover what the options are and what separates them, even where "
+        "one option is thin taken alone. A product named in passing is still not a card."
     ),
     3: (
         "Generate cards that test thorough understanding of the chapter: "

@@ -251,6 +251,22 @@ class TestDepthLadder:
         d2 = DEPTH_INSTRUCTIONS[2]
         assert "Leave out specific data points, case studies" in d2
 
+    def test_depth_2_treats_an_enumeration_as_an_idea(self):
+        """DDIA lists five ways to find a service; depth 2 carded only two.
+
+        Each entry read as a thin distinction or a named framework, which the
+        exclusions above bar — but the set of options is the point of the
+        section, and nothing told the model to see the set.
+        """
+        d2 = DEPTH_INSTRUCTIONS[2]
+        assert "the alternative ways of doing something, the set is an idea" in d2
+        assert "A product named in passing is still not a card" in d2
+
+    def test_only_depth_2_needs_the_enumeration_carve_out(self):
+        """Depth 3 already takes everything; depth 0 and 1 must not widen."""
+        for depth in (0, 1):
+            assert "alternative ways of doing something" not in DEPTH_INSTRUCTIONS[depth]
+
     def test_no_depth_sets_a_card_quota(self):
         """Count follows the material; the level constrains kind, not quantity."""
         for depth, text in DEPTH_INSTRUCTIONS.items():
