@@ -398,7 +398,8 @@ Guidelines:
 - **Logical order**: arrange cards so foundational concepts come first — definitions before applications, causes before effects
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
-- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting. Where the source text below carries <em> or <strong>, that is the author's own emphasis, preserved so you can see which words they stressed — it is information for you, not markup to copy. Leave the tags out of every card you write{programming_rules}{redundancy_rule}{example_rule}{image_rule}
+- **Bold the one term an answer turns on**, with <b>...</b>: the key term in a 1-3 sentence answer, or the label of each item in a list. At most one span per answer, or one per list item. Never in a question — bold there points at what matters, which is the reader's job. Never on an answer that is already just a term or a one-line gloss, where there is nothing to pick out. Bold that lands inconsistently reads as meaningful when it is not, so where no single word carries the answer, use none
+- **No italics, ever**: do not use <em>, <i>, or any italic formatting. Where the source text below carries <em> or <strong>, that is the author's own emphasis, preserved so you can see which words they stressed — it is information for you, not markup to copy. Strip it from everything you write, a quoted cloze sentence included, or the author's emphasis ends up sitting on your deletion{programming_rules}{redundancy_rule}{example_rule}{image_rule}
 {term_section}
 
 {_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example", "type" and "context"{' and "image"' if has_book_images else ''} fields. Both kinds of card go in the SAME array; where a term card happens to relate to one of the cards above, place it directly after that card. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
@@ -452,7 +453,8 @@ Guidelines:
 - **Logical order**: arrange cards so foundational concepts come first — definitions before applications, causes before effects
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
-- **No italic or emphasis markup**: do not use <em>, <i>, or any italic formatting
+- **Bold the one term an answer turns on**, with <b>...</b>: the key term in a 1-3 sentence answer, or the label of each item in a list. At most one span per answer, or one per list item. Never in a question, and never on an answer that is already just a term. Where no single word carries the answer, use none
+- **No italics, ever**: do not use <em>, <i>, or any italic formatting
 - **Example field**: make cards usable as standalone learning material, not just memory prompts. For every non-trivial concept, fill the "example" field with a concrete example, scenario, counterexample, common gotcha, misconception, vivid analogy, or practical application. If the request involves software engineering or programming, include code snippets where they clarify the idea and use <pre><code>...</code></pre> tags. Leave "example" as an empty string only for atomic facts where an example would add no value
 
 Output ONLY a JSON object with "title" and "cards" fields. The "title" field is a concise deck title. The "cards" field is an array of objects with "question", "answer", and optionally "example" fields. No markdown, no explanation, no wrapper — just the raw JSON object.

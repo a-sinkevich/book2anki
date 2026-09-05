@@ -137,6 +137,31 @@ def test_output_contract_mentions_type_and_context():
     assert '"type" and "context"' in prompt
 
 
+class TestBoldInAnswers:
+    """Bold is allowed for scanning an answer; italic never is."""
+
+    def test_answers_may_bold_the_key_term(self):
+        for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
+                       build_prompt_request("Study X", 2, "en")):
+            assert "Bold the one term an answer turns on" in prompt
+            assert "At most one span per answer" in prompt
+
+    def test_questions_may_not(self):
+        """Bold in a question points at what matters — the reader's job."""
+        assert "Never in a question" in build_prompt("Book", "Ch", "text", 2, "en")
+
+    def test_an_answer_that_is_only_a_term_gets_none(self):
+        prompt = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "already just a term or a one-line gloss" in prompt
+
+    def test_italic_stays_banned_everywhere(self):
+        for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
+                       build_prompt_request("Study X", 2, "en"),
+                       build_prompt("V", "V", "t", 2, "en", is_transcript=True)):
+            assert "No italics, ever" in prompt
+            assert "do not use <em>, <i>" in prompt
+
+
 def test_vocab_and_practice_prompts_have_no_term_cards():
     """Vocab is already production-direction; practice cards are exercises."""
     assert "PRODUCTION CARDS" not in build_practice_prompt("Book", "Ch", "text", 1)
@@ -218,7 +243,7 @@ class TestPropertyCards:
     def test_emphasis_markers_are_explained_but_not_to_be_copied(self):
         prompt = build_prompt("Book", "Ch", "text", 1, "en")
         assert "the author's own emphasis" in prompt
-        assert "Leave the tags out of every card you write" in prompt
+        assert "Strip it from everything you write, a quoted cloze sentence included" in prompt
 
     def test_they_do_not_get_their_own_depth_ladder_rung(self):
         """A property card is still bound by the depth instruction above it."""
