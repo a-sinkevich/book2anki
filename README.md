@@ -55,7 +55,7 @@ Examples below write `book2anki`; substitute `./book2anki-macos-arm64` or `pytho
 
 | Flag | What it does |
 |---|---|
-| `--depth 0..3` | 0 = essential summary, 1 = core *(default)*, 2 = detailed, 3 = comprehensive |
+| `--depth 0..2` | 0 = essential summary, 1 = core ideas *(default)*, 2 = enough to discuss the book fluently |
 | `--chapters` | `3`, `1,3,5`, `3-7`, `1,3-5,8` (1-based) |
 | `--lang ru` | Write cards in another language than the source (default: auto-detect) |
 | `--topic "dopamine"` | Only cards about one subject |
@@ -70,7 +70,7 @@ Examples below write `book2anki`; substitute `./book2anki-macos-arm64` or `pytho
 ```bash
 book2anki mybook.epub --depth 0                       # just the key takeaways
 book2anki mybook.epub --chapters 1,3-5 --lang ru
-book2anki VIDEO_ID --depth 3                          # bare YouTube ID works too
+book2anki VIDEO_ID --depth 2                          # bare YouTube ID works too
 book2anki sapiens.epub --topic "agriculture"          # pull one thread from a broad book
 book2anki neuroscience.epub --depth 0 --topic "synaptic plasticity"
 ```
@@ -86,7 +86,7 @@ Every deck contains two kinds of card, generated together in one run.
 **Production cards** run the other way — they make you retrieve the piece a concept card would hand you in its question. Two things qualify:
 
 - a **name**, because understanding an idea and recalling what it's called are separate skills;
-- a **distinguishing property** (`--depth 2` and up), the specific thing a claim turns on — which case a technique suits, what separates two approaches, when a result holds.
+- a **distinguishing property** (`--depth 2` only), the specific thing a claim turns on — which case a technique suits, what separates two approaches, when a result holds.
 
 Each takes whichever shape the source supports:
 
@@ -100,7 +100,7 @@ The test a cloze must pass: a reader who understands the material recovers the h
 
 **Cloze sentences are always quoted from the book, never composed.** The model may resolve a pronoun or drop a trailing clause so the sentence stands alone; nothing more. YouTube transcripts get reverse questions only — a speech-to-text transcript is a machine's guess at what was said, so quoting it would bake transcription errors into your cards.
 
-How many qualify scales with `--depth`: at 0, only the one idea the text is built around; at 3, every named concept, law, effect, study, date and quantity.
+How many qualify scales with `--depth`: at 0, only the one idea the text is built around; at 2, the terminology you would be expected to recognise in conversation about the book.
 
 With `--lang`, the cloze sentence stays in the **source** language while the gloss and context line are written in yours — the hidden answer is source-language wording, so translating the sentence would destroy the card. Cloze cards use their own note type, so `note:"book2anki Cloze"` selects them as a group in the Anki browser.
 

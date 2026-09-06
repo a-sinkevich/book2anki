@@ -124,8 +124,9 @@ def _parse_args() -> argparse.Namespace:
         help="Generate standalone cards from this study request instead of a source file/url",
     )
     parser.add_argument(
-        "--depth", type=int, choices=[0, 1, 2, 3], default=1,
-        help="Card generation depth: 0=essential summary, 1=core, 2=detailed, 3=comprehensive (default: 1)",
+        "--depth", type=int, choices=[0, 1, 2], default=1,
+        help="Card generation depth: 0=essential summary, 1=core ideas (default), "
+             "2=enough to discuss the book fluently",
     )
     parser.add_argument(
         "--lang", default=None,

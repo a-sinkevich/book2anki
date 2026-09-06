@@ -358,10 +358,7 @@ def generate_cards_for_chapter(
     if chapter.images:
         book_image_captions = [(img.id, img.caption) for img in chapter.images]
 
-    # Comprehensive mode generates much more output per input text,
-    # so use smaller chunks to avoid server-side timeouts
-    cap = 20000 if depth == 3 else 0
-    max_chars = _chunk_budget(provider, 500, 4000, cap)
+    max_chars = _chunk_budget(provider, 500, 4000)
 
     def work(text: str, status: Callable[[str], None]) -> list[Card]:
         return _generate_with_retries(
@@ -420,9 +417,8 @@ def generate_practice_for_chapter(
 ) -> list[Card]:
     """Generate programming practice exercise cards for a single chapter."""
     # The practice prompt is larger and its cards (especially katas) run long,
-    # so reserve more output room; comprehensive mode runs longer still.
-    cap = 20000 if depth == 3 else 0
-    max_chars = _chunk_budget(provider, 1000, 8000, cap)
+    # so reserve more output room.
+    max_chars = _chunk_budget(provider, 1000, 8000)
 
     def work(text: str, status: Callable[[str], None]) -> list[Card]:
         return _generate_practice_with_retries(

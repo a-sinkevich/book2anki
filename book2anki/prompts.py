@@ -18,26 +18,26 @@ DEPTH_INSTRUCTIONS = {
         "not a detail that arrived alongside one."
     ),
     2: (
-        "Generate cards that test understanding of core ideas plus important supporting material: "
-        "key evidence, notable examples, important distinctions, and secondary arguments. "
-        "Leave out specific data points, case studies, named frameworks and quotes unless "
-        "each carries an idea of its own — a comprehensive pass covers those. "
-        "Skip minor details and tangential asides. "
-        "But where the text lays out the alternative ways of doing something, the set is an "
-        "idea in its own right: cover what the options are and what separates them, even where "
-        "one option is thin taken alone. Where it also names the tools, databases or libraries "
-        "people use for one of those options, give THAT option its own card asking which tools "
-        "serve it, with the names as the answer — 'Which systems are used as centralized service "
-        "registries?' → 'etcd, Apache ZooKeeper'. One such card per category, listing that "
-        "category's tools together; never a card per product, and never only a passing mention "
-        "inside some longer answer, which asks the reader to recall nothing. Knowing what the "
-        "category is called is half of it; being able to name what practitioners reach for is "
-        "the other half. A product that appears only as an aside still earns nothing."
-    ),
-    3: (
-        "Generate cards that test thorough understanding of the chapter: "
-        "core ideas, supporting evidence, specific data points, case studies, "
-        "named frameworks, important quotes, and all significant details."
+        "Generate the cards that would leave a reader able to hold their own in a conversation "
+        "about this text with someone else who has read it: to state its argument, use its "
+        "vocabulary, and give the reasoning behind its main claims — without notes. "
+        "THE TEST for every card: would not knowing this leave you unable to follow or take part "
+        "in that conversation? "
+        "That takes the core ideas, the terms they go by, the distinctions the argument turns on, "
+        "and the evidence or trade-offs it rests on. "
+        "It does not take what would never come up: the fine mechanics of how something works, "
+        "figures and dates unless the number is itself the point, the full roster of names, "
+        "works or products where one or two carry the idea, and asides about history or "
+        "provenance. "
+        "This is the most detailed level — there is no more thorough pass to defer to — so judge "
+        "each card by the test above rather than saving it for one. "
+        "Where the text lays out the alternative ways of doing something, the set is an idea in "
+        "its own right: cover what the options are and what separates them, even where one option "
+        "is thin taken alone. Where it also names who or what is used for each — tools, works, "
+        "schools of thought, the people associated with them — pair them with their options in a "
+        "SINGLE card covering the whole set side by side, never a card per option and never one "
+        "per name. A name a reader would know without having read the text earns nothing, and "
+        "neither does one the text drops in passing."
     ),
 }
 
@@ -54,12 +54,9 @@ TERM_DEPTH_INSTRUCTIONS = {
         "would need to use to discuss it. Skip passing jargon."
     ),
     2: (
-        "Add term cards for the central names plus important secondary terminology, "
-        "named studies, effects, and key dates or quantities."
-    ),
-    3: (
-        "Add term cards for every named concept, coined term, principle, law, effect, "
-        "syndrome, framework, study, date, and quantity worth recalling by name."
+        "Add term cards for the central names plus the secondary terminology, named studies "
+        "and effects a reader would be expected to recognise in conversation. Skip a name "
+        "nobody would use out loud."
     ),
 }
 
@@ -72,13 +69,9 @@ PROPERTY_DEPTH_INSTRUCTIONS = {
     0: "",
     1: "",
     2: (
-        "Add property cards for the distinctions the chapter's argument turns on: what "
-        "separates two approaches it compares, and the conditions it gives for when a "
-        "result holds. Skip distinctions the text draws only in passing."
-    ),
-    3: (
-        "Add property cards for every distinction and condition worth recalling, "
-        "including secondary comparisons and the qualifications attached to a claim."
+        "Add property cards for the distinctions the argument turns on: what separates two "
+        "things it compares, and the conditions it gives for when a claim holds. Skip "
+        "distinctions the text draws only in passing."
     ),
 }
 
@@ -571,10 +564,6 @@ PRACTICE_DEPTH_INSTRUCTIONS = {
     2: (
         "Identify all important patterns, techniques, and implementations from this "
         "chapter, including secondary patterns and notable edge cases."
-    ),
-    3: (
-        "Identify every pattern, technique, implementation, and idiom from this chapter "
-        "that could appear in production code or interviews. Be comprehensive."
     ),
 }
 

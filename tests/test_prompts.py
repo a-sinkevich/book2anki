@@ -3,6 +3,7 @@ import json
 
 from book2anki.prompts import (
     DEPTH_INSTRUCTIONS,
+    PRACTICE_DEPTH_INSTRUCTIONS,
     PROPERTY_DEPTH_INSTRUCTIONS,
     TERM_DEPTH_INSTRUCTIONS,
     build_practice_prompt,
@@ -28,7 +29,7 @@ def test_build_prompt_contains_depth_instruction():
 
 
 def test_build_prompt_all_depths():
-    for depth in (0, 1, 2, 3):
+    for depth in (0, 1, 2):
         prompt = build_prompt("Book", "Ch", "text", depth, "en")
         assert DEPTH_INSTRUCTIONS[depth][:20] in prompt
 
@@ -101,7 +102,7 @@ def test_practice_prompt_prefers_runnable_java_examples():
 
 
 def test_build_prompt_asks_for_term_cards_at_every_depth():
-    for depth in (0, 1, 2, 3):
+    for depth in (0, 1, 2):
         prompt = build_prompt("Book", "Ch", "text", depth, "en")
         assert TERM_DEPTH_INSTRUCTIONS[depth][:30] in prompt
 
@@ -226,7 +227,7 @@ class TestPropertyCards:
             assert "Exactly one kind of missing piece qualifies" in prompt
 
     def test_present_from_depth_2(self):
-        for depth in (2, 3):
+        for depth in (2,):
             prompt = build_prompt("Book", "Ch", "text", depth, "en")
             assert "DISTINGUISHING PROPERTY" in prompt
             assert "Exactly two kinds of missing piece qualify" in prompt
@@ -271,58 +272,68 @@ def test_reverse_question_form_is_labelled_for_counting():
 
 
 class TestDepthLadder:
-    """Each level must exclude what the next level adds, or it leaks upward.
+    """Three rungs, each excluding what the next adds, and 2 is the top.
 
-    Depth 1 used to bar only "minor" supporting details while depth 2 added the
-    "key"/"notable"/"important" ones, so important supporting material was
-    excluded by neither level and drifted into depth 1 — worst on dense text,
-    which has the most of it.
+    Depth 3 was dropped: slow, expensive, and it produced far more cards than
+    anyone reviews. Depth 2 inherited the job of being the most detailed pass,
+    so its old exclusions — which all deferred to "a comprehensive pass" that
+    no longer exists — were replaced by a test of its own.
     """
+
+    def test_there_are_exactly_three_rungs(self):
+        for table in (DEPTH_INSTRUCTIONS, TERM_DEPTH_INSTRUCTIONS,
+                      PROPERTY_DEPTH_INSTRUCTIONS, PRACTICE_DEPTH_INSTRUCTIONS):
+            assert sorted(table) == [0, 1, 2]
 
     def test_depth_1_excludes_what_depth_2_adds(self):
         d1 = DEPTH_INSTRUCTIONS[1]
         assert "Leave out supporting evidence, examples, distinctions" in d1
         assert "including the important ones" in d1
 
-    def test_depth_2_excludes_what_depth_3_adds(self):
+    def test_depth_2_is_defined_by_the_conversation_it_supports(self):
+        """The old wording listed categories; this asks what the card is for."""
         d2 = DEPTH_INSTRUCTIONS[2]
-        assert "Leave out specific data points, case studies" in d2
+        assert "hold their own in a conversation" in d2
+        assert "would not knowing this leave you unable to follow or take part" in d2
+
+    def test_depth_2_no_longer_defers_to_a_pass_that_does_not_exist(self):
+        d2 = DEPTH_INSTRUCTIONS[2]
+        assert "comprehensive pass covers those" not in d2
+        assert "there is no more thorough pass to defer to" in d2
+
+    def test_depth_2_states_what_never_comes_up(self):
+        d2 = DEPTH_INSTRUCTIONS[2]
+        assert "the fine mechanics of how something works" in d2
+        assert "unless the number is itself the point" in d2
+        assert "asides about history or provenance" in d2
 
     def test_depth_2_treats_an_enumeration_as_an_idea(self):
-        """DDIA lists five ways to find a service; depth 2 carded only two.
-
-        Each entry read as a thin distinction or a named framework, which the
-        exclusions above bar — but the set of options is the point of the
-        section, and nothing told the model to see the set.
-        """
+        """DDIA lists five ways to find a service; depth 2 carded only two."""
         d2 = DEPTH_INSTRUCTIONS[2]
         assert "the alternative ways of doing something, the set is an idea" in d2
 
-    def test_depth_2_names_the_tools_people_reach_for(self):
-        """Chapter 5 names 30 products; grouping by category is what keeps it sane."""
-        d2 = DEPTH_INSTRUCTIONS[2]
-        assert "tools, databases or libraries" in d2
-        assert "One such card per category" in d2
-        assert "never a card per product" in d2
-
-    def test_depth_2_makes_the_tool_names_the_answer(self):
-        """"A single card per category" was read as one card for the whole list,
-        so the names ended up as a clause inside a five-part answer — present,
-        but never actually recalled.
+    def test_the_names_go_in_one_card_beside_their_options(self):
+        """Per-category tool cards gave 16 near-twin cards in one chapter, which
+        interfere with each other in review even though none is a duplicate.
         """
         d2 = DEPTH_INSTRUCTIONS[2]
-        assert "with the names as the answer" in d2
-        assert "never only a passing mention inside some longer answer" in d2
+        assert "SINGLE card covering the whole set side by side" in d2
+        assert "never a card per option and never one per name" in d2
 
-    def test_depth_2_still_refuses_a_product_mentioned_in_passing(self):
-        """73% of that chapter's product names appear once or twice."""
-        assert "appears only as an aside still earns nothing" in DEPTH_INSTRUCTIONS[2]
+    def test_names_worth_nothing_are_named_as_such(self):
+        d2 = DEPTH_INSTRUCTIONS[2]
+        assert "a reader would know without having read the text earns nothing" in d2
+        assert "neither does one the text drops in passing" in d2
+
+    def test_the_levels_are_not_written_for_technical_books(self):
+        """They have to read the same for a history or psychology book."""
+        for text in DEPTH_INSTRUCTIONS.values():
+            for jargon in ("database", "code", "software", "engineer", "system"):
+                assert jargon not in text.lower(), text
 
     def test_only_depth_2_needs_the_enumeration_carve_out(self):
-        """Depth 3 already takes everything; depth 0 and 1 must not widen."""
         for depth in (0, 1):
             assert "alternative ways of doing something" not in DEPTH_INSTRUCTIONS[depth]
-            assert "tools, databases or libraries" not in DEPTH_INSTRUCTIONS[depth]
 
     def test_no_depth_sets_a_card_quota(self):
         """Count follows the material; the level constrains kind, not quantity."""
