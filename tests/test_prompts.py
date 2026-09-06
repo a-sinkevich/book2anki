@@ -317,13 +317,21 @@ class TestDepthLadder:
         interfere with each other in review even though none is a duplicate.
         """
         d2 = DEPTH_INSTRUCTIONS[2]
-        assert "SINGLE card covering the whole set side by side" in d2
+        assert "ONE further card for the whole set" in d2
         assert "never a card per option and never one per name" in d2
+
+    def test_the_names_are_the_answer(self):
+        """Merging the roster away left the names only in concept answers, and
+        often in the question, where they are handed over rather than recalled.
+        """
+        d2 = DEPTH_INSTRUCTIONS[2]
+        assert "with the names in the ANSWER and never in the question" in d2
+        assert "a name you are handed in the question is a name you never have to recall" in d2
 
     def test_names_worth_nothing_are_named_as_such(self):
         d2 = DEPTH_INSTRUCTIONS[2]
-        assert "a reader would know without having read the text earns nothing" in d2
-        assert "neither does one the text drops in passing" in d2
+        assert "ones any reader would know without this text" in d2
+        assert "ones the text drops in passing" in d2
 
     def test_the_levels_are_not_written_for_technical_books(self):
         """They have to read the same for a history or psychology book."""

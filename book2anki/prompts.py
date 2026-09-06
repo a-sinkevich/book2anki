@@ -34,10 +34,13 @@ DEPTH_INSTRUCTIONS = {
         "Where the text lays out the alternative ways of doing something, the set is an idea in "
         "its own right: cover what the options are and what separates them, even where one option "
         "is thin taken alone. Where it also names who or what is used for each — tools, works, "
-        "schools of thought, the people associated with them — pair them with their options in a "
-        "SINGLE card covering the whole set side by side, never a card per option and never one "
-        "per name. A name a reader would know without having read the text earns nothing, and "
-        "neither does one the text drops in passing."
+        "schools of thought, the people associated with them — those names earn ONE further card "
+        "for the whole set, asking which is used for which, with the names in the ANSWER and never "
+        "in the question. Being able to say what people actually reach for is half of knowing a "
+        "field, and a name you are handed in the question is a name you never have to recall. One "
+        "card for the set, never a card per option and never one per name. Names carrying no "
+        "weight are left out of it: ones any reader would know without this text, and ones the "
+        "text drops in passing."
     ),
 }
 
