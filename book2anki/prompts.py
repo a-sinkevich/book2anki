@@ -398,7 +398,10 @@ Guidelines:
 - **Logical order**: arrange cards so foundational concepts come first — definitions before applications, causes before effects
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
-- **Bold the one term an answer turns on**, with <b>...</b>: the key term in a 1-3 sentence answer, or the label of each item in a list. At most one span per answer, or one per list item. Never in a question — bold there points at what matters, which is the reader's job. Never on an answer that is already just a term or a one-line gloss, where there is nothing to pick out. Bold that lands inconsistently reads as meaningful when it is not, so where no single word carries the answer, use none
+- **Bold what the reader had to supply**, with <b>...</b>. THE TEST: cut the bolded words out, and the answer should stop answering the question. That is usually a phrase rather than a single noun, and it is never a word the question already contains — repeating the question's own vocabulary marks nothing. At most one span per answer, or one per item in a list, where the item's own label is what it supplies. Never bold in a question. Where nothing passes the test — the answer is already just a term, or a one-line gloss — use none: bold that lands inconsistently reads as meaningful when it is not
+
+  Passes: "Each leader accepts writes locally <b>without waiting for the others</b>, then propagates its changes asynchronously."
+  Fails:  "Each <b>leader</b> accepts writes locally without waiting for the others." (the question already said leader — the reader had to supply every word except that one)
 - **No italics, ever**: do not use <em>, <i>, or any italic formatting. Where the source text below carries <em> or <strong>, that is the author's own emphasis, preserved so you can see which words they stressed — it is information for you, not markup to copy. Strip it from everything you write, a quoted cloze sentence included, or the author's emphasis ends up sitting on your deletion{programming_rules}{redundancy_rule}{example_rule}{image_rule}
 {term_section}
 
@@ -453,7 +456,10 @@ Guidelines:
 - **Logical order**: arrange cards so foundational concepts come first — definitions before applications, causes before effects
 - **Answers should be concise but complete** — typically 1-3 sentences
 - **Lists in answers**: when an answer contains a numbered or bulleted list, use <br> between items for readability
-- **Bold the one term an answer turns on**, with <b>...</b>: the key term in a 1-3 sentence answer, or the label of each item in a list. At most one span per answer, or one per list item. Never in a question, and never on an answer that is already just a term. Where no single word carries the answer, use none
+- **Bold what the reader had to supply**, with <b>...</b>. THE TEST: cut the bolded words out, and the answer should stop answering the question. That is usually a phrase rather than a single noun, and it is never a word the question already contains — repeating the question's own vocabulary marks nothing. At most one span per answer, or one per item in a list. Never bold in a question, and where nothing passes the test, use none
+
+  Passes: "Each leader accepts writes locally <b>without waiting for the others</b>, then propagates its changes asynchronously."
+  Fails:  "Each <b>leader</b> accepts writes locally without waiting for the others." (the question already said leader — the reader had to supply every word except that one)
 - **No italics, ever**: do not use <em>, <i>, or any italic formatting
 - **Example field**: make cards usable as standalone learning material, not just memory prompts. For every non-trivial concept, fill the "example" field with a concrete example, scenario, counterexample, common gotcha, misconception, vivid analogy, or practical application. If the request involves software engineering or programming, include code snippets where they clarify the idea and use <pre><code>...</code></pre> tags. Leave "example" as an empty string only for atomic facts where an example would add no value
 

@@ -140,19 +140,31 @@ def test_output_contract_mentions_type_and_context():
 class TestBoldInAnswers:
     """Bold is allowed for scanning an answer; italic never is."""
 
-    def test_answers_may_bold_the_key_term(self):
+    def test_the_span_is_chosen_by_a_test_not_by_looking_termlike(self):
+        """"The one term an answer turns on" got the most term-shaped noun bolded
+        — "Each <b>leader</b> accepts writes locally without waiting for the
+        others" — when the reader had supplied every word but that one.
+        """
         for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
                        build_prompt_request("Study X", 2, "en")):
-            assert "Bold the one term an answer turns on" in prompt
+            assert "Bold what the reader had to supply" in prompt
+            assert "cut the bolded words out, and the answer should stop answering" in prompt
+            assert "usually a phrase rather than a single noun" in prompt
             assert "At most one span per answer" in prompt
+
+    def test_a_word_from_the_question_is_never_the_span(self):
+        for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
+                       build_prompt_request("Study X", 2, "en")):
+            assert "never a word the question already contains" in prompt
+            assert "the question already said leader" in prompt
 
     def test_questions_may_not(self):
         """Bold in a question points at what matters — the reader's job."""
-        assert "Never in a question" in build_prompt("Book", "Ch", "text", 2, "en")
+        assert "Never bold in a question" in build_prompt("Book", "Ch", "text", 2, "en")
 
     def test_an_answer_that_is_only_a_term_gets_none(self):
         prompt = build_prompt("Book", "Ch", "text", 2, "en")
-        assert "already just a term or a one-line gloss" in prompt
+        assert "already just a term, or a one-line gloss" in prompt
 
     def test_italic_stays_banned_everywhere(self):
         for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
