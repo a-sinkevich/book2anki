@@ -151,7 +151,19 @@ class TestBoldInAnswers:
             assert "Bold what the reader had to supply" in prompt
             assert "cut the bolded words out, and the answer should stop answering" in prompt
             assert "usually a phrase rather than a single noun" in prompt
-            assert "At most one span per answer" in prompt
+            assert "One span for a one-part answer" in prompt
+
+    def test_a_contrast_is_marked_on_both_sides_or_neither(self):
+        """"At most one span per answer" forced the model to bold one half of a
+        two-sided contrast — "With <b>synchronous</b> replication ... with
+        asynchronous replication ..." — leaving the other bare.
+        """
+        for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
+                       build_prompt_request("Study X", 2, "en")):
+            assert "the two sides of a contrast" in prompt
+            assert "mark every part or none" in prompt
+        full = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "only one side of the contrast is marked" in full
 
     def test_a_word_from_the_question_is_never_the_span(self):
         for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
