@@ -261,6 +261,27 @@ class TestPropertyCards:
             assert "Exactly two kinds of missing piece qualify" in prompt
             assert PROPERTY_DEPTH_INSTRUCTIONS[depth][:40] in prompt
 
+    def test_a_two_sided_contrast_becomes_a_question_not_a_cloze(self):
+        """"A property card needs a contrast" sent the model hunting for contrast
+        sentences, and the tempting ones name both sides: "2PL provides
+        {{c1::serializable isolation}}, whereas 2PC provides atomic commit"
+        hands over half the pairing, which is the whole point of the card.
+        """
+        prompt = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "a sentence naming BOTH sides of a contrast is not a cloze" in prompt
+        assert "hiding either side hands the reader the other" in prompt
+        assert "What is the difference between 2PL and 2PC?" in prompt
+
+    def test_a_one_sided_statement_is_still_a_cloze(self):
+        prompt = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "Cloze only where the sentence states one side" in prompt
+        assert "one side stated — nothing is handed over" in prompt
+
+    def test_no_example_cloze_is_itself_a_two_sided_contrast(self):
+        """The old gradeability example broke the rule now being added."""
+        prompt = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "{{c1::requests}}, and forward compatibility on responses" not in prompt
+
     def test_the_span_must_be_short_enough_to_grade(self):
         prompt = build_prompt("Book", "Ch", "text", 2, "en")
         assert "Hide a phrase, not a clause" in prompt

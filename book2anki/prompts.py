@@ -221,13 +221,25 @@ def _property_rules(property_depth: str, quote_source: bool) -> str:
 this from that, or say when something holds. A sentence that merely states an idea, \
 however important, holds no property card — stating ideas is what the cards above are \
 for
+- **But a sentence naming BOTH sides of a contrast is not a cloze.** Where the text sets \
+two named things against each other and says what each one does, hiding either side \
+hands the reader the other, and the card can be answered by elimination or by \
+recognising the sentence. Write an ordinary question asking for the difference instead, \
+so both halves have to be produced — that is also the form the knowledge gets used in. \
+Cloze only where the sentence states one side, leaving no second half to give away
+
+  Cloze: "Avro is friendlier to {{c1::dynamically generated}} schemas." (one side \
+stated — nothing is handed over)
+  Ask:   "2PL provides serializable isolation, whereas 2PC provides atomic commit." \
+→ both sides named, so write "What is the difference between 2PL and 2PC?" instead of \
+clozing either half
 - **Drop anything you could not grade.** If a reader could answer defensibly in several \
 ways and the sentence does not force one of them, there is no card. A name has one \
 right answer; a property only sometimes does, and the ones that do not are worse than \
 nothing
 
-  Passes: "You need backward compatibility only on {{c1::requests}}, and forward \
-compatibility on responses." (the contrast forces exactly one answer)
+  Passes: "You may add or remove only a field that has {{c1::a default value}}." (a \
+condition with one right answer)
   Fails:  "You can think of storing something in the database as {{c1::sending a \
 message to your future self}}." (a metaphor has no single right wording — a reader who \
 understands the point perfectly still cannot reproduce that phrase, so the card marks \
