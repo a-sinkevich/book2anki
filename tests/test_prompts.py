@@ -9,6 +9,7 @@ from book2anki.prompts import (
     build_practice_prompt,
     build_prompt,
     build_prompt_request,
+    build_vocab_prompt,
 )
 
 
@@ -222,6 +223,23 @@ def test_vocab_and_practice_prompts_have_no_term_cards():
     """Vocab is already production-direction; practice cards are exercises."""
     assert "PRODUCTION CARDS" not in build_practice_prompt("Book", "Ch", "text", 1)
     assert "PRODUCTION CARDS" not in build_prompt_request("Study X", 1, "en")
+
+
+def test_vocab_prompt_decides_each_words_direction():
+    """Words the reader would never say get recognition cards only."""
+    prompt = build_vocab_prompt("Book", "Ch", "text", "C1", "ru")
+    assert "**Usage**" in prompt
+    assert "would ever use this word THEMSELVES" in prompt
+    assert "The test is whether the reader would use it, not how rare it is" in prompt
+    assert 'If unsure, choose "active"' in prompt
+    assert '"usage": "passive"' in prompt and '"usage": "active"' in prompt
+
+
+def test_vocab_prompt_labels_the_register_of_passive_words():
+    prompt = build_vocab_prompt("Book", "Ch", "text", "C1", "ru")
+    assert "**Register**" in prompt
+    assert 'Every "passive" word needs one' in prompt
+    assert '"register": "literary"' in prompt
 
 
 def test_cloze_must_quote_the_source_never_compose():

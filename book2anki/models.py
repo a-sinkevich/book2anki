@@ -49,6 +49,18 @@ def is_cloze(card: Card) -> bool:
     return bool(CLOZE_RE.search(card.question))
 
 
+# Which way a vocab card is asked. The model judges per word whether the reader
+# would ever use it themselves; a word they only need to understand on the page
+# gets a recognition card even in a production deck.
+ACTIVE_TAG = "usage::active"
+PASSIVE_TAG = "usage::passive"
+
+
+def is_passive(card: Card) -> bool:
+    """Whether a vocab card is for a word the reader only needs to recognise."""
+    return PASSIVE_TAG in card.tags
+
+
 SKIP_TITLES = {
     "copyright", "dedication", "epigraph", "contents", "table of contents",
     "also by", "series", "series page", "title page", "titlepage",

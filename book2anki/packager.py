@@ -8,7 +8,7 @@ import zipfile
 
 import genanki
 
-from book2anki.models import Card, is_cloze
+from book2anki.models import Card, is_cloze, is_passive
 
 _SAFE_TAGS = {"pre", "code", "/pre", "/code", "b", "/b", "br", "br/",
               "ul", "/ul", "ol", "/ol", "li", "/li", "p", "/p",
@@ -278,6 +278,16 @@ _VOCAB_CSS = """\
     margin: 6px 0;
 }
 .card.night_mode .etymology {
+    color: #777;
+}
+.register {
+    font-size: 14px;
+    font-weight: normal;
+    font-style: italic;
+    color: #888;
+    margin-top: 2px;
+}
+.card.night_mode .register {
     color: #777;
 }
 """
@@ -625,33 +635,6 @@ def package_practice_chapter(
     return filepath
 
 
-def package_vocab_flat(
-    cards: list[Card], deck_name: str, output_path: str,
-    tag_name: str = "", model_version: str = "",
-) -> None:
-    """Package vocabulary cards into a single flat deck."""
-    deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
-    tag = f"vocab::{_slugify(tag_name or deck_name)}"
-
-    for card in cards:
-        word = _escape_field(card.question)
-        context = _escape_field(card.example) if card.example else ""
-        translation = _escape_field(card.answer)
-        definition = _escape_field(card.image) if card.image else ""
-        example = _escape_field(card.source_url) if card.source_url else ""
-        note = genanki.Note(
-            model=VOCAB_MODEL,
-            fields=[word, context, translation, definition, example,
-                    card.book_title, card.chapter_title],
-            tags=_note_tags(tag, card, model_version),
-            guid=genanki.guid_for(card.question, deck_name, "vocab"),
-        )
-        deck.add_note(note)
-
-    package = genanki.Package([deck])
-    package.write_to_file(output_path)
-
-
 _BOLD_RE = re.compile(r"<b>.*?</b>", re.IGNORECASE | re.DOTALL)
 
 
@@ -687,39 +670,67 @@ def _split_etymology(definition: str) -> tuple[str, str]:
     return rest, match.group(1).strip()
 
 
-def package_vocab_production(
-    cards: list[Card], deck_name: str, output_path: str,
+def _vocab_recognition_note(
+    card: Card, deck_name: str, tag: str, model_version: str,
+) -> genanki.Note:
+    """A recognition card: the word in its context → what it means."""
+    word = _escape_field(card.question)
+    context = _escape_field(card.example) if card.example else ""
+    translation = _escape_field(card.answer)
+    definition = _escape_field(card.image) if card.image else ""
+    example = _escape_field(card.source_url) if card.source_url else ""
+    return genanki.Note(
+        model=VOCAB_MODEL,
+        fields=[word, context, translation, definition, example,
+                card.book_title, card.chapter_title],
+        tags=_note_tags(tag, card, model_version),
+        guid=genanki.guid_for(card.question, deck_name, "vocab"),
+    )
+
+
+def _vocab_production_note(
+    card: Card, deck_name: str, tag: str, model_version: str,
+) -> genanki.Note:
+    """A production ("speaking") card: the meaning in the reader's language,
+    with the word gapped out of its context → produce the word.
+    """
+    word = _escape_field(card.question)
+    context = _escape_field(card.example) if card.example else ""
+    context_gap = _escape_field(_gap_context(card.example)) if card.example else ""
+    translation = _escape_field(card.answer)
+    def_text, etym_text = _split_etymology(card.image)
+    definition = _escape_field(def_text) if def_text else ""
+    etymology = _escape_field(etym_text) if etym_text else ""
+    example = _escape_field(card.source_url) if card.source_url else ""
+    return genanki.Note(
+        model=VOCAB_PRODUCTION_MODEL,
+        fields=[word, context_gap, context, translation, definition,
+                etymology, example, card.book_title, card.chapter_title],
+        tags=_note_tags(tag, card, model_version),
+        guid=genanki.guid_for(card.question, deck_name, "vocab-speak"),
+    )
+
+
+def package_vocab(
+    cards: list[Card], deck_name: str, output_path: str, mode: str = "auto",
     tag_name: str = "", model_version: str = "",
 ) -> None:
-    """Package vocabulary cards into a flat deck of production ("speaking") cards.
+    """Package vocabulary cards into a single flat deck.
 
-    Same extracted data as the recognition deck, but each card prompts in the
-    reader's native language with the target word gapped out of its context, to
-    train active recall (native meaning → produce the English word/phrase).
+    `mode` picks the card direction: "production" and "recognition" force one
+    direction for every word; "auto" asks a word the reader would use
+    themselves for production, and one they only need to understand on the
+    page (`is_passive`) for recognition. Both note types share the "vocab::"
+    tag prefix and put the word first, so the existing-Anki dedup
+    (read_vocab_words) finds a word whichever way it was learned.
     """
     deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
-    # Use the same "vocab::" tag prefix as recognition cards so the existing-Anki
-    # dedup (read_vocab_words) picks these up too — the word is the first field in
-    # both models, so the same extraction works.
     tag = f"vocab::{_slugify(tag_name or deck_name)}"
 
     for card in cards:
-        word = _escape_field(card.question)
-        context = _escape_field(card.example) if card.example else ""
-        context_gap = _escape_field(_gap_context(card.example)) if card.example else ""
-        translation = _escape_field(card.answer)
-        def_text, etym_text = _split_etymology(card.image)
-        definition = _escape_field(def_text) if def_text else ""
-        etymology = _escape_field(etym_text) if etym_text else ""
-        example = _escape_field(card.source_url) if card.source_url else ""
-        note = genanki.Note(
-            model=VOCAB_PRODUCTION_MODEL,
-            fields=[word, context_gap, context, translation, definition,
-                    etymology, example, card.book_title, card.chapter_title],
-            tags=_note_tags(tag, card, model_version),
-            guid=genanki.guid_for(card.question, deck_name, "vocab-speak"),
-        )
-        deck.add_note(note)
+        recognise = mode == "recognition" or (mode == "auto" and is_passive(card))
+        build = _vocab_recognition_note if recognise else _vocab_production_note
+        deck.add_note(build(card, deck_name, tag, model_version))
 
     package = genanki.Package([deck])
     package.write_to_file(output_path)

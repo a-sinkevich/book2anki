@@ -595,13 +595,16 @@ Guidelines:
 - **No proper nouns** (names of people, places, brands) unless they have a general meaning
 - **No numbers, dates, or abbreviations**
 - For phrases/idioms: the "word" field should contain the full phrase in base form
+- **Usage**: decide whether the reader would ever use this word THEMSELVES, in speech or in their own writing — that decides which way the card is asked. "active": a word people actually use, formal ones included (e.g. "ubiquitous", "to come to grips with"); the card asks the reader to produce it from its meaning. "passive": a word the reader will only ever need to understand on the page — archaic or dated words, literary and poetic ones, rare words where speakers reach for an everyday synonym instead, narrow technical jargon; the card only asks what it means, since training the reader to produce it would train a skill they will never use, and a card asking for "susurrus" by its meaning marks them wrong for answering "whisper". The test is whether the reader would use it, not how rare it is. If unsure, choose "active"
+- **Register**: a short label in the source language for a word whose register is marked — e.g. "literary", "archaic", "dated", "formal", "informal", "slang", "technical", "rare" for English; "gehoben", "veraltet", "umgangssprachlich" for German. Empty for neutral words. Every "passive" word needs one: it tells the reader why they are only learning to recognise it
 
 Output ONLY a JSON array. No markdown, no explanation, no wrapper.
 
 Example format:
 [
-  {{"word": "ubiquitous", "pronunciation": "/juːˈbɪkwɪtəs/", "context": "Smartphones have become <b>ubiquitous</b> in modern life.", "translation": "...", "definition": "Present or found everywhere", "example": "Coffee shops are <b>ubiquitous</b> in big cities.", "etymology": "Latin ubique = everywhere"}},
-  {{"word": "to come to grips with", "pronunciation": "", "context": "She had to <b>come to grips with</b> the new reality.", "translation": "...", "definition": "To begin to understand and deal with something difficult", "example": "It took him months to <b>come to grips with</b> the loss.", "etymology": ""}}
+  {{"word": "ubiquitous", "pronunciation": "/juːˈbɪkwɪtəs/", "context": "Smartphones have become <b>ubiquitous</b> in modern life.", "translation": "...", "definition": "Present or found everywhere", "example": "Coffee shops are <b>ubiquitous</b> in big cities.", "etymology": "Latin ubique = everywhere", "usage": "active", "register": ""}},
+  {{"word": "to come to grips with", "pronunciation": "", "context": "She had to <b>come to grips with</b> the new reality.", "translation": "...", "definition": "To begin to understand and deal with something difficult", "example": "It took him months to <b>come to grips with</b> the loss.", "etymology": "", "usage": "active", "register": ""}},
+  {{"word": "susurrus", "pronunciation": "/sjuːˈsʌrəs/", "context": "The <b>susurrus</b> of the leaves lulled her to sleep.", "translation": "...", "definition": "A soft whispering or rustling sound", "example": "the <b>susurrus</b> of distant traffic", "etymology": "Latin susurrus = whisper", "usage": "passive", "register": "literary"}}
 ]
 
 {text_label}:

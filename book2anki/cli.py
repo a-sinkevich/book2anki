@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from book2anki.models import Card, Chapter
+from book2anki.models import Card, Chapter, is_passive
 from book2anki.parser_epub import parse_epub
 from book2anki.parser_pdf import parse_pdf
 from book2anki.parser_web import parse_url
@@ -25,8 +25,8 @@ from book2anki.anki_reader import read_vocab_words
 from book2anki.prompts import detect_programming
 from book2anki.diagram_gen import process_book_images
 from book2anki.packager import (
-    package_cards, package_cards_flat, package_book_flat, package_vocab_flat,
-    package_vocab_production, package_practice, package_practice_flat,
+    package_cards, package_cards_flat, package_book_flat, package_vocab,
+    package_practice, package_practice_flat,
     package_practice_chapter,
     package_single_chapter, load_existing_chapters, YOUTUBE_MODEL,
 )
@@ -160,10 +160,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--vocab-mode", default=None,
-        choices=["recognition", "production"],
-        help="Vocab card direction (used with --vocab): 'production' (default, "
-             "meaning → produce the English word, for speaking practice) or "
-             "'recognition' (English → meaning)",
+        choices=["auto", "production", "recognition"],
+        help="Vocab card direction (used with --vocab): 'auto' (default: words "
+             "you would use yourself get production cards, archaic, literary "
+             "and rare ones recognition cards), 'production' (meaning → "
+             "produce the word, for every word) or 'recognition' (word → "
+             "meaning, for every word)",
     )
     parser.add_argument(
         "--flat", "--compact", action="store_true", dest="flat",
@@ -216,7 +218,7 @@ def _parse_args() -> argparse.Namespace:
         if args.code_lang and not args.practice:
             parser.error("--code-lang only applies in practice mode (add --practice)")
     if args.vocab_mode is None:
-        args.vocab_mode = "production"  # default when --vocab is used
+        args.vocab_mode = "auto"  # default when --vocab is used
     return args
 
 
@@ -727,13 +729,14 @@ def _run_vocab_mode(
         output_path = str(Path(output_path) / f"{base_name}.apkg")
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-    package = (
-        package_vocab_production if args.vocab_mode == "production"
-        else package_vocab_flat
-    )
-    package(all_cards, deck_title, output_path, model_version=model)
+    package_vocab(all_cards, deck_title, output_path, mode=args.vocab_mode,
+                  model_version=model)
 
     print(f"\nDone! Generated {len(all_cards)} vocabulary cards.")
+    if args.vocab_mode == "auto":
+        passive = sum(1 for c in all_cards if is_passive(c))
+        print(f"  {len(all_cards) - passive} to produce, {passive} to recognise"
+              " (archaic, literary or rare)")
     print(f"Output: {output_path}\n")
 
 

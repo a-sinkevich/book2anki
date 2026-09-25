@@ -4,10 +4,14 @@ import sqlite3
 import tempfile
 import zipfile
 
-from book2anki.models import Card, is_cloze
+import pytest
+
+from book2anki.models import ACTIVE_TAG, PASSIVE_TAG, Card, is_cloze
 from book2anki.packager import (
     CARD_MODEL,
     CLOZE_MODEL,
+    VOCAB_MODEL,
+    VOCAB_PRODUCTION_MODEL,
     _gap_context,
     _model_tag,
     _split_etymology,
@@ -21,7 +25,7 @@ from book2anki.packager import (
     package_practice,
     package_practice_chapter,
     package_single_chapter,
-    package_vocab_production,
+    package_vocab,
 )
 
 
@@ -360,19 +364,44 @@ def test_split_etymology_no_etymology():
     assert _split_etymology("") == ("", "")
 
 
-def test_package_vocab_production_writes_valid_deck():
+def _vocab_card(word: str, tags: list[str]) -> Card:
+    return Card(
+        question=word,
+        answer="перевод",
+        chapter_title="Ch 1",
+        book_title="Book",
+        example=f"She had to <b>{word}</b> it.",
+        image='A definition<div class="etymology">Latin</div>',
+        source_url=f"Another <b>{word}</b>.",
+        tags=tags,
+    )
+
+
+def _vocab_note_models(path: str) -> dict[str, int]:
+    """Map each note's word to its note type id."""
+    with zipfile.ZipFile(path) as z, tempfile.TemporaryDirectory() as d:
+        z.extract("collection.anki2", d)
+        conn = sqlite3.connect(os.path.join(d, "collection.anki2"))
+        rows = conn.execute("SELECT flds, mid FROM notes").fetchall()
+        conn.close()
+    return {flds.split("\x1f", 1)[0]: mid for flds, mid in rows}
+
+
+@pytest.mark.parametrize("mode, speak_model", [
+    ("auto", {"to come to grips with": True, "susurrus": False}),
+    ("production", {"to come to grips with": True, "susurrus": True}),
+    ("recognition", {"to come to grips with": False, "susurrus": False}),
+])
+def test_package_vocab_picks_direction_per_word(mode, speak_model):
     cards = [
-        Card(
-            question="to come to grips with",
-            answer="примириться с",
-            chapter_title="Ch 1",
-            book_title="Book",
-            example="She had to <b>come to grips with</b> the new reality.",
-            image="To begin to deal with something difficult",
-            source_url="It took months to <b>come to grips with</b> the loss.",
-        ),
+        _vocab_card("to come to grips with", [ACTIVE_TAG]),
+        _vocab_card("susurrus", [PASSIVE_TAG]),
     ]
     with tempfile.TemporaryDirectory() as tmpdir:
-        out = os.path.join(tmpdir, "speak.apkg")
-        package_vocab_production(cards, "Book C1 (speaking)", out)
-        assert os.path.getsize(out) > 0
+        out = os.path.join(tmpdir, "vocab.apkg")
+        package_vocab(cards, "Book C1", out, mode=mode)
+        models = _vocab_note_models(out)
+    assert models == {
+        word: VOCAB_PRODUCTION_MODEL.model_id if speak else VOCAB_MODEL.model_id
+        for word, speak in speak_model.items()
+    }

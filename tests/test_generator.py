@@ -7,11 +7,12 @@ from book2anki.generator import (
     deduplicate_vocab,
     generate_cards_for_prompt,
     _generate_with_retries,
+    _generate_vocab_with_retries,
     _parse_json_response,
     _split_into_chunks,
     vocab_word,
 )
-from book2anki.models import Card, Chapter, is_cloze
+from book2anki.models import ACTIVE_TAG, PASSIVE_TAG, Card, Chapter, is_cloze
 from book2anki import generator
 
 import json
@@ -573,3 +574,29 @@ class TestDeduplicateVocab:
         ]
         result = deduplicate_vocab(cards)
         assert len(result) == 2
+
+
+class TestVocabUsage:
+    def _parse(self, items: list[dict]) -> list[Card]:
+        provider = _FakeProvider([json.dumps(items)], "gpt-5.5")
+        return _generate_vocab_with_retries(
+            provider, "text", "Book", "Chapter", "C1", "Russian",
+        )
+
+    def test_passive_word_is_tagged_and_labelled(self):
+        [card] = self._parse([{
+            "word": "susurrus", "pronunciation": "/sjuːˈsʌrəs/",
+            "translation": "шелест", "usage": "passive", "register": "literary",
+        }])
+        assert card.tags == [PASSIVE_TAG]
+        assert '<div class="register">literary</div>' in card.question
+        assert vocab_word(card.question) == "susurrus"
+
+    def test_anything_but_passive_is_active(self):
+        cards = self._parse([
+            {"word": "ubiquitous", "translation": "вездесущий", "usage": "active"},
+            {"word": "to traipse", "translation": "таскаться"},
+            {"word": "to mull", "translation": "обдумывать", "usage": "sometimes"},
+        ])
+        assert [c.tags for c in cards] == [[ACTIVE_TAG]] * 3
+        assert all("register" not in c.question for c in cards)

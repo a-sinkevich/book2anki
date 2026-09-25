@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from difflib import SequenceMatcher
 from typing import Any, Callable, TypeVar
 
-from book2anki.models import CLOZE_RE, Card, Chapter
+from book2anki.models import ACTIVE_TAG, CLOZE_RE, PASSIVE_TAG, Card, Chapter
 from book2anki.prompts import (
     build_prompt, build_prompt_request, build_vocab_prompt, build_practice_prompt,
 )
@@ -536,6 +536,12 @@ def _generate_vocab_with_retries(
             pronunciation = item.get("pronunciation", "")
             if pronunciation:
                 word += f'<div class="ipa">{pronunciation}</div>'
+            register = str(item.get("register", "")).strip()
+            if register:
+                word += f'<div class="register">{register}</div>'
+            # Anything but an explicit "passive" is asked for production, the
+            # direction every vocab card had before usage was judged per word.
+            passive = str(item.get("usage", "")).strip().lower() == "passive"
             definition = item.get("definition", "")
             etymology = item.get("etymology", "")
             if etymology:
@@ -548,6 +554,7 @@ def _generate_vocab_with_retries(
                 example=item.get("context", ""),
                 image=definition,
                 source_url=item.get("example", ""),
+                tags=[PASSIVE_TAG if passive else ACTIVE_TAG],
             ))
         return cards
 

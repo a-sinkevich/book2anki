@@ -114,8 +114,9 @@ book2anki "https://example.com/article" --vocab --level C1 --lang ru
 
 `--vocab-mode` sets the direction:
 
-- **`production`** (default) — shows the meaning in your language plus the context sentence with the word gapped out. You say the English word. Trains speaking; etymology stays on the back so it doesn't give the answer away.
-- **`recognition`** — shows the English word, you recall the meaning. Trains reading and listening.
+- **`auto`** (default) — the model decides per word. A word you would use yourself, formal ones included (*ubiquitous*, *to come to grips with*), gets a production card; an archaic, literary or rare word, or narrow jargon (*susurrus*, *betwixt*), gets a recognition card only — you need to understand it on the page, and drilling yourself to say it would train a skill you'll never use. Recognition-only words show their register (*literary*, *archaic*…) under the word and are tagged `usage::passive` (the rest `usage::active`), so you can filter them in the Anki browser.
+- **`production`** — every word as a production card: the meaning in your language plus the context sentence with the word gapped out; you say the English word. Trains speaking; etymology stays on the back so it doesn't give the answer away.
+- **`recognition`** — every word as a recognition card: the English word, you recall the meaning. Trains reading and listening.
 
 Decks are named `{Language} {Level} — {Book Title}`, so separate chapter ranges merge into one deck on import. book2anki also reads your existing Anki collection and skips words you already have.
 
