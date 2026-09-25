@@ -90,6 +90,18 @@ _REVERSE_PROPERTY_EXAMPLE = """
 cost of what?", "answer": "A short scan of the segment after the nearest indexed key"}"""
 
 
+_NAME_IS_NEVER_A_CLOZE = """  Never cloze a name. The sentence that defines a term almost always opens with it, \
+so the gap comes first and the reader has to hold the whole sentence around it before \
+they can fill it — work for short-term memory that teaches nothing. A question describes \
+the thing first and asks for its name last, which is the order it is recalled in.
+
+  Not: "A {{c1::predicate lock}} works similarly to the shared/exclusive lock described \
+earlier, but it belongs to all objects that match a search condition."
+  But: {"type": "term", "question": "What is the term for a lock that belongs to all \
+objects matching a search condition, rather than to one particular object?", \
+"answer": "Predicate lock"}"""
+
+
 def _term_cards_section(
     depth: int, language: str, quote_source: bool = True,
 ) -> str:
@@ -102,42 +114,54 @@ def _term_cards_section(
     directions have to be trained separately: understanding an idea perfectly is
     no guarantee of being able to retrieve what it is called or what it hinges on.
 
-    Cloze cards quote the source verbatim, so `quote_source` is False for sources
-    that are not authored prose (speech-to-text transcripts): those get reverse
-    questions only, rather than cards built on a machine transcription.
+    A name is always asked as a reverse question: the defining sentence opens
+    with the term, so clozing it puts the gap first. Only a property may be a
+    cloze, and only where the gap ends the sentence — so below depth 2 there
+    are no clozes at all. Cloze cards quote the source verbatim, so
+    `quote_source` is False for sources that are not authored prose
+    (speech-to-text transcripts): those get reverse questions only, rather
+    than cards built on a machine transcription.
     """
     property_depth = PROPERTY_DEPTH_INSTRUCTIONS[depth]
-    if quote_source:
-        forms = f"""Use whichever of these two forms fits the source text:
+    if quote_source and property_depth:
+        forms = f"""The missing piece decides the form:
 
-**Form 1 — cloze (preferred).** Set "type": "cloze". Take a sentence from the source \
-text above — quote it, never compose one — wrap the missing piece in {{{{c1::...}}}}, and \
-put a one-line gloss in "answer".
+**A name — always a reverse question.** {_REVERSE_FORM_BODY}
+
+{_NAME_IS_NEVER_A_CLOZE}
+
+**A property — a cloze when the gap ends the sentence, a reverse question otherwise.** \
+For a cloze, set "type": "cloze". Take a sentence from the source text above — quote it, \
+never compose one — wrap the missing piece in {{{{c1::...}}}}, and put a one-line gloss in \
+"answer". The gap must close the sentence, or be followed only by a word or two that do \
+nothing to recover it: the reader then reaches it having read everything that pins it \
+down. A gap earlier in the sentence is the same burden as a clozed name — ask a reverse \
+question instead.
 
   THE TEST every cloze must pass: a reader who understands the material but has \
 forgotten this particular piece must be able to recover it from the words that remain — \
 and a reader who does not understand the material must not be able to guess it. If the \
 rest of the sentence does not pin the answer down, the card only teaches the sentence. \
-Use Form 2 instead.
+Ask a reverse question instead.
 
-  Passes: "When long-term antidepressant use itself produces a chronic, \
-treatment-resistant depressed state, the result is {{{{c1::tardive dysphoria}}}}."
-  Fails:  "Healy argues that {{{{c1::tardive dysphoria}}}} is a serious concern." \
-(nothing left to derive the term from — this only drills the sentence)
+  Passes: "You may add or remove only a field that has {{{{c1::a default value}}}}." \
+(the gap closes the sentence)
+  Fails:  "Only {{{{c1::a field with a default value}}}} may be added or removed." (the \
+same fact, but the gap opens the sentence — ask which fields may be added or removed \
+instead)
 
-**Form 2 — reverse question.** {_REVERSE_FORM_BODY}\
-{_REVERSE_PROPERTY_EXAMPLE if property_depth else ""}
-
-  Use Form 2 whenever the text has no sentence that passes the test."""
+  A property as a reverse question:{_REVERSE_PROPERTY_EXAMPLE}"""
 
         cloze_rules = f"""
 - **Never write the sentence yourself.** The cloze sentence is always the author's own, \
 copied from the source text above. You may resolve a pronoun or back-reference so it \
-stands alone ("it" → the thing itself, "this approach" → the named approach) and drop a \
-trailing clause that depends on earlier text. Nothing beyond that: no rephrasing, no \
-stitching two sentences together, no claims the text does not make, and nothing drawn \
-from your own knowledge of the subject. If no sentence in the text works, use Form 2 — \
-never invent a sentence in order to make a cloze possible
+stands alone ("it" → the thing itself, "this approach" → the named approach), drop a \
+pointer to elsewhere in the text ("described earlier", "as we saw in Chapter 3") — the \
+card will be reviewed without it — and drop a trailing clause that depends on earlier \
+text. Nothing beyond that: no rephrasing, no stitching two sentences together, no claims \
+the text does not make, and nothing drawn from your own knowledge of the subject. If no \
+sentence in the text works, ask a reverse question — never invent a sentence in order to \
+make a cloze possible
 - **Keep the cloze sentence in the language of the source text**, always — even though \
 the other cards are written in {language}. The hidden answer IS the source's own \
 wording, so translating the sentence would destroy the card. Write "answer" and \
@@ -150,6 +174,14 @@ contain the hidden words or a translation of them, or the card gives itself away
 it empty when the sentence already stands alone
 - **Answer side of a cloze**: a one-line gloss in {language}. Do not restate the whole \
 sentence"""
+    elif quote_source:
+        forms = f"""Use one form only:
+
+**Reverse question.** {_REVERSE_FORM_BODY}
+
+{_NAME_IS_NEVER_A_CLOZE}"""
+
+        cloze_rules = ""
     else:
         forms = f"""This source is a speech-to-text transcript rather than authored prose, so it \
 holds no wording worth quoting verbatim. Use one form only:
@@ -385,6 +417,13 @@ def build_prompt(
     term_section = _term_cards_section(
         depth, language, quote_source=not is_transcript,
     )
+    cloze_example = ""
+    if PROPERTY_DEPTH_INSTRUCTIONS[depth] and not is_transcript:
+        cloze_example = (
+            '  {"type": "cloze", "question": "A sentence from the text ending in the '
+            'property it turns on, replaced by {{c1::the property}}.", '
+            f'"answer": "One-line gloss in {language}.", "context": "short orienting phrase"}},\n'
+        )
 
     return f"""You are an expert at creating Anki flashcards from {"articles" if is_article else "books"}.
 
@@ -422,8 +461,7 @@ Example format:
 [
   {{"question": "What is X?", "answer": "X is...", "example": ""{', "image": ""' if has_book_images else ''}}},
   {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "[BOOK-IMG-1] Description of the figure"' if has_book_images else ''}}},
-  {{"type": "cloze", "question": "A sentence from the text in which the defined term is replaced by {{{{c1::the term}}}}.", "answer": "One-line gloss in {language}.", "context": "short orienting phrase"}},
-  {{"type": "term", "question": "What is the term for <description of the concept>?", "answer": "The term"}}
+{cloze_example}  {{"type": "term", "question": "What is the term for <description of the concept>?", "answer": "The term"}}
 ]
 
 {text_label}:

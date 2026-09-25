@@ -109,27 +109,27 @@ def test_build_prompt_asks_for_term_cards_at_every_depth():
 
 def test_term_cards_show_literal_cloze_syntax():
     """The f-string braces must survive as a real {{c1::...}} example."""
-    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    prompt = build_prompt("Book", "Ch", "text", 2, "en")
     assert "{{c1::...}}" in prompt
-    assert "{{c1::tardive dysphoria}}" in prompt
+    assert "{{c1::a default value}}" in prompt
     # No stray single braces left over from escaping.
     assert "{c1::" not in prompt.replace("{{c1::", "")
 
 
 def test_term_cards_keep_cloze_in_source_language():
-    prompt = build_prompt("Book", "Ch", "text", 1, "ru")
+    prompt = build_prompt("Book", "Ch", "text", 2, "ru")
     assert "Keep the cloze sentence in the language of the source text" in prompt
     assert 'Write "answer" and "context" in ru' in prompt
 
 
 def test_term_cards_state_the_derivability_test():
-    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    prompt = build_prompt("Book", "Ch", "text", 2, "en")
     assert "THE TEST every cloze must pass" in prompt
     assert "Passes:" in prompt and "Fails:" in prompt
 
 
 def test_term_cards_forbid_multiple_deletions():
-    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    prompt = build_prompt("Book", "Ch", "text", 2, "en")
     assert "Never c2, c3, or multiple deletions" in prompt
 
 
@@ -210,7 +210,7 @@ def test_vocab_and_practice_prompts_have_no_term_cards():
 
 
 def test_cloze_must_quote_the_source_never_compose():
-    prompt = build_prompt("Book", "Ch", "text", 1, "en")
+    prompt = build_prompt("Book", "Ch", "text", 2, "en")
     assert "quote it, never compose one" in prompt
     assert "Never write the sentence yourself" in prompt
     assert "never invent a sentence in order to make a cloze possible" in prompt
@@ -222,15 +222,46 @@ def test_transcripts_get_no_cloze_cards():
                           is_article=True, is_transcript=True)
     assert "PRODUCTION CARDS" in prompt    # the second card type is still wanted
     assert 'Do NOT emit any card with "type": "cloze"' in prompt
-    assert "Form 1 — cloze" not in prompt
+    assert "a cloze when the gap ends the sentence" not in prompt
     assert "THE TEST every cloze must pass" not in prompt
 
 
 def test_non_transcript_sources_keep_cloze():
     for kwargs in ({}, {"is_article": True}):
         prompt = build_prompt("S", "C", "text", 2, "en", **kwargs)
-        assert "Form 1 — cloze (preferred)" in prompt
+        assert "a cloze when the gap ends the sentence" in prompt
         assert 'Do NOT emit any card with "type": "cloze"' not in prompt
+
+
+def test_a_name_is_always_a_reverse_question():
+    """The sentence defining a term opens with it, so a clozed name puts the gap
+    first: "A {{c1::predicate lock}} works similarly to ..." makes the reader hold
+    the whole sentence before filling it.
+    """
+    for depth in (0, 1, 2):
+        prompt = build_prompt("Book", "Ch", "text", depth, "en")
+        assert "Never cloze a name" in prompt
+        assert "What is the term for a lock that belongs to all objects" in prompt
+
+
+def test_a_property_cloze_must_end_on_its_gap():
+    prompt = build_prompt("Book", "Ch", "text", 2, "en")
+    assert "The gap must close the sentence" in prompt
+    assert "the gap opens the sentence — ask which fields" in prompt
+
+
+def test_no_cloze_below_depth_2():
+    """Only properties may be clozed, and they start at depth 2."""
+    for depth in (0, 1):
+        prompt = build_prompt("Book", "Ch", "text", depth, "en")
+        assert "Use one form only" in prompt
+        assert '"type": "cloze"' not in prompt
+        assert "Never write the sentence yourself" not in prompt
+
+
+def test_cloze_drops_pointers_to_elsewhere_in_the_text():
+    prompt = build_prompt("Book", "Ch", "text", 2, "en")
+    assert 'drop a pointer to elsewhere in the text ("described earlier"' in prompt
 
 
 def test_term_cards_must_not_inflate_concept_card_count():

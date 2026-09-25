@@ -88,21 +88,19 @@ Every deck contains two kinds of card, generated together in one run.
 - a **name**, because understanding an idea and recalling what it's called are separate skills;
 - a **distinguishing property** (`--depth 2` only), the specific thing a claim turns on — which case a technique suits, what separates two approaches, when a result holds.
 
-Each takes whichever shape the source supports:
+A **name** is always asked as a reverse question: *"What is the term for depression caused by the long-term use of the antidepressants meant to treat it?"* → *"Tardive dysphoria"*. A sentence defining a term almost always opens with it, so clozing the name puts the gap first and makes you hold the whole sentence in your head before you can fill it.
 
-**Cloze**, when the book has a sentence that pins the answer down:
+A **property** becomes a cloze when the book has a sentence that ends on it:
 
 > The difference is that Avro is friendlier to `[...]` schemas.
 
-**Reverse question**, when it doesn't: *"What is the term for depression caused by the long-term use of the antidepressants meant to treat it?"* → *"Tardive dysphoria"*.
+and a reverse question otherwise. The test a cloze must pass: a reader who understands the material recovers the hidden words, and a reader who doesn't can't guess them.
 
-The test a cloze must pass: a reader who understands the material recovers the hidden words, and a reader who doesn't can't guess them. *"Healy argues that `[...]` is a serious concern"* fails — it only drills the sentence — so it becomes a reverse question instead.
-
-**Cloze sentences are always quoted from the book, never composed.** The model may resolve a pronoun or drop a trailing clause so the sentence stands alone; nothing more. YouTube transcripts get reverse questions only — a speech-to-text transcript is a machine's guess at what was said, so quoting it would bake transcription errors into your cards.
+**Cloze sentences are always quoted from the book, never composed.** The model may resolve a pronoun, drop a pointer like "described earlier", or drop a trailing clause so the sentence stands alone; nothing more. YouTube transcripts get reverse questions only — a speech-to-text transcript is a machine's guess at what was said, so quoting it would bake transcription errors into your cards.
 
 How many qualify scales with `--depth`: at 0, only the one idea the text is built around; at 2, the terminology you would be expected to recognise in conversation about the book.
 
-With `--lang`, the cloze sentence stays in the **source** language while the gloss and context line are written in yours — the hidden answer is source-language wording, so translating the sentence would destroy the card. Cloze cards use their own note type, so `note:"book2anki Cloze"` selects them as a group in the Anki browser.
+With `--lang`, a cloze sentence stays in the **source** language while the gloss and context line are written in yours — the hidden answer is source-language wording, so translating the sentence would destroy the card. Cloze cards use their own note type, so `note:"book2anki Cloze"` selects them as a group in the Anki browser.
 
 ## Vocabulary mode
 
