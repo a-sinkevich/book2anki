@@ -141,22 +141,25 @@ def test_output_contract_mentions_type_and_context():
 class TestBoldInAnswers:
     """Bold is allowed for scanning an answer; italic never is."""
 
-    def test_bold_is_off_by_default_and_has_to_earn_its_place(self):
-        """89 of 124 answers carried bold when the rule read as "bold the term",
-        so the model marked something on almost every card whether or not the
-        answer had anything to scan.
+    def test_every_answer_gets_its_gist_bolded(self):
+        """Off-by-default left most answers bare, and bold that shows up only
+        sometimes can't be relied on: a reader checking the back still had to
+        read every unmarked answer in full. The 89-of-124 failure that turned it
+        off was the span landing on the question's own noun, which the span
+        test below now rules out.
         """
         for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
                        build_prompt_request("Study X", 2, "en")):
-            assert "Most answers need no bold at all" in prompt
-            assert "expect the honest answer to usually be no" in prompt
-            assert "If you are unsure whether it helps, it does not" in prompt
+            assert "Bold the gist of every answer" in prompt
+            assert "a reader learns to look at the bold first" in prompt
+            assert "Most answers need no bold at all" not in prompt
+            assert "If you are unsure whether it helps, it does not" not in prompt
 
-    def test_the_trigger_is_scanning_not_taste(self):
-        """"Use your judgement" alone is what produced the inconsistency."""
-        prompt = build_prompt("Book", "Ch", "text", 2, "en")
-        assert "a reader would otherwise have to re-read to find the point" in prompt
-        assert "does not help a short single sentence" in prompt
+    def test_an_answer_that_is_its_own_gist_gets_none(self):
+        for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
+                       build_prompt_request("Study X", 2, "en")):
+            assert "an answer that is already its own gist" in prompt
+            assert "a term, a name, a number, or a phrase of a few words" in prompt
 
     def test_the_span_is_chosen_by_a_test_not_by_looking_termlike(self):
         """"The one term an answer turns on" got the most term-shaped noun bolded
@@ -165,9 +168,18 @@ class TestBoldInAnswers:
         """
         for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
                        build_prompt_request("Study X", 2, "en")):
-            assert "When you do bold, mark what the reader had to supply" in prompt
+            assert "Choose the span by a test, not by what looks important" in prompt
             assert "cut the bolded words out, and the answer should stop answering" in prompt
+            assert "enough for a reader who recalled the answer to confirm it" in prompt
             assert "usually a phrase rather than a single noun" in prompt
+
+    def test_the_span_is_never_most_of_the_answer(self):
+        """With bold on every answer, the new way to mark nothing is to mark it all."""
+        for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
+                       build_prompt_request("Study X", 2, "en")):
+            assert "a few words, never most of the answer" in prompt
+        full = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "most of the answer is bold, so the eye has nothing to land on" in full
 
     def test_a_contrast_is_marked_on_both_sides_or_neither(self):
         """"At most one span per answer" forced the model to bold one half of a
@@ -187,13 +199,16 @@ class TestBoldInAnswers:
             assert "never a word the question already contains" in prompt
             assert "the question already said leader" in prompt
 
-    def test_questions_may_not(self):
-        """Bold in a question points at what matters — the reader's job."""
-        assert "Never bold in a question" in build_prompt("Book", "Ch", "text", 2, "en")
-
-    def test_an_answer_that_is_only_a_term_gets_none(self):
-        prompt = build_prompt("Book", "Ch", "text", 2, "en")
-        assert "a one-line gloss, or an answer that is just a term" in prompt
+    def test_only_the_answer_carries_bold(self):
+        """Bold in a question points at what matters — the reader's job. In the
+        example or a cloze it competes with the mark the reader looks for.
+        """
+        for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
+                       build_prompt_request("Study X", 2, "en")):
+            assert "never in a question" in prompt
+            assert 'never in the "example" field' in prompt
+        full = build_prompt("Book", "Ch", "text", 2, "en")
+        assert "never in a cloze card, where Anki already highlights" in full
 
     def test_italic_stays_banned_everywhere(self):
         for prompt in (build_prompt("Book", "Ch", "text", 2, "en"),
