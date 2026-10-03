@@ -1,5 +1,7 @@
+from ebooklib import epub
+
 from book2anki.models import should_skip_chapter
-from book2anki.parser_epub import _html_to_text, _strip_references, _title_from_filename
+from book2anki.parser_epub import _html_to_text, _strip_references, _title_from_filename, parse_epub
 
 
 class TestHtmlToText:
@@ -13,6 +15,10 @@ class TestHtmlToText:
     def test_nested_tags(self):
         html = b"<div><p><span>Text</span></p></div>"
         assert "Text" in _html_to_text(html)
+
+    def test_drops_the_xml_declaration_and_doctype(self):
+        html = b"<?xml version='1.0' encoding='utf-8'?>\n<!DOCTYPE html>\n<html><body><p>Text</p></body></html>"
+        assert _html_to_text(html) == "Text"
 
 
 class TestShouldSkip:
@@ -66,3 +72,36 @@ class TestTitleFromFilename:
 
     def test_underscores(self):
         assert _title_from_filename("some_book_title.pdf") == "Some Book Title"
+
+
+class TestChapters:
+    def _book(self, tmp_path, files, toc):
+        """Write an EPUB of (file name, body) in reading order; `toc` names some."""
+        book = epub.EpubBook()
+        book.set_title("The Intellectual Life")
+        book.set_language("en")
+        items = {}
+        for name, body in files:
+            items[name] = epub.EpubHtml(file_name=name, content=f"<html><body>{body}</body></html>")
+            book.add_item(items[name])
+        book.toc = [epub.Link(name, title, name) for name, title in toc]
+        book.add_item(epub.EpubNcx())
+        book.spine = list(items.values())
+        path = tmp_path / "book.epub"
+        epub.write_epub(str(path), book)
+        return str(path)
+
+    def test_files_the_toc_leaves_out_are_titled_by_their_heading(self, tmp_path):
+        prose = "<p>" + "To speak of vocation is to speak of a life. " * 40 + "</p>"
+        path = self._book(tmp_path, [
+            ("preface.xhtml", "<h1>Preface to the Third Edition</h1>" + prose),
+            ("ch1.xhtml", "<h1>Chapter 1. <br/>The Intellectual Vocation</h1>" + prose),
+            ("ch2.xhtml", "<h1>Chapter 2. <i>The Virtues</i></h1>" + prose),
+            ("loose.xhtml", prose),
+        ], toc=[("preface.xhtml", "THE INTELLECTUAL LIFE")])
+        _, chapters = parse_epub(path)
+        assert [c.title for c in chapters] == [
+            "THE INTELLECTUAL LIFE",
+            "Chapter 1. The Intellectual Vocation",
+            "Chapter 2. The Virtues",
+        ]

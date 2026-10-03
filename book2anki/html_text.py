@@ -14,7 +14,7 @@ a sentence, which is worth far more to a card generator than the tags cost.
 
 import re
 
-from bs4 import BeautifulSoup, Comment, NavigableString, Tag
+from bs4 import BeautifulSoup, Comment, Declaration, Doctype, NavigableString, ProcessingInstruction, Tag
 
 # Elements that end the current line. Everything not listed here is treated as
 # inline, so it stays inside the sentence it belongs to.
@@ -59,7 +59,8 @@ def html_to_text(markup: bytes | str | BeautifulSoup | Tag) -> str:
 
 def _render(node: BeautifulSoup | Tag, out: list[str], in_pre: bool) -> None:
     for child in node.children:
-        if isinstance(child, Comment):
+        # An XHTML file's <?xml ...?> and <!DOCTYPE> are strings to the parser too.
+        if isinstance(child, (Comment, Declaration, Doctype, ProcessingInstruction)):
             continue
         if isinstance(child, NavigableString):
             text = str(child)

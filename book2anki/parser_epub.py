@@ -488,6 +488,7 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
     content-bearing spine item.
     """
     image_map = _build_image_map(book)
+    headings: dict[str, str] = {}  # "Section N" → the file's own heading
     chapter_texts: dict[str, list[str]] = {}
     chapter_images: dict[str, list[BookImage]] = {}
     chapter_order: list[str] = []
@@ -521,6 +522,9 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
         if title is None:
             unnamed_count += 1
             title = f"Section {unnamed_count}"
+            heading = _first_heading(content)
+            if heading:
+                headings[title] = heading
 
         if title not in chapter_texts:
             chapter_texts[title] = []
@@ -547,6 +551,15 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
                 chapter_texts[new_title] = chapter_texts.pop(old_key)
                 chapter_images[new_title] = chapter_images.pop(old_key, [])
 
+    # A file the TOC doesn't name is still a chapter if it carries its own
+    # heading; some books' TOC lists only the first file, or nothing at all.
+    for i, key in enumerate(chapter_order):
+        own = headings.get(key)
+        if own and own not in chapter_texts:
+            chapter_order[i] = own
+            chapter_texts[own] = chapter_texts.pop(key)
+            chapter_images[own] = chapter_images.pop(key, [])
+
     # Collect ALL images from every chapter (including skipped ones)
     # and make them available book-wide. Many books put all images
     # in a single "Illustrations" section rather than inline.
@@ -569,6 +582,15 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
         index += 1
 
     return chapters
+
+
+def _first_heading(html_content: bytes) -> str:
+    """The text of a file's first <h1>–<h3>, on one line."""
+    heading = BeautifulSoup(html_content, "html.parser").find(["h1", "h2", "h3"])
+    if heading is None:
+        return ""
+    text = re.sub(r"</?(?:em|strong)>", "", html_to_text(heading))
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _html_to_text(html_content: bytes) -> str:
