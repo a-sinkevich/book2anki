@@ -30,6 +30,7 @@ class Card:
     example: str = ""
     image: str = ""
     tags: list[str] = field(default_factory=list)
+    audio: str = ""  # media file name of a vocab word's pronunciation
 
 
 # Anki cloze deletion: {{c1::answer}} or {{c1::answer::hint}}. Lives here

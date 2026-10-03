@@ -283,12 +283,35 @@ _VOCAB_CSS = """\
 .register {
     font-size: 14px;
     font-weight: normal;
-    font-style: italic;
     color: #888;
     margin-top: 2px;
 }
 .card.night_mode .register {
     color: #777;
+}
+/* The register says why a word is only recognised, which is part of the
+   answer: on the front it would be one more thing to read before recalling
+   the meaning, and "archaic" or "technical" narrows the meaning down. It rides
+   in the Word field, so the front can only hide it; only the answer side
+   has the <hr id="answer">. */
+.card:not(:has(#answer)) .register {
+    display: none;
+}
+/* Our own play button, drawn like Anki's replay button but at the size of
+   the IPA line and in its muted grey. Not Anki's class, whose stylesheet
+   would blow the icon up to its own 40px. */
+.card .play-button {
+    display: inline-flex;
+    text-decoration: none;
+    margin: 0 0 0 2px;
+    vertical-align: middle;
+    cursor: pointer;
+}
+.card.night_mode .play-button svg circle {
+    stroke: #666;
+}
+.card.night_mode .play-button svg path {
+    fill: #999;
 }
 """
 
@@ -670,11 +693,60 @@ def _split_etymology(definition: str) -> tuple[str, str]:
     return rest, match.group(1).strip()
 
 
+def _vocab_word_field(card: Card) -> str:
+    """The word, with its pronunciation clip when there is one.
+
+    The clip rides in the Word field, which the recognition card shows on the
+    front and the production card reveals on the back, rather than in a field
+    of its own: a new field would change both note types, which Anki can't
+    merge into the decks people have already imported. The guid is taken from
+    `card.question`, so adding audio later doesn't duplicate a word.
+
+    The button sits at the end of the IPA line, where the eye already is when
+    it wants the pronunciation. It must stay after the first <div>: the
+    existing-Anki dedup reads the word as everything before it.
+    """
+    word = _escape_field(card.question)
+    if not card.audio:
+        return word
+    ipa = re.search(r'<div class="ipa">.*?(?=</div>)', word, re.DOTALL)
+    if ipa:
+        return word[:ipa.end()] + " " + _play_button(card.audio) + word[ipa.end():]
+    return word + f'<div class="ipa">{_play_button(card.audio)}</div>'
+
+
+# Anki's own replay-button icon.
+# Sized and coloured by attributes, not the card CSS: Anki's editor shows the
+# field without that CSS, where a bare SVG fills the field in black.
+_PLAY_ICON = (
+    '<svg viewBox="0 0 64 64" width="18" height="18">'
+    '<circle cx="32" cy="32" r="29" fill="none" stroke="#aaa" stroke-width="3"/>'
+    '<path d="M56.502,32.301l-37.502,20.101l0.329,-40.804l37.173,20.703Z" fill="#888"/>'
+    '</svg>'
+)
+
+
+def _play_button(filename: str) -> str:
+    """A button that plays the clip only when clicked.
+
+    A [sound:] tag would play by itself as the card appears, unless the
+    reader's deck options turn that off, which a deck file can't do for them.
+    Anki counts an <audio src> as a use of the file, so it syncs, and Check
+    Media keeps it.
+    """
+    src = html.escape(filename)
+    return (
+        f'<span class="audio"><a class="play-button" href="#" '
+        f'onclick="var a=this.nextElementSibling;a.currentTime=0;a.play();return false;">'
+        f'{_PLAY_ICON}</a><audio src="{src}" preload="none"></audio></span>'
+    )
+
+
 def _vocab_recognition_note(
     card: Card, deck_name: str, tag: str, model_version: str,
 ) -> genanki.Note:
     """A recognition card: the word in its context → what it means."""
-    word = _escape_field(card.question)
+    word = _vocab_word_field(card)
     context = _escape_field(card.example) if card.example else ""
     translation = _escape_field(card.answer)
     definition = _escape_field(card.image) if card.image else ""
@@ -694,7 +766,7 @@ def _vocab_production_note(
     """A production ("speaking") card: the meaning in the reader's language,
     with the word gapped out of its context → produce the word.
     """
-    word = _escape_field(card.question)
+    word = _vocab_word_field(card)
     context = _escape_field(card.example) if card.example else ""
     context_gap = _escape_field(_gap_context(card.example)) if card.example else ""
     translation = _escape_field(card.answer)
@@ -714,6 +786,7 @@ def _vocab_production_note(
 def package_vocab(
     cards: list[Card], deck_name: str, output_path: str, mode: str = "auto",
     tag_name: str = "", model_version: str = "",
+    media_files: list[str] | None = None,
 ) -> None:
     """Package vocabulary cards into a single flat deck.
 
@@ -733,6 +806,8 @@ def package_vocab(
         deck.add_note(build(card, deck_name, tag, model_version))
 
     package = genanki.Package([deck])
+    if media_files:
+        package.media_files = media_files
     package.write_to_file(output_path)
 
 

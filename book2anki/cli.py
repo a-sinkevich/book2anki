@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from book2anki.audio import attach_audio
 from book2anki.models import Card, Chapter, is_passive
 from book2anki.parser_epub import parse_epub
 from book2anki.parser_pdf import parse_pdf
@@ -168,6 +169,12 @@ def _parse_args() -> argparse.Namespace:
              "meaning, for every word)",
     )
     parser.add_argument(
+        "--audio", action="store_true",
+        help="Add pronunciation audio to vocab cards (used with --vocab): OpenAI "
+             "speech when OPENAI_API_KEY is set, otherwise real recordings from "
+             "Wiktionary where there are any",
+    )
+    parser.add_argument(
         "--flat", "--compact", action="store_true", dest="flat",
         help="Output a single compact .apkg file instead of per-chapter files",
     )
@@ -202,6 +209,8 @@ def _parse_args() -> argparse.Namespace:
         parser.error("--practice only applies to source files/urls")
     if args.prompt and args.code_lang:
         parser.error("--code-lang only applies in practice mode")
+    if args.audio and not args.vocab:
+        parser.error("--audio only applies in vocabulary mode (add --vocab)")
 
     # Checked here rather than after parsing, so a bad flag combination fails
     # before spending a minute extracting text from a large PDF.
@@ -729,8 +738,9 @@ def _run_vocab_mode(
         output_path = str(Path(output_path) / f"{base_name}.apkg")
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
+    media = attach_audio(all_cards, source_lang) if args.audio else []
     package_vocab(all_cards, deck_title, output_path, mode=args.vocab_mode,
-                  model_version=model)
+                  model_version=model, media_files=media)
 
     print(f"\nDone! Generated {len(all_cards)} vocabulary cards.")
     if args.vocab_mode == "auto":

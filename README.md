@@ -63,7 +63,7 @@ Examples below write `book2anki`; substitute `./book2anki-macos-arm64` or `pytho
 | `--parallel` | Process chapters simultaneously |
 | `--output DIR` | Output directory (default: `<BookTitle>/`) |
 | `--prompt "..."` | Generate from a study request, no source file |
-| `--vocab --level B2` | Vocabulary mode (see below) |
+| `--vocab --level B2` | Vocabulary mode (see below); add `--audio` for pronunciation |
 | `--practice` | Programming exercise cards (see below) |
 | `--model` | See [Models](#models) |
 
@@ -119,6 +119,29 @@ book2anki "https://example.com/article" --vocab --level C1 --lang ru
 - **`recognition`** — every word as a recognition card: the English word, you recall the meaning. Trains reading and listening.
 
 Decks are named `{Language} {Level} — {Book Title}`, so separate chapter ranges merge into one deck on import. book2anki also reads your existing Anki collection and skips words you already have.
+
+### Pronunciation audio
+
+`--audio` puts a small play button next to the IPA; it plays only when you click it.
+
+```bash
+book2anki mybook.epub --vocab --level C1 --lang ru --audio
+```
+
+With an OpenAI key, every word is synthesised by OpenAI's speech model (`gpt-4o-mini-tts`), so the whole deck is one voice. It knows how rare words are said rather than guessing from spelling, and is shown the book's sentence so a word with several pronunciations (*record*, *lead*) comes out as the book meant it. English is British throughout: the speech model is asked for Received Pronunciation, and British recordings are picked first. Clips are cached in `~/.cache/book2anki/audio`, so a re-run only fetches what's missing.
+
+Without a key, or for a word OpenAI fails on, a word gets a real speaker's recording from Wiktionary when there is one. Words with several pronunciations always skip Wiktionary, since a recording can't say which one the book meant.
+
+To get the key — the same one as `--model gpt5.5`, even if the cards themselves come from Claude:
+
+1. [Create a key](https://platform.openai.com/api-keys) and [add a little credit](https://platform.openai.com/settings/organization/billing). A book's vocabulary costs cents.
+2. Put it in `~/.book2anki.env`:
+
+   ```
+   OPENAI_API_KEY=your-key
+   ```
+
+Without a key, words with no recording — most phrases and a lot of jargon — just get no audio. `OPENAI_TTS_VOICE` picks another [voice](https://platform.openai.com/docs/guides/text-to-speech) (default `marin`).
 
 ## Practice mode
 

@@ -405,3 +405,32 @@ def test_package_vocab_picks_direction_per_word(mode, speak_model):
         word: VOCAB_PRODUCTION_MODEL.model_id if speak else VOCAB_MODEL.model_id
         for word, speak in speak_model.items()
     }
+
+
+def test_vocab_audio_plays_from_the_word_field_without_changing_the_guid():
+    word = 'susurrus<div class="ipa">/sjuːˈsʌrəs/</div>'
+    silent = _vocab_card(word, [PASSIVE_TAG])
+    voiced = _vocab_card(word, [PASSIVE_TAG])
+    voiced.audio = "book2anki-abc.mp3"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        clip = os.path.join(tmpdir, "book2anki-abc.mp3")
+        with open(clip, "wb") as f:
+            f.write(b"mp3")
+        guids = []
+        for card, name in ((silent, "a.apkg"), (voiced, "b.apkg")):
+            out = os.path.join(tmpdir, name)
+            package_vocab([card], "Book C1", out, media_files=[clip] if card.audio else None)
+            with zipfile.ZipFile(out) as z:
+                z.extract("collection.anki2", os.path.join(tmpdir, name + ".d"))
+                media = json.loads(z.read("media"))
+            conn = sqlite3.connect(os.path.join(tmpdir, name + ".d", "collection.anki2"))
+            guid, flds = conn.execute("SELECT guid, flds FROM notes").fetchone()
+            conn.close()
+            guids.append(guid)
+        field = flds.split("\x1f")[0]
+        assert field.startswith('susurrus<div class="ipa">/sjuːˈsʌrəs/ <span class="audio">')
+        assert field.endswith('<audio src="book2anki-abc.mp3" preload="none"></audio></span></div>')
+        assert '<svg viewBox="0 0 64 64" width="18" height="18">' in field  # small in the editor too
+        assert "[sound:" not in field    # would play by itself
+        assert list(media.values()) == ["book2anki-abc.mp3"]
+        assert guids[0] == guids[1]
