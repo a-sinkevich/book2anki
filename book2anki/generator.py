@@ -420,9 +420,7 @@ def generate_practice_for_chapter(
     parallel_chunks: bool = False,
 ) -> list[Card]:
     """Generate programming practice exercise cards for a single chapter."""
-    # The practice prompt is larger and its cards (especially katas) run long,
-    # so reserve more output room.
-    max_chars = _chunk_budget(provider, 1000, 8000)
+    max_chars = _chunk_budget(provider, 1000, 4000)
 
     def work(text: str, status: Callable[[str], None]) -> list[Card]:
         return _generate_practice_with_retries(

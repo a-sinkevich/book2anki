@@ -144,34 +144,51 @@ def test_build_prompt_request_uses_study_request_without_source():
     assert '"title" and "cards" fields' in prompt
 
 
-def test_practice_prompt_prefers_runnable_java_examples():
-    prompt = build_practice_prompt(
-        "Effective Java",
-        "Concurrency",
-        "Use concurrent collections.",
-        1,
-        code_lang="java",
-    )
+class TestPracticePrompt:
+    def _prompt(self, **kwargs):
+        return build_practice_prompt("Effective Java", "Concurrency", "text", 1, **kwargs)
 
-    assert "Runnable demonstrations" in prompt
-    assert "public static void main(String[] args)" in prompt
-    assert "complete single-file Java 17+ example" in prompt
-    assert "ExecutorService" in prompt
-    assert "CountDownLatch" in prompt
-    assert "Question names define the production API" in prompt
-    assert "Do not add names like Demo, Example, Runner, App, or Test" in prompt
-    assert "main method is only a learning/debugging harness" in prompt
-    assert "separate API block for signatures" in prompt
-    assert "<pre><code>class LRUCache" in prompt
-    assert "<ul>" in prompt
-    assert "Avoid mixing normal prose and inline <code> heavily" in prompt
+    def test_each_card_is_one_small_building_block(self):
+        prompt = self._prompt()
+        assert "One building block per card" in prompt
+        assert "at most about 15 lines" in prompt
+        assert "never one card implementing the whole cache" in prompt
 
-    sample_start = prompt.index("[\n")
-    sample_end = prompt.index("\n]\n", sample_start) + 2
-    sample_cards = json.loads(prompt[sample_start:sample_end])
-    assert sample_cards[0]["question"].startswith(
-        "<b>Implement a Builder for NutritionFacts</b>"
-    )
+    def test_no_demo_harness_or_production_scaffolding(self):
+        prompt = self._prompt()
+        assert "No main method" in prompt
+        assert "Runnable demonstrations" not in prompt
+        assert "public static void main" not in prompt
+
+    def test_a_kata_is_more_than_one_idiom(self):
+        assert "at least two moving parts" in self._prompt()
+
+    def test_variants_are_cards_of_their_own(self):
+        assert "A variant is its own card" in self._prompt()
+
+    def test_the_key_lines_are_bolded_in_the_answer_only(self):
+        prompt = self._prompt()
+        assert "Bold the lines that carry the idea" in prompt
+        assert "nothing in the question" in prompt
+
+    def test_blocks_are_named_generically_and_glue_is_skipped(self):
+        prompt = self._prompt()
+        assert "Generic names, not the book's story" in prompt
+        assert "Skip glue code" in prompt
+
+    def test_code_lang_translates_the_code(self):
+        assert "MUST be in Kotlin" in self._prompt(code_lang="Kotlin")
+
+    def test_examples_are_small_blocks_with_bold_key_lines(self):
+        prompt = self._prompt()
+        start = prompt.index("[\n  {")
+        end = prompt.index("\n]", start) + 2
+        cards = json.loads(prompt[start:end])
+        for card in cards:
+            code_lines = re.sub(r"<[^>]+>", "", card["answer"]).splitlines()
+            assert len(code_lines) <= 15
+            assert "<b>" in card["answer"] and "<b>" not in card["question"].split("<br>", 1)[1]
+            assert "main(" not in card["answer"]
 
 
 def test_build_prompt_asks_for_term_cards_at_every_depth():

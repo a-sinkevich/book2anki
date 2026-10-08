@@ -152,7 +152,9 @@ Without a key, words with no recording — most phrases and a lot of jargon — 
 
 ## Practice mode
 
-Programming exercise cards instead of theory: a precise "Implement …" spec as the question, complete production-ready code as the answer — proper concurrency primitives, idiomatic patterns, real error handling. Where practical the answer runs as-is; for Java that means a full Java 17+ example with `main`, realistic usage and edge cases.
+Small katas instead of theory: each card is one building block you write from memory — a bounded buffer's `put()`, fanning tasks out and joining their results, a sliding-window rate check — the pieces an interview answer is assembled from. The question fixes the signature and the fields you may use; the answer is the block itself, about 15 lines at most, with the one or two lines that carry the idea in bold, and the key point and common mistake underneath. You write it out, compare, and grade yourself on the bold lines.
+
+The usual flashcard rules apply to code too: one block per card, so a large pattern like an LRU cache becomes its separate blocks rather than one card that fails on any detail; variants (timed, interruptible) get their own cards; and blocks come before the code built from them. No `main()` or demo harness — just the block, in modern, correct code. For single-line idioms, see `--idioms`.
 
 ```bash
 book2anki effective_java.epub --practice

@@ -689,18 +689,23 @@ Extract vocabulary above {level} as a JSON array:"""
 
 PRACTICE_DEPTH_INSTRUCTIONS = {
     0: (
-        "Identify only the single most important pattern or technique "
-        "worth practicing from this chapter. Generate exercise cards for it only."
+        "Drill only the single most important building block this chapter teaches."
     ),
     1: (
-        "Identify the core patterns, techniques, or implementations from this chapter "
-        "that are worth practicing. Skip minor utilities and trivial examples."
+        "Drill the core building blocks: the pieces a reader needs to assemble the "
+        "chapter's main techniques. Skip minor utilities and trivial examples."
     ),
     2: (
-        "Identify all important patterns, techniques, and implementations from this "
-        "chapter, including secondary patterns and notable edge cases."
+        "Drill every building block the chapter teaches, including the variants it shows "
+        "(timed, interruptible, failure handling) and notable edge cases, each on its own card."
     ),
 }
+
+# Plain strings, not f-strings, so the code's braces need no doubling.
+_PRACTICE_EXAMPLES = r"""[
+  {"question": "<b>Bounded buffer: put()</b><br>Block while the buffer is full, then add the item and wake a waiting consumer.<pre><code>// given\nLock lock;\nCondition notFull, notEmpty;\nQueue&lt;T&gt; items;\nint capacity;\n\nvoid put(T item) throws InterruptedException</code></pre>", "answer": "<pre><code>void put(T item) throws InterruptedException {\n    lock.lock();\n    try {\n        <b>while (items.size() == capacity) {</b>\n            <b>notFull.await();</b>\n        }\n        items.add(item);\n        <b>notEmpty.signal();</b>\n    } finally {\n        lock.unlock();\n    }\n}</code></pre>", "example": "Wait in a loop, not an if: await() can wake spuriously or after another producer filled the slot. Signal the other condition, and unlock in finally. take() is the mirror image: wait on notEmpty, signal notFull."},
+  {"question": "<b>Run tasks concurrently, collect results in order</b><br>Start every task on the pool, then gather their results in the order of the input list.<pre><code>// given\nExecutorService pool;\n\nList&lt;Integer&gt; runAll(List&lt;Supplier&lt;Integer&gt;&gt; tasks)</code></pre>", "answer": "<pre><code>List&lt;Integer&gt; runAll(List&lt;Supplier&lt;Integer&gt;&gt; tasks) {\n    List&lt;CompletableFuture&lt;Integer&gt;&gt; futures = tasks.stream()\n            <b>.map(task -&gt; CompletableFuture.supplyAsync(task, pool))</b>\n            .toList();\n    <b>return futures.stream().map(CompletableFuture::join).toList();</b>\n}</code></pre>", "example": "Start them all before joining any. One stream that both starts and joins would run the tasks one at a time. join() rethrows a task's failure wrapped in a CompletionException."}
+]"""
 
 
 def build_practice_prompt(
@@ -711,7 +716,13 @@ def build_practice_prompt(
     topic: str = "",
     code_lang: str = "",
 ) -> str:
-    """Build a prompt to generate programming practice exercise cards."""
+    """Build a prompt for practice katas: small building blocks written from memory.
+
+    Each card is one block a candidate assembles interview answers from, about
+    fifteen lines, by the same minimum-information principle as any other card:
+    a large solution can only be recognised, never recalled whole, and a card
+    that fails on any one of its details fails on every review.
+    """
     depth_instruction = PRACTICE_DEPTH_INSTRUCTIONS[depth]
 
     topic_instruction = ""
@@ -729,124 +740,70 @@ def build_practice_prompt(
             f"Even if the book uses a different language, translate all examples to {code_lang}."
         )
 
-    return f"""You are an expert programming instructor creating Anki exercise cards \
-from a programming book.
+    return f"""You are an expert programming interview coach turning a programming book into \
+Anki practice cards. Each card is a small kata: one building block the reader writes from \
+memory, the kind of piece a strong candidate assembles an interview answer from without \
+stopping to work it out.
 
 Book: "{book_title}"
 Chapter: "{chapter_title}"
 
 {depth_instruction}{topic_instruction}{code_lang_instruction}
 
-For each pattern or technique you identify, generate an "Implement ..." exercise card:
-- **Question**: a concrete specification formatted as readable HTML for Anki. \
-Structure the question with: a short bold title, a plain-language goal, a separate \
-API block for signatures, and requirements/edge cases as HTML lists. Avoid mixing \
-normal prose and inline <code> heavily in the same sentence; use inline <code> only \
-for rare single identifiers. Put class/method signatures in a dedicated \
-<pre><code>...</code></pre> block. Example:
+THE TEST for every card: is this a block worth having ready — would writing it from memory \
+make an interview answer faster and more correct? A bounded buffer's put(), fanning tasks \
+out and joining their results, a retry with backoff, a sliding-window rate check. Not a \
+whole system, and not a single keyword or line: a kata combines at least two moving parts \
+(a lock, a condition and the state they guard).
 
-<b>Implement a thread-safe LRU cache</b><br><br>\
-Goal:<br>\
-Build a cache that keeps recently used entries available and evicts older entries \
-when capacity is reached.<br><br>\
-API:<br>\
-<pre><code>class LRUCache&lt;K, V&gt;
-V get(K key)
-void put(K key, V value)</code></pre>\
-Requirements:\
-<ul>\
-  <li>Use a fixed positive capacity.</li>\
-  <li>Reading a value marks it as recently used.</li>\
-  <li>Adding beyond capacity evicts the least recently used entry.</li>\
-  <li>Missing keys return null.</li>\
-  <li>Implementation must be thread-safe.</li>\
-</ul>\
-Edge cases:\
-<ul>\
-  <li>Updating an existing key must not increase size.</li>\
-  <li>Zero or negative capacity should be rejected.</li>\
-</ul>
+Memorisation rules, the same ones every good flashcard follows:
+- **One building block per card.** Break a large pattern into its blocks: an LRU cache is \
+"get() with move-to-front", "put() with eviction" and "making it thread-safe" — never one \
+card implementing the whole cache. A variant is its own card: a timed offer() and an \
+interruptible put() are two cards, not two requirements on one
+- **Small enough to recall whole**: the answer is at most about 15 lines of code. If it \
+needs more, it is two blocks — split it
+- **The question fixes the frame**, so there is one natural answer to compare against: a \
+short bold title, a one-line goal, then a <pre><code> block listing the fields or \
+parameters the answer may use (under "// given") and the exact signature to implement. \
+Where two cards are siblings (put() and take() of one buffer), the title says which
+- **The answer is just the block**: the method or few lines, in <pre><code>. No main \
+method, no demo, no imports, no class wrapper unless the class is the block, and no \
+comments
+- **Bold the lines that carry the idea** — usually one or two constructs — with \
+<b>...</b> inside the code: the lines the reader grades themselves on. Never most of the \
+answer, and nothing in the question
+- **"example" states the key point in a line or two**: why the block has this shape, the \
+common mistake, or how it mirrors its sibling card
+- **Blocks before what is built from them**: order the cards so a block comes before any \
+card that uses it
+- **Generic names, not the book's story**: name a block for what it does, so it carries \
+over to any problem — lockBoth(Lock a, Lock b), not impendingBow(Friend bower). Skip glue \
+code that only wires the book's sample classes together (creating and starting them, a \
+main method in all but name)
 
-- **Answer**: complete, compilable, production-quality code — not pseudocode. \
-Include brief inline comments only where a non-obvious design decision is made
+Code rules:
+- **Modern, correct code**: write the block as it is written today (Java 21+: var, \
+records, switch patterns; Python 3.10+: `X | None`, `list[int]`), with the right \
+primitives (ConcurrentHashMap or a lock, not blanket synchronized) and correct handling of \
+interruption and failure — minimal, but nothing a reviewer would flag
+- **Chapters without code still have blocks**: a chapter on rate limiting gives "sliding \
+window: tryAcquire()"; one on URL shortening gives "Base62-encode an id". Return [] only \
+for chapters with no technical content at all (preface, acknowledgments)
+- **All fields are HTML**: escape &lt; &gt; &amp; in code
+- **No italics**
 
-Guidelines:
-- **Skip purely non-technical chapters**: only return an empty JSON array [] for \
-chapters that have NO technical content at all (e.g. preface, acknowledgments). \
-Chapters about system design, architecture, or algorithms are valid — even if the \
-book discusses them without code, create exercises that implement the key components \
-(e.g. a chapter about rate limiting → implement a sliding window rate limiter; \
-a chapter about URL shortening → implement the shortening service with Base62 encoding)
-- **Answers with code must use <pre><code> tags**
-- **One exercise per distinct pattern**: don't generate multiple exercises for the \
-same pattern unless they test meaningfully different aspects
-- **Specifications must be precise**: include class/method names, parameter types, \
-return types, thread-safety requirements, and any constraints the solution must satisfy
-- **Question names define the production API**: class names, method names, and \
-signatures in the question must describe the thing being implemented, independent \
-of any runnable demo. Do not add names like Demo, Example, Runner, App, or Test \
-only because the answer includes a main method. Do not mention the main method in \
-the question unless the actual exercise is to build a CLI or application entry point
-- **Solutions must be self-contained**: a reader should be able to type the answer \
-into an IDE and have it compile
-- **Runnable demonstrations**: when the target language supports it, include a \
-runnable demonstration entry point in the answer alongside the implementation where practical. \
-For Java, prefer a complete single-file Java 17+ example with \
-`public static void main(String[] args)` inside the primary implementation class \
-or another naturally named class that is already part of the solution. The main \
-method is only a learning/debugging harness: it must not change the required API, \
-class names, or question wording. Use it to exercise the implementation, show \
-expected behavior, and cover at least one important edge case. For concurrency \
-exercises, demonstrate realistic multi-threaded usage with APIs such as \
-ExecutorService, CountDownLatch, CompletableFuture, or locks where appropriate. \
-Omit the entry point only when it would make the solution misleading or distract \
-from the concept
-- **Production-ready code**: solutions must use proper concurrency primitives \
-(e.g. ConcurrentHashMap, ReadWriteLock, not blanket synchronized), correct error \
-handling, and idiomatic patterns — the kind of code you'd put in a real codebase, \
-not textbook simplifications. Use explicit type annotations and modern language \
-idioms. Examples (not exhaustive): Python 3.10+ — `X | None` not `Optional[X]`, \
-`list[int]` not `List[int]`, `@dataclass` for data carriers (DTOs, configs, value \
-objects), never use `Any`; \
-Java 17+ — records, sealed interfaces, `var`, `List.of()`, pattern matching in switch
+Output ONLY a JSON array of objects with "question", "answer" and "example". No markdown, \
+no explanation, no wrapper.
 
-Output ONLY a JSON array. No markdown, no explanation, no wrapper.
-
-[
-  {{"question": "<b>Implement a Builder for NutritionFacts</b><br><br>\
-Goal:<br>Create an immutable value object using the Builder pattern.<br><br>\
-API:<br><pre><code>class NutritionFacts\\nNutritionFacts.Builder(int servingSize)\
-\\nBuilder calories(int value)\\nBuilder fat(int value)\\nBuilder sodium(int value)\
-\\nNutritionFacts build()</code></pre>\
-Requirements:<ul><li>Require serving size when the builder is created.</li>\
-<li>Default calories, fat, and sodium to zero.</li>\
-<li>Keep the built object immutable: final fields and no setters.</li>\
-<li>Validate that serving size is positive before creating the object.</li></ul>", \
-"answer": "<pre><code>public class NutritionFacts {{\\n    private final int servingSize;\
-\\n    private final int calories;\\n    private final int fat;\\n    private final int sodium;\
-\\n\\n    private NutritionFacts(Builder builder) {{\\n        this.servingSize = builder.servingSize;\
-\\n        this.calories = builder.calories;\\n        this.fat = builder.fat;\\n        this.sodium = builder.sodium;\
-\\n    }}\\n\\n    public static class Builder {{\\n        private final int servingSize;\
-\\n        private int calories;\\n        private int fat;\\n        private int sodium;\
-\\n\\n        public Builder(int servingSize) {{\\n            this.servingSize = servingSize;\
-\\n        }}\\n\\n        public Builder calories(int val) {{ calories = val; return this; }}\
-\\n        public Builder fat(int val) {{ fat = val; return this; }}\\n        public Builder sodium(int val) {{ sodium = val; return this; }}\
-\\n\\n        public NutritionFacts build() {{\\n            if (servingSize <= 0) throw new IllegalArgumentException(\\\"servingSize must be positive\\\");\
-\\n            return new NutritionFacts(this);\\n        }}\\n    }}\\n\\n    @Override\
-\\n    public String toString() {{\\n        return \\\"NutritionFacts[servingSize=\\\" + servingSize + \\\", calories=\\\" + calories + \\\", fat=\\\" + fat + \\\", sodium=\\\" + sodium + \\\"]\\\";\
-\\n    }}\\n\\n    public static void main(String[] args) {{\\n        NutritionFacts facts = new NutritionFacts.Builder(240).calories(100).sodium(35).build();\
-\\n        System.out.println(facts);\\n\\n        try {{\\n            new NutritionFacts.Builder(0).build();\
-\\n        }} catch (IllegalArgumentException expected) {{\\n            System.out.println(expected.getMessage());\
-\\n        }}\\n    }}\\n}}</code></pre>", \
-"example": ""}}
-]
+{_PRACTICE_EXAMPLES}
 
 Chapter text:
 ---
 {chapter_text}
 ---
 
-Generate the exercise cards now as a JSON array:"""
+Generate the practice cards now as a JSON array:"""
 
 
 IDIOMS_DEPTH_INSTRUCTIONS = {
