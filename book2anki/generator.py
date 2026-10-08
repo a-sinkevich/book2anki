@@ -6,9 +6,12 @@ from abc import ABC, abstractmethod
 from difflib import SequenceMatcher
 from typing import Any, Callable, TypeVar
 
-from book2anki.models import ACTIVE_TAG, CLOZE_RE, COMMAND_TAG, PASSIVE_TAG, Card, Chapter
+from book2anki.models import (
+    ACTIVE_TAG, CLOZE_RE, COMMAND_TAG, IDIOM_TAG, PASSIVE_TAG, Card, Chapter,
+)
 from book2anki.prompts import (
-    build_prompt, build_prompt_request, build_vocab_prompt, build_practice_prompt,
+    build_idioms_prompt, build_prompt, build_prompt_request, build_vocab_prompt,
+    build_practice_prompt,
 )
 
 CHARS_PER_TOKEN = 4
@@ -433,6 +436,32 @@ def generate_practice_for_chapter(
     )
 
 
+def generate_idioms_for_chapter(
+    provider: LLMProvider,
+    chapter: Chapter,
+    book_title: str,
+    depth: int,
+    progress_bar: Any = None,
+    topic: str = "",
+    code_lang: str = "",
+    on_chunk_done: Callable[[int, int], None] | None = None,
+    parallel_chunks: bool = False,
+) -> list[Card]:
+    """Generate idiom drill cards for a single chapter."""
+    max_chars = _chunk_budget(provider, 1000, 4000)
+
+    def work(text: str, status: Callable[[str], None]) -> list[Card]:
+        return _generate_idioms_with_retries(
+            provider, text, book_title, chapter.title, depth,
+            status_fn=status, topic=topic, code_lang=code_lang,
+        )
+
+    return _chapter_cards(
+        chapter, max_chars, work, deduplicate,
+        progress_bar, on_chunk_done, parallel_chunks,
+    )
+
+
 def _generate_with_retries(
     provider: LLMProvider,
     text: str,
@@ -514,7 +543,7 @@ def _question_field(item: dict[str, Any]) -> str:
 _COMMAND_MARKUP_RE = re.compile(r"</?(?:code|pre|b|strong|em|i|kbd|tt|span)\b[^>]*>")
 
 
-def _command_answer(answer: str) -> tuple[str, list[str]]:
+def _command_answer(answer: str, tag: str = COMMAND_TAG) -> tuple[str, list[str]]:
     """The plain line a command card's typed answer is compared against.
 
     Anki compares the reader's typing with the field's text, so any markup or
@@ -526,7 +555,7 @@ def _command_answer(answer: str) -> tuple[str, list[str]]:
     plain = re.sub(r"^\$\s+", "", plain)
     if "\n" in plain or re.search(r"<br\s*/?>", plain):
         return f"<pre><code>{html.escape(plain)}</code></pre>", []
-    return plain, [COMMAND_TAG]
+    return plain, [tag]
 
 
 def _cloze_terms(question: str) -> set[str]:
@@ -620,6 +649,76 @@ def _generate_practice_with_retries(
             for item in _parse_json_response(response)
             if "question" in item and "answer" in item
         ]
+
+    cards = _generate_parsed(
+        provider, prompt, _short_label(chapter_title), parse,
+        status_fn=status_fn,
+        retry_empty=_retries_empty(provider, topic),
+    )
+    return cards or []
+
+
+# A deletion with its number, read off the raw question. No hint group: idiom
+# snippets never use hints, and code's own "::" belongs to the hidden piece.
+_IDIOM_DELETION_RE = re.compile(r"\{\{c(\d+)::(.*?)\}\}", re.DOTALL)
+
+
+def _idiom_snippet_ok(question: str) -> bool:
+    """Whether a snippet's deletions can be typed in and parsed by Anki.
+
+    Each must sit on one line, for the one-line answer box; hold no curly
+    brace, which would end Anki's {{c1::...}} early; and have a number of its
+    own, since typing two deletions that share one means typing both at once.
+    """
+    deletions = _IDIOM_DELETION_RE.findall(question)
+    numbers = [n for n, _ in deletions]
+    return bool(deletions) and len(set(numbers)) == len(numbers) and all(
+        "\n" not in text and "{" not in text and "}" not in text
+        for _, text in deletions
+    )
+
+
+def _generate_idioms_with_retries(
+    provider: LLMProvider,
+    text: str,
+    book_title: str,
+    chapter_title: str,
+    depth: int,
+    status_fn: Callable[[str], None] | None = None,
+    topic: str = "",
+    code_lang: str = "",
+) -> list[Card]:
+    """Generate idiom drill cards for one piece of text, retrying failures."""
+    prompt = build_idioms_prompt(
+        book_title, chapter_title, text, depth, topic=topic, code_lang=code_lang,
+    )
+
+    def parse(response: str) -> list[Card]:
+        cards = []
+        for item in _parse_json_response(response):
+            if "question" not in item or "answer" not in item:
+                continue
+            question: str = item["question"]
+            answer: str = item["answer"]
+            if CLOZE_RE.search(question):
+                # A snippet Anki can't parse or the reader can't type is
+                # dropped: a regular card has nothing left to ask.
+                if not _idiom_snippet_ok(question):
+                    continue
+                tags = [IDIOM_TAG]
+            elif str(item.get("type", "")).strip().lower() == "line":
+                answer, tags = _command_answer(answer, IDIOM_TAG)
+            else:
+                continue
+            cards.append(Card(
+                question=_question_field(item),
+                answer=answer,
+                chapter_title=chapter_title,
+                book_title=book_title,
+                example=item.get("example", ""),
+                tags=tags,
+            ))
+        return cards
 
     cards = _generate_parsed(
         provider, prompt, _short_label(chapter_title), parse,

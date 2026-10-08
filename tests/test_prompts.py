@@ -9,6 +9,7 @@ from book2anki.prompts import (
     build_practice_prompt,
     build_prompt,
     build_prompt_request,
+    build_idioms_prompt,
     build_vocab_prompt,
     detect_programming,
 )
@@ -81,6 +82,36 @@ class TestDetectProgramming:
 
     def test_plain_prose_does_not(self):
         assert not detect_programming("It was a dark and stormy night.\n" * 100)
+
+
+class TestIdiomsPrompt:
+    def test_states_the_interview_test(self):
+        prompt = build_idioms_prompt("Book", "Ch", "text", 1)
+        assert "would an interviewer expect a strong candidate" in prompt
+
+    def test_asks_for_both_kinds_of_card(self):
+        prompt = build_idioms_prompt("Book", "Ch", "text", 1)
+        assert '"type": "snippet"' in prompt and '"type": "line"' in prompt
+
+    def test_snippet_gaps_must_be_typeable_and_parseable(self):
+        prompt = build_idioms_prompt("Book", "Ch", "text", 1)
+        assert "ONE line" in prompt
+        assert "no curly braces" in prompt
+        assert "its own number" in prompt
+
+    def test_drills_modern_code_whatever_the_books_age(self):
+        prompt = build_idioms_prompt("Book", "Ch", "text", 1)
+        assert "whatever the book's age" in prompt
+
+    def test_code_lang_translates_the_idioms(self):
+        prompt = build_idioms_prompt("Book", "Ch", "text", 1, code_lang="Kotlin")
+        assert "ALL code MUST be in Kotlin" in prompt
+
+    def test_examples_keep_braces_out_of_the_gaps(self):
+        import re as _re
+        prompt = build_idioms_prompt("Book", "Ch", "text", 2)
+        gaps = _re.findall(r"\{\{c\d+::(.*?)\}\}", prompt)
+        assert gaps and all("{" not in g and "}" not in g for g in gaps if g != "...")
 
 
 class TestCommandCards:

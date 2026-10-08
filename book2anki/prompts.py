@@ -847,3 +847,140 @@ Chapter text:
 ---
 
 Generate the exercise cards now as a JSON array:"""
+
+
+IDIOMS_DEPTH_INSTRUCTIONS = {
+    0: (
+        "Drill only the single idiom this chapter is built around, if it has one worth "
+        "writing from memory. Otherwise return []."
+    ),
+    1: (
+        "Drill the core idioms this chapter teaches: the ones a reader would come away "
+        "writing in real code."
+    ),
+    2: (
+        "Drill every idiom this chapter teaches that passes the test below, including the "
+        "variants it shows for timeouts, cancellation, failure and edge cases."
+    ),
+}
+
+# Plain strings, not f-strings: the cloze braces would otherwise need doubling
+# twice over.
+_IDIOM_EXAMPLES = r"""[
+  {"type": "snippet", "context": "Wait for a condition with an intrinsic lock", "question": "<pre><code>synchronized (lock) {\n    {{c1::while (!ready)}} {\n        lock.wait();\n    }\n    consume();\n}</code></pre>", "answer": "A loop, never an if: wait() can wake spuriously, or after another thread took the condition back.", "example": "The notifying side sets <code>ready = true</code> and calls <code>lock.notifyAll()</code> inside the same <code>synchronized (lock)</code> block."},
+  {"type": "snippet", "context": "Shut an executor down, giving running tasks a deadline", "question": "<pre><code>pool.shutdown();\nif (!pool.{{c1::awaitTermination(30, TimeUnit.SECONDS)}}) {\n    {{c2::pool.shutdownNow();}}\n}</code></pre>", "answer": "shutdown() only stops new tasks; awaitTermination() bounds the wait, and shutdownNow() interrupts whatever is still running.", "example": "Since Java 19 an <code>ExecutorService</code> is <code>AutoCloseable</code>: <code>try (var pool = Executors.newFixedThreadPool(4)) { … }</code> shuts down and waits on close."},
+  {"type": "line", "question": "Given <code>Map&lt;String, List&lt;Integer&gt;&gt; index</code>, append <code>n</code> to the list under <code>key</code>, creating the list if it's missing", "answer": "index.computeIfAbsent(key, k -> new ArrayList<>()).add(n);", "example": "One lookup instead of get / null check / put. On a <code>ConcurrentHashMap</code> the creation is atomic too."}
+]"""
+
+
+def build_idioms_prompt(
+    book_title: str,
+    chapter_title: str,
+    chapter_text: str,
+    depth: int,
+    topic: str = "",
+    code_lang: str = "",
+) -> str:
+    """Build a prompt for idiom drill cards: code the reader types from memory.
+
+    For interview preparation, where the point is writing small idioms without
+    pausing. Most worthwhile idioms span lines, and Anki's answer box takes
+    one, so the main form is a snippet with its key piece hidden as a typed
+    cloze; whole lines are the second form, where the question can fix every
+    name the answer uses. Anki compares the typing character by character, so
+    the rules are about leaving exactly one way to write the answer.
+    """
+    depth_instruction = IDIOMS_DEPTH_INSTRUCTIONS[depth]
+
+    topic_instruction = ""
+    if topic:
+        topic_instruction = (
+            f"\n\nIMPORTANT: Generate cards ONLY about: {topic}. "
+            "Skip everything unrelated to this topic. "
+            "If the text contains nothing relevant, return an empty JSON array []."
+        )
+
+    language = code_lang or "the book's language"
+    code_lang_instruction = ""
+    if code_lang:
+        code_lang_instruction = (
+            f"\n\nIMPORTANT: ALL code MUST be in {code_lang}. Even if the book uses a "
+            f"different language, drill the {code_lang} way of doing the same thing."
+        )
+
+    return f"""You are an expert programming interview coach turning a programming book into \
+Anki drill cards. The reader is preparing for coding interviews and wants the small idioms \
+in their fingers: written without pausing to think, the way a strong candidate writes them \
+at a whiteboard.
+
+Book: "{book_title}"
+Chapter: "{chapter_title}"
+
+{depth_instruction}{topic_instruction}{code_lang_instruction}
+
+THE TEST every idiom must pass: would an interviewer expect a strong candidate to write this \
+from memory — or would a working engineer type it every week? Drill the shapes that are \
+easy to get subtly wrong and that people reach for: lock() / try / finally unlock(), wait() \
+inside a while loop, executor shutdown with a timeout, a CountDownLatch or CompletableFuture \
+used correctly, a volatile flag, computeIfAbsent. Skip what fails it: syntax any developer \
+knows (new Thread(r).start(), a getter), classes that exist only in the book's sample code, \
+and APIs a reader would look up rather than remember.
+
+**Modern {language}, whatever the book's age.** Write idioms as they are written today \
+(for Java: 21+, with var, records, try-with-resources on an ExecutorService, virtual \
+threads where they fit). Where the book teaches an older form, drill the modern one and \
+name the old form in "example". Format code the standard way for the language (for Java, \
+4-space indents and K&R braces), always the same way, so spacing never decides whether \
+the typed answer matches.
+
+Two kinds of card:
+
+**"snippet" — the main kind.** A short snippet (2 to 10 lines) showing the idiom in \
+context, with its key piece hidden as a cloze: {{{{c1::...}}}}. The reader sees the rest \
+and types the hidden piece; Anki compares it character by character.
+- The question is the snippet in <pre><code>...</code></pre>, HTML-escaped (&lt; &gt; &amp;). \
+"context" is a short line naming what the snippet does, shown above it
+- Hide the piece that matters — the part people get wrong or forget: the while in a wait \
+loop, the unlock in finally, the timeout arguments, the volatile keyword. Never boilerplate
+- Hide the smallest piece that carries the idiom: the keyword, call or condition it turns \
+on. Hide synchronized, not the whole method signature around it; never make the reader \
+type a name that only exists in the book's example
+- Each hidden piece is on ONE line (the answer box takes one line) and contains no curly \
+braces, which would break Anki's cloze syntax: leave a block's opening brace visible after \
+the gap, as in {{{{c1::while (!ready)}}}} {{
+- The visible code fixes every name the hidden piece uses, so there is one way to write it
+- At most two hidden pieces per snippet, each with its own number (c1, c2), and only when \
+both are worth drilling: each becomes its own card
+- "answer" is one line on WHY the idiom has this shape — what goes wrong without it. \
+Interviewers ask why, not just how
+- "example" names the common mistake, the old or alternative form, or the other half of \
+the idiom (the notifying side of a wait); empty if there is nothing to add
+
+**"line" — a whole line to type.** Only where the question can fix every name and type \
+the answer uses, by stating them: "Given <code>ExecutorService pool</code> and \
+<code>Callable&lt;Integer&gt; task</code>, …". Where the line declares something, the \
+question gives the declaration exactly as the answer writes it — "into \
+<code>var pool</code>", "as a <code>private final Lock</code> field named \
+<code>lock</code>" — so the reader never has to guess between var and a type, or whether \
+the field is final.
+- "answer" is the exact line: plain text, no HTML, no <code>, nothing else
+- "example" gives the why and any equally valid forms, so a reader who typed a valid \
+variant can see that it was valid
+
+Guidelines:
+- **One card per idiom**: never two cards drilling the same piece of the same idiom
+- **No trivia**: every card must pass the test above. A chapter with no idioms worth \
+drilling returns []
+- **Bold nothing, and no italics**: the cloze highlighting is the emphasis
+
+Output ONLY a JSON array of objects with "type" ("snippet" or "line"), "question", \
+"answer", "example", and "context" for snippets. No markdown, no explanation, no wrapper.
+
+{_IDIOM_EXAMPLES}
+
+Chapter text:
+---
+{chapter_text}
+---
+
+Generate the drill cards now as a JSON array:"""

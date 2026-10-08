@@ -17,7 +17,8 @@ from book2anki.parser_youtube import is_youtube_input, parse_youtube
 from book2anki.language import detect_language
 from book2anki.generator import (
     LLMProvider, generate_cards_for_chapter, generate_vocab_for_chapter,
-    generate_practice_for_chapter, generate_cards_for_prompt,
+    generate_idioms_for_chapter, generate_practice_for_chapter,
+    generate_cards_for_prompt,
     deduplicate, deduplicate_vocab,
     consolidate_cards, vocab_word, _vocab_base, PARALLEL_WORKERS,
     generation_errors, fatal_error, clear_fatal_error,
@@ -184,8 +185,14 @@ def _parse_args() -> argparse.Namespace:
              "drills, variations) instead of theory cards. Only for programming books",
     )
     parser.add_argument(
+        "--idioms", action="store_true",
+        help="Idioms mode: drill cards for interview prep. Short code snippets with "
+             "their key piece hidden, and one-liners, both typed in from memory. "
+             "Only for programming books",
+    )
+    parser.add_argument(
         "--code-lang", default=None,
-        help="Programming language for --practice exercises, e.g. --code-lang java",
+        help="Programming language for --practice or --idioms cards, e.g. --code-lang java",
     )
     parser.add_argument(
         "--model", default=None,
@@ -207,8 +214,10 @@ def _parse_args() -> argparse.Namespace:
         parser.error("--vocab only applies to source files/urls")
     if args.prompt and args.practice:
         parser.error("--practice only applies to source files/urls")
+    if args.prompt and args.idioms:
+        parser.error("--idioms only applies to source files/urls")
     if args.prompt and args.code_lang:
-        parser.error("--code-lang only applies in practice mode")
+        parser.error("--code-lang only applies in practice or idioms mode")
     if args.audio and not args.vocab:
         parser.error("--audio only applies in vocabulary mode (add --vocab)")
 
@@ -222,10 +231,11 @@ def _parse_args() -> argparse.Namespace:
                          "(e.g. --vocab --level B2 --lang ru)")
         if args.vocab_mode is not None and not args.vocab:
             parser.error("--vocab-mode only applies in vocabulary mode (add --vocab)")
-        if args.practice and args.vocab:
-            parser.error("--practice and --vocab cannot be used together")
-        if args.code_lang and not args.practice:
-            parser.error("--code-lang only applies in practice mode (add --practice)")
+        if sum([args.practice, args.idioms, args.vocab]) > 1:
+            parser.error("--practice, --idioms and --vocab cannot be used together")
+        if args.code_lang and not (args.practice or args.idioms):
+            parser.error("--code-lang only applies in practice or idioms mode "
+                         "(add --practice or --idioms)")
     if args.vocab_mode is None:
         args.vocab_mode = "auto"  # default when --vocab is used
     return args
@@ -554,8 +564,9 @@ def _print_mode_line(args: argparse.Namespace) -> None:
         print(f"Mode: vocabulary extraction (level {args.level})"
               f", cards={args.vocab_mode}{chapters}"
               f"{', lang=' + args.lang if args.lang else ', lang=auto'}{topic}")
-    elif args.practice:
-        print(f"Mode: practice exercises, depth={args.depth}{chapters}"
+    elif args.practice or args.idioms:
+        mode = "idiom drills" if args.idioms else "practice exercises"
+        print(f"Mode: {mode}, depth={args.depth}{chapters}"
               f"{', code-lang=' + args.code_lang if args.code_lang else ''}{topic}"
               f"{', parallel' if args.parallel else ''}")
     else:
@@ -577,7 +588,7 @@ def main() -> None:
     source = _parse_source(args)
     provider = _make_provider(args)
 
-    if args.practice:
+    if args.practice or args.idioms:
         _run_practice_mode(args, source, provider)
     elif args.vocab:
         _run_vocab_mode(args, source, provider)
@@ -590,21 +601,25 @@ def main() -> None:
 def _run_practice_mode(
     args: argparse.Namespace, source: _Source, provider: LLMProvider,
 ) -> None:
-    """Generate programming exercise cards."""
+    """Generate programming exercise cards, or idiom drills with --idioms."""
+    # Both are decks of their own beside the book's, built the same way.
+    kind, label = ("idioms", "Idioms") if args.idioms else ("practice", "Practice")
+    generate = generate_idioms_for_chapter if args.idioms else generate_practice_for_chapter
+    noun = "idiom cards" if args.idioms else "practice cards"
     if not source.is_programming:
         print("Warning: book does not appear to be about programming. "
-              "Practice mode works best with programming books.",
+              f"{label} mode works best with programming books.",
               file=sys.stderr)
 
     model = provider.model_name()
     deck_title = _deck_title(source.title, args.topic)
     if args.code_lang:
-        deck_title = f"Practice | {args.code_lang.capitalize()} | {deck_title}"
+        deck_title = f"{label} | {args.code_lang.capitalize()} | {deck_title}"
     else:
-        deck_title = f"Practice | {deck_title}"
+        deck_title = f"{label} | {deck_title}"
 
     def run(chapter: Chapter, bar: Any = None, on_chunk: Any = None) -> list[Card]:
-        return generate_practice_for_chapter(
+        return generate(
             provider, chapter, source.title,
             depth=args.depth,
             progress_bar=bar,
@@ -619,10 +634,12 @@ def _run_practice_mode(
             lambda bar, on_chunk: run(source.chapters[0], bar, on_chunk),
         )
         if not cards:
-            _fail_no_cards("practice cards")
+            _fail_no_cards(noun)
         output_path = args.output or f"{_safe_name(deck_title)}.apkg"
-        package_practice_flat(cards, deck_title, output_path, model_version=model)
-        print(f"\nDone! Generated {len(cards)} practice cards.")
+        package_practice_flat(
+            cards, deck_title, output_path, model_version=model, kind=kind,
+        )
+        print(f"\nDone! Generated {len(cards)} {noun}.")
         print(f"Output: {output_path}\n")
         return
 
@@ -638,7 +655,7 @@ def _run_practice_mode(
         if chapters_dir:
             package_practice_chapter(
                 cards, deck_title, chapter.index, chapters_dir,
-                model_version=model,
+                model_version=model, kind=kind,
             )
 
     if pending:
@@ -649,24 +666,24 @@ def _run_practice_mode(
         )
 
     if not all_cards:
-        _fail_no_cards("practice cards")
+        _fail_no_cards(noun)
 
     if single_deck and len(all_cards) > 3:
         all_cards = _dedup_similar(all_cards)
 
     if single_deck:
         package_practice_flat(
-            all_cards, deck_title, f"{output_dir}.apkg", model_version=model,
+            all_cards, deck_title, f"{output_dir}.apkg", model_version=model, kind=kind,
         )
     else:
         os.makedirs(output_dir, exist_ok=True)
         combined = str(Path(output_dir) / f"{base_name}.apkg")
         package_practice(
             all_cards, deck_title, combined, model_version=model,
-            chapter_order=_chapter_order(source.chapters),
+            chapter_order=_chapter_order(source.chapters), kind=kind,
         )
 
-    print(f"\nDone! Generated {len(all_cards)} practice cards.")
+    print(f"\nDone! Generated {len(all_cards)} {noun}.")
     print(f"Output: {output_dir}.apkg\n" if single_deck else f"Output: {output_dir}/\n")
 
 

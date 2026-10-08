@@ -216,3 +216,18 @@ class TestEmptyRunReporting:
 
         assert "nothing was written" in err
         assert "reported no error" not in err
+
+
+class TestIdiomsFlags:
+    def _parse(self, monkeypatch, *argv):
+        monkeypatch.setattr("sys.argv", ["book2anki", "book.epub", *argv])
+        return cli._parse_args()
+
+    def test_code_lang_applies_to_idioms(self, monkeypatch):
+        args = self._parse(monkeypatch, "--idioms", "--code-lang", "java")
+        assert args.idioms and args.code_lang == "java"
+
+    @pytest.mark.parametrize("other", ["--practice", "--vocab"])
+    def test_idioms_is_its_own_mode(self, monkeypatch, other):
+        with pytest.raises(SystemExit):
+            self._parse(monkeypatch, "--idioms", other, "--level", "B2", "--lang", "ru")

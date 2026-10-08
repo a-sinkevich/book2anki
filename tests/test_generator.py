@@ -8,11 +8,14 @@ from book2anki.generator import (
     generate_cards_for_prompt,
     _generate_with_retries,
     _generate_vocab_with_retries,
+    _generate_idioms_with_retries,
     _parse_json_response,
     _split_into_chunks,
     vocab_word,
 )
-from book2anki.models import ACTIVE_TAG, PASSIVE_TAG, Card, Chapter, is_cloze, is_command
+from book2anki.models import (
+    ACTIVE_TAG, IDIOM_TAG, PASSIVE_TAG, Card, Chapter, is_cloze, is_typed,
+)
 from book2anki import generator
 
 import json
@@ -435,7 +438,7 @@ class TestCommandCards:
             "answer": "git log --oneline -3", "example": "<pre><code>-3 last three</code></pre>",
         })
 
-        assert is_command(cards[0])
+        assert is_typed(cards[0])
         assert cards[0].answer == "git log --oneline -3"
         assert cards[0].example == "<pre><code>-3 last three</code></pre>"
 
@@ -463,7 +466,7 @@ class TestCommandCards:
             "answer": "for f in *; do\n  echo $f\ndone",
         })
 
-        assert not is_command(cards[0])
+        assert not is_typed(cards[0])
         assert cards[0].answer == "<pre><code>for f in *; do\n  echo $f\ndone</code></pre>"
 
     def test_a_deletion_wins_over_the_command_label(self):
@@ -472,7 +475,64 @@ class TestCommandCards:
         })
 
         assert is_cloze(cards[0])
-        assert not is_command(cards[0])
+        assert not is_typed(cards[0])
+
+
+class TestIdiomCards:
+    def _generate(self, *items):
+        return _generate_idioms_with_retries(
+            _FakeProvider([json.dumps(list(items))], "gpt-5.5"),
+            "text", "Book", "Chapter", 1,
+        )
+
+    _LOCK = "<pre><code>lock.lock();\ntry {\n    count++;\n} finally {\n    {{c1::lock.unlock();}}\n}</code></pre>"
+
+    def test_a_snippet_is_a_typed_cloze_with_its_context_above(self):
+        cards = self._generate({
+            "type": "snippet", "context": "Guard a counter", "question": self._LOCK,
+            "answer": "unlock in finally", "example": "",
+        })
+
+        assert is_cloze(cards[0]) and is_typed(cards[0])
+        assert cards[0].tags == [IDIOM_TAG]
+        assert cards[0].question == '<div class="cloze-context">Guard a counter</div>' + self._LOCK
+        assert cards[0].answer == "unlock in finally"
+
+    def test_a_line_is_typed_whole_and_kept_plain(self):
+        cards = self._generate({
+            "type": "line", "question": "Given <code>Map&lt;K, V&gt; m</code>…",
+            "answer": "<code>m.computeIfAbsent(k, x -&gt; new ArrayList&lt;&gt;()).add(v);</code>",
+        })
+
+        assert is_typed(cards[0]) and not is_cloze(cards[0])
+        assert cards[0].answer == "m.computeIfAbsent(k, x -> new ArrayList<>()).add(v);"
+
+    @pytest.mark.parametrize("question", [
+        "<pre><code>{{c1::if (x) {\n    y();}}\n}</code></pre>",       # spans lines
+        "<pre><code>{{c1::while (!ready) {}}\n}</code></pre>",          # holds a brace
+        "<pre><code>{{c1::a();}}\n{{c1::b();}}</code></pre>",           # number reused
+        "<pre><code>lock.lock();</code></pre>",                         # nothing hidden
+    ])
+    def test_a_snippet_anki_cannot_ask_is_dropped(self, question):
+        assert self._generate({"type": "snippet", "question": question, "answer": "g"}) == []
+
+    def test_two_pieces_with_their_own_numbers_are_kept(self):
+        question = (
+            "<pre><code>pool.shutdown();\n"
+            "if (!pool.{{c1::awaitTermination(30, TimeUnit.SECONDS)}}) {\n"
+            "    {{c2::pool.shutdownNow();}}\n}</code></pre>"
+        )
+        cards = self._generate({"type": "snippet", "question": question, "answer": "g"})
+
+        assert len(cards) == 1 and is_cloze(cards[0])
+
+    def test_a_multi_line_line_becomes_a_regular_card(self):
+        cards = self._generate({
+            "type": "line", "question": "Lock and unlock", "answer": "lock.lock();\nlock.unlock();",
+        })
+
+        assert not is_typed(cards[0])
+        assert cards[0].answer.startswith("<pre><code>")
 
 
 class TestDeduplicate:

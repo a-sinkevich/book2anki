@@ -7,11 +7,14 @@ import zipfile
 
 import pytest
 
-from book2anki.models import ACTIVE_TAG, COMMAND_TAG, PASSIVE_TAG, Card, is_cloze, is_command
+from book2anki.models import (
+    ACTIVE_TAG, COMMAND_TAG, IDIOM_TAG, PASSIVE_TAG, Card, is_cloze, is_typed,
+)
 from book2anki.packager import (
     CARD_MODEL,
     CLOZE_MODEL,
-    COMMAND_MODEL,
+    TYPED_CLOZE_MODEL,
+    TYPED_MODEL,
     VOCAB_MODEL,
     VOCAB_PRODUCTION_MODEL,
     _gap_context,
@@ -346,12 +349,12 @@ def test_command_cards_use_the_command_note_type():
         assert _note_types(out) == [
             ("book2anki Basic", 0),
             ("book2anki Cloze", 1),
-            ("book2anki Command", 0),
+            ("book2anki Typed", 0),
         ]
 
 
 def test_command_card_asks_for_the_answer_to_be_typed():
-    template = COMMAND_MODEL.templates[0]
+    template = TYPED_MODEL.templates[0]
     assert "{{type:Answer}}" in template["qfmt"]
     assert "{{type:Answer}}" in template["afmt"]
     # FrontSide would repeat the input box on the back.
@@ -376,19 +379,72 @@ def test_command_cards_round_trip_through_resume():
         package_single_chapter([_command_card("a && b")], "Book", 0, chapters_dir)
 
         resumed = load_existing_chapters(chapters_dir)[0]
-        assert is_command(resumed[0])
+        assert is_typed(resumed[0])
 
         out = os.path.join(tmpdir, "again.apkg")
         package_cards(resumed, "Book", out)
-        assert _note_types(out) == [("book2anki Command", 0)]
+        assert _note_types(out) == [("book2anki Typed", 0)]
         assert html.unescape(_read_cards_from_apkg(out)[0].answer) == "a && b"
 
 
 def test_command_note_type_matches_basic_field_layout():
     assert (
-        [f["name"] for f in COMMAND_MODEL.fields]
+        [f["name"] for f in TYPED_MODEL.fields]
         == [f["name"] for f in CARD_MODEL.fields]
     )
+
+
+def _idiom_cards() -> list[Card]:
+    return [
+        Card(question="<pre><code>m.{{c1::computeIfAbsent(k, ArrayList::new)}}.add(v);</code></pre>",
+             answer="why", chapter_title="Ch", book_title="Book", tags=[IDIOM_TAG]),
+        Card(question="Given <code>ExecutorService pool</code>…", answer="pool.shutdown();",
+             chapter_title="Ch", book_title="Book", tags=[IDIOM_TAG]),
+    ]
+
+
+def test_idioms_deck_uses_the_typed_note_types():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "idioms.apkg")
+        package_practice(_idiom_cards(), "Idioms | Book", out, kind="idioms")
+
+        assert _note_types(out) == [
+            ("book2anki Typed Cloze", 1),
+            ("book2anki Typed", 0),
+        ]
+        assert all("idioms::idioms-book" in c.tags for c in _read_cards_from_apkg(out))
+
+
+def test_typed_cloze_asks_for_the_deletion_to_be_typed():
+    template = TYPED_CLOZE_MODEL.templates[0]
+    assert "{{type:cloze:Question}}" in template["qfmt"]
+    assert "{{type:cloze:Question}}" in template["afmt"]
+
+
+def test_a_method_reference_is_not_read_as_a_cloze_hint():
+    """Anki splits a deletion at its second "::"; the entity keeps it whole."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "idioms.apkg")
+        package_practice(_idiom_cards()[:1], "Idioms | Book", out, kind="idioms")
+        stored = _read_cards_from_apkg(out)[0].question
+
+        assert "{{c1::computeIfAbsent(k, ArrayList:&#58;new)}}" in stored
+
+        # Resume packages it again: the protection must not stack.
+        again = os.path.join(tmpdir, "again.apkg")
+        package_practice(_read_cards_from_apkg(out), "Idioms | Book", again, kind="idioms")
+        assert _read_cards_from_apkg(again)[0].question == stored
+
+
+def test_practice_cards_keep_the_basic_note_type():
+    cards = [Card(question="Implement X", answer="<pre><code>class X {}</code></pre>",
+                  chapter_title="Ch", book_title="Book")]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "practice.apkg")
+        package_practice(cards, "Practice | Book", out)
+
+        assert _note_types(out) == [("book2anki Basic", 0)]
+        assert "practice::practice-book" in _read_cards_from_apkg(out)[0].tags
 
 
 def test_load_existing_chapters_empty_dir():

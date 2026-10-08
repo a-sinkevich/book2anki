@@ -8,7 +8,7 @@ import zipfile
 
 import genanki
 
-from book2anki.models import Card, is_cloze, is_command, is_passive
+from book2anki.models import Card, is_cloze, is_passive, is_typed
 
 _SAFE_TAGS = {"pre", "code", "/pre", "/code", "b", "/b", "br", "br/",
               "ul", "/ul", "ol", "/ol", "li", "/li", "p", "/p",
@@ -195,7 +195,7 @@ CLOZE_MODEL = genanki.Model(
 )
 
 
-_COMMAND_CSS = """\
+_TYPED_CSS = """\
 #typeans {
     font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
     font-size: 16px;
@@ -218,13 +218,13 @@ code#typeans {
 }
 """
 
-# Command cards: the reader types the line, and {{type:Answer}} shows their
+# Typed cards: the reader types the line, and {{type:Answer}} shows their
 # typing against the answer on the back. The back repeats {{Question}} rather
 # than {{FrontSide}}, which would bring the input box along. Fields mirror
 # CARD_MODEL's, like the cloze type's, so resume reads them back unchanged.
-COMMAND_MODEL = genanki.Model(
+TYPED_MODEL = genanki.Model(
     model_id=1607392328,
-    name="book2anki Command",
+    name="book2anki Typed",
     fields=[
         {"name": "Question"},
         {"name": "Answer"},
@@ -244,25 +244,77 @@ COMMAND_MODEL = genanki.Model(
             ),
         },
     ],
-    css=CARD_CSS + _COMMAND_CSS,
+    css=CARD_CSS + _TYPED_CSS,
+)
+
+# Idiom snippets: code with its key piece hidden, typed in rather than recalled
+# silently. {{type:cloze:...}} compares the typing with the current deletion
+# only, so a snippet with c1 and c2 drills each piece on its own card.
+TYPED_CLOZE_MODEL = genanki.Model(
+    model_id=1607392329,
+    name="book2anki Typed Cloze",
+    fields=[
+        {"name": "Question"},
+        {"name": "Answer"},
+        {"name": "Example"},
+        {"name": "Image"},
+        {"name": "Chapter"},
+        {"name": "Book"},
+    ],
+    templates=[
+        {
+            "name": "Cloze",
+            "qfmt": (
+                '<div class="question">{{cloze:Question}}</div>'
+                '{{type:cloze:Question}}'
+            ),
+            "afmt": (
+                '<div class="question">{{cloze:Question}}</div>'
+                '<hr id="answer">{{type:cloze:Question}}'
+                '{{#Answer}}<div class="cloze-gloss">{{Answer}}</div>{{/Answer}}'
+                '{{#Example}}<div class="example">{{Example}}</div>{{/Example}}'
+                '{{#Image}}<div class="image">{{Image}}</div>{{/Image}}'
+            ),
+        },
+    ],
+    css=CARD_CSS + _CLOZE_CSS + _TYPED_CSS,
+    model_type=genanki.Model.CLOZE,
 )
 
 
 def _note_model(card: Card, default: genanki.Model) -> genanki.Model:
-    """Cloze and command cards have note types of their own; the rest use `default`."""
+    """Cloze and typed cards have note types of their own; the rest use `default`."""
     if is_cloze(card):
-        return CLOZE_MODEL
-    if is_command(card):
-        return COMMAND_MODEL
+        return TYPED_CLOZE_MODEL if is_typed(card) else CLOZE_MODEL
+    if is_typed(card):
+        return TYPED_MODEL
     return default
+
+
+_DELETION_RE = re.compile(r"(\{\{c\d+::)(.*?)(\}\})", re.DOTALL)
+
+
+def _protect_cloze_colons(field: str) -> str:
+    """Keep a "::" inside a deletion from being read as Anki's hint separator.
+
+    Code is full of them (ArrayList::new, std::move). The second colon becomes
+    an entity, which Anki neither splits on nor shows, and decodes before
+    comparing what was typed. Our cards never use hints, so none is lost.
+    """
+    return _DELETION_RE.sub(
+        lambda m: m.group(1) + m.group(2).replace("::", ":&#58;") + m.group(3), field,
+    )
 
 
 def _escaped_body(card: Card) -> list[str]:
     """The four rendered fields shared by every question/answer note type."""
+    question = _escape_field(card.question)
+    if is_cloze(card) and is_typed(card):
+        question = _protect_cloze_colons(question)
     return [
-        _escape_field(card.question),
-        # A command is compared as typed, so even a tag-like "<b>" in it is text.
-        html.escape(html.unescape(card.answer)) if is_command(card)
+        question,
+        # A typed line is compared as typed, so even a tag-like "<b>" in it is text.
+        html.escape(html.unescape(card.answer)) if is_typed(card) and not is_cloze(card)
         else _escape_field(card.answer),
         _escape_field(card.example) if card.example else "",
         _escape_field(card.image) if card.image else "",
@@ -656,18 +708,14 @@ def package_cards_flat(
 
 
 def _practice_note(
-    card: Card, deck_name: str, model_version: str = "",
+    card: Card, deck_name: str, model_version: str = "", kind: str = "practice",
 ) -> genanki.Note:
-    """Build a genanki Note for a practice card."""
-    q = _escape_field(card.question)
-    a = _escape_field(card.answer)
-    ex = _escape_field(card.example) if card.example else ""
-    tag = f"practice::{_slugify(deck_name)}"
+    """Build a genanki Note for a practice or idioms card."""
     return genanki.Note(
-        model=CARD_MODEL,
-        fields=[q, a, ex, "", card.chapter_title, card.book_title],
-        tags=_note_tags(tag, card, model_version),
-        guid=genanki.guid_for(card.question, deck_name, "practice"),
+        model=_note_model(card, CARD_MODEL),
+        fields=[*_escaped_body(card), card.chapter_title, card.book_title],
+        tags=_note_tags(f"{kind}::{_slugify(deck_name)}", card, model_version),
+        guid=genanki.guid_for(card.question, deck_name, kind),
     )
 
 
@@ -679,7 +727,7 @@ def _practice_subdeck_name(deck_name: str, chapter_title: str, index: int) -> st
 
 def package_practice(
     cards: list[Card], deck_name: str, output_path: str, model_version: str = "",
-    chapter_order: dict[str, int] | None = None,
+    chapter_order: dict[str, int] | None = None, kind: str = "practice",
 ) -> None:
     """Package all practice cards into a single .apkg with chapter subdecks."""
     decks = []
@@ -689,7 +737,7 @@ def package_practice(
         subdeck = _practice_subdeck_name(deck_name, chapter_title, index)
         deck = genanki.Deck(deck_id=_stable_id(subdeck), name=subdeck)
         for card in chapter_cards:
-            deck.add_note(_practice_note(card, deck_name, model_version))
+            deck.add_note(_practice_note(card, deck_name, model_version, kind))
         decks.append(deck)
     package = genanki.Package(decks)
     package.write_to_file(output_path)
@@ -697,18 +745,19 @@ def package_practice(
 
 def package_practice_flat(
     cards: list[Card], deck_name: str, output_path: str, model_version: str = "",
+    kind: str = "practice",
 ) -> None:
     """Package practice cards into a single flat deck (no subdecks)."""
     deck = genanki.Deck(deck_id=_stable_id(deck_name), name=deck_name)
     for card in cards:
-        deck.add_note(_practice_note(card, deck_name, model_version))
+        deck.add_note(_practice_note(card, deck_name, model_version, kind))
     package = genanki.Package([deck])
     package.write_to_file(output_path)
 
 
 def package_practice_chapter(
     cards: list[Card], deck_name: str, chapter_index: int, output_dir: str,
-    model_version: str = "",
+    model_version: str = "", kind: str = "practice",
 ) -> str:
     """Save a single chapter's practice cards. Returns filepath."""
     os.makedirs(output_dir, exist_ok=True)
@@ -716,7 +765,7 @@ def package_practice_chapter(
     subdeck = _practice_subdeck_name(deck_name, chapter_title, chapter_index)
     deck = genanki.Deck(deck_id=_stable_id(subdeck), name=subdeck)
     for card in cards:
-        deck.add_note(_practice_note(card, deck_name, model_version))
+        deck.add_note(_practice_note(card, deck_name, model_version, kind))
     base = chapter_filename(chapter_title, chapter_index)
     filepath = os.path.join(output_dir, f"{base}.apkg")
     package = genanki.Package([deck])

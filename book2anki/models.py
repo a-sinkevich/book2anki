@@ -56,10 +56,14 @@ def is_cloze(card: Card) -> bool:
 # round trip that resume depends on.
 COMMAND_TAG = "kind::command"
 
+# An idiom card drills a code idiom for interviews: a whole line to type, or a
+# snippet with its key piece hidden as a cloze that is typed in.
+IDIOM_TAG = "kind::idiom"
 
-def is_command(card: Card) -> bool:
-    """Whether a card is answered by typing a command."""
-    return COMMAND_TAG in card.tags
+
+def is_typed(card: Card) -> bool:
+    """Whether a card is answered by typing, which Anki checks character by character."""
+    return COMMAND_TAG in card.tags or IDIOM_TAG in card.tags
 
 
 # Which way a vocab card is asked. The model judges per word whether the reader

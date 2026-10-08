@@ -65,6 +65,7 @@ Examples below write `book2anki`; substitute `./book2anki-macos-arm64` or `pytho
 | `--prompt "..."` | Generate from a study request, no source file |
 | `--vocab --level B2` | Vocabulary mode (see below); add `--audio` for pronunciation |
 | `--practice` | Programming exercise cards (see below) |
+| `--idioms` | Interview drill cards: code idioms typed from memory (see below) |
 | `--model` | See [Models](#models) |
 
 ```bash
@@ -106,7 +107,7 @@ With `--lang`, a cloze sentence stays in the **source** language while the gloss
 
 Programming books also get cards you answer by **typing**, for the commands and one-liners worth knowing by heart: *"(git) Show the last 3 commits, one line each"* → you type `git log --oneline -3`, and Anki shows your line against the answer character by character. The question uses real values rather than placeholders, so there's one line to type. The answer is the spelling most people would use, and the back explains each flag and lists other valid forms, so a different but correct answer is easy to recognise. You still grade yourself.
 
-They're for lines you'd type again and again, not one-off setup or anything longer than a line (`--practice` covers real code). There are none at `--depth 0`; at 1 you get the commands a chapter is built around, and at 2 also the everyday flags and variants it shows. Command cards use the `book2anki Command` note type and carry the `kind::command` tag.
+They're for lines you'd type again and again, not one-off setup or anything longer than a line (`--practice` covers real code). There are none at `--depth 0`; at 1 you get the commands a chapter is built around, and at 2 also the everyday flags and variants it shows. Command cards use the `book2anki Typed` note type and carry the `kind::command` tag.
 
 ## Vocabulary mode
 
@@ -158,6 +159,30 @@ book2anki effective_java.epub --practice
 book2anki effective_java.epub --practice --depth 2 --topic "concurrency"
 book2anki effective_java.epub --practice --code-lang java
 ```
+
+## Idioms mode
+
+Drill cards for interview prep: the small idioms you should write without pausing — `lock()` / `try` / `finally unlock()`, `wait()` in a `while` loop, shutting an executor down with a deadline, `computeIfAbsent`. A separate deck, like practice mode, named `Idioms | {Book}`.
+
+```bash
+book2anki java_concurrency.epub --idioms
+book2anki java_concurrency.epub --idioms --depth 2 --code-lang java
+```
+
+Most of these idioms span several lines, so the main card is a short snippet with its key piece hidden. You **type** the missing piece, and Anki checks it character by character:
+
+```java
+synchronized (lock) {
+    [...] {          // you type: while (!ready)
+        lock.wait();
+    }
+    consume();
+}
+```
+
+The code around the gap fixes every name the answer uses, so a correct answer only has one way to be written. The back gives the reason for the idiom's shape in one line ("a loop, never an if: wait() can wake spuriously"), since interviewers ask why as well as how, plus the common mistake or the old form. A snippet with two pieces worth drilling becomes two cards. Where the question can name every variable, a card asks for a whole line instead: *"Given `Map<String, List<Integer>> index`, append `n` under `key`…"* → `index.computeIfAbsent(key, k -> new ArrayList<>()).add(n);`.
+
+A card is only made for an idiom an interviewer would expect you to write from memory, not syntax every developer knows or classes from the book's sample code. Idioms are written in the modern form of the language (Java 21+) even when the book is older; the old form is mentioned on the back. `--code-lang` drills the same idioms in another language. The cards use the `book2anki Typed Cloze` and `book2anki Typed` note types and carry the `kind::idiom` tag.
 
 ## Models
 
