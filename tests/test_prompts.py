@@ -10,6 +10,7 @@ from book2anki.prompts import (
     build_prompt,
     build_prompt_request,
     build_vocab_prompt,
+    detect_programming,
 )
 
 
@@ -60,6 +61,46 @@ def test_programming_prompt_pushes_code_examples():
     assert "For every non-trivial programming concept" in prompt
     assert "minimal code snippet" in prompt
     assert "<pre><code>...</code></pre>" in prompt
+
+
+class TestDetectProgramming:
+    def test_source_code_counts(self):
+        text = "Some prose.\n" + "def f(x):\n    return x\n" * 5
+        assert detect_programming(text)
+
+    def test_a_shell_session_counts(self):
+        """Books on git or Docker show prompts, not braces."""
+        text = "Run this:\n$ git log --oneline\nand then\n$ git status\n" * 3
+        assert detect_programming(text)
+
+    def test_a_repl_session_counts(self):
+        assert detect_programming(">>> import os\n>>> os.getcwd()\n" * 3)
+
+    def test_prices_on_wrapped_lines_do_not(self):
+        assert not detect_programming("The ticket cost\n$ 20 and the hotel\n$ 150.\n" * 10)
+
+    def test_plain_prose_does_not(self):
+        assert not detect_programming("It was a dark and stormy night.\n" * 100)
+
+
+class TestCommandCards:
+    def test_programming_books_get_typed_command_cards(self):
+        prompt = build_prompt("Book", "Ch", "text", 1, "en", is_programming=True)
+        assert '"type": "command"' in prompt
+        assert "character by character" in prompt
+        assert "placeholder" in prompt
+
+    def test_other_books_get_none(self):
+        prompt = build_prompt("Book", "Ch", "text", 2, "en")
+        assert '"type": "command"' not in prompt
+
+    def test_a_minimal_summary_gets_none(self):
+        prompt = build_prompt("Book", "Ch", "text", 0, "en", is_programming=True)
+        assert '"type": "command"' not in prompt
+
+    def test_the_html_rule_names_the_plain_answer_as_its_exception(self):
+        prompt = build_prompt("Book", "Ch", "text", 1, "en", is_programming=True)
+        assert "command card's answer: the plain line" in prompt
 
 
 def test_build_prompt_request_uses_study_request_without_source():

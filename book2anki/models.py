@@ -50,6 +50,18 @@ def is_cloze(card: Card) -> bool:
     return bool(CLOZE_RE.search(card.question))
 
 
+# A command card asks the reader to type a one-line command or idiom, which
+# Anki then compares with the answer character by character. Nothing in the
+# text marks one, unlike a cloze, so a tag carries it: tags survive the .apkg
+# round trip that resume depends on.
+COMMAND_TAG = "kind::command"
+
+
+def is_command(card: Card) -> bool:
+    """Whether a card is answered by typing a command."""
+    return COMMAND_TAG in card.tags
+
+
 # Which way a vocab card is asked. The model judges per word whether the reader
 # would ever use it themselves; a word they only need to understand on the page
 # gets a recognition card even in a production deck.

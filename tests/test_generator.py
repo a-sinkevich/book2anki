@@ -12,7 +12,7 @@ from book2anki.generator import (
     _split_into_chunks,
     vocab_word,
 )
-from book2anki.models import ACTIVE_TAG, PASSIVE_TAG, Card, Chapter, is_cloze
+from book2anki.models import ACTIVE_TAG, PASSIVE_TAG, Card, Chapter, is_cloze, is_command
 from book2anki import generator
 
 import json
@@ -420,6 +420,59 @@ class TestClozeCards:
         ]))
 
         assert len(_deduplicate(cards)) == 2
+
+
+class TestCommandCards:
+    def _generate(self, *items):
+        return _generate_with_retries(
+            _FakeProvider([json.dumps(list(items))], "gpt-5.5"),
+            "text", "Book", "Chapter", 1, "en", is_programming=True,
+        )
+
+    def test_a_command_is_tagged_and_kept_as_typed(self):
+        cards = self._generate({
+            "type": "command", "question": "(git) Show the last 3 commits, one line each",
+            "answer": "git log --oneline -3", "example": "<pre><code>-3 last three</code></pre>",
+        })
+
+        assert is_command(cards[0])
+        assert cards[0].answer == "git log --oneline -3"
+        assert cards[0].example == "<pre><code>-3 last three</code></pre>"
+
+    def test_markup_and_prompt_sign_are_stripped_from_the_line(self):
+        """Anki compares the typing with the text; markup would mark it wrong."""
+        cards = self._generate({
+            "type": "command", "question": "(shell) Run a and then b if it succeeded",
+            "answer": "<code>$ a &amp;&amp; b</code>",
+        })
+
+        assert cards[0].answer == "a && b"
+
+    def test_a_redirection_is_not_mistaken_for_a_tag(self):
+        cards = self._generate({
+            "type": "command", "question": "(shell) Sort in.txt into out.txt",
+            "answer": "sort < in.txt > out.txt",
+        })
+
+        assert cards[0].answer == "sort < in.txt > out.txt"
+
+    def test_a_multi_line_command_becomes_a_regular_card(self):
+        """A one-line input box can't take it, so show the code instead."""
+        cards = self._generate({
+            "type": "command", "question": "(shell) Loop over the files",
+            "answer": "for f in *; do\n  echo $f\ndone",
+        })
+
+        assert not is_command(cards[0])
+        assert cards[0].answer == "<pre><code>for f in *; do\n  echo $f\ndone</code></pre>"
+
+    def test_a_deletion_wins_over_the_command_label(self):
+        cards = self._generate({
+            "type": "command", "question": "List files with {{c1::ls -la}}.", "answer": "g",
+        })
+
+        assert is_cloze(cards[0])
+        assert not is_command(cards[0])
 
 
 class TestDeduplicate:

@@ -79,6 +79,68 @@ PROPERTY_DEPTH_INSTRUCTIONS = {
 }
 
 
+# Command cards are for programming books only. A minimal summary has no room
+# for syntax, so they start at depth 1, with the commands the chapter is about.
+COMMAND_DEPTH_INSTRUCTIONS = {
+    0: "",
+    1: (
+        "Add command cards only for the commands the text is built around — the ones a "
+        "reader would come away from it using."
+    ),
+    2: (
+        "Add command cards for every command the text teaches that a practitioner would "
+        "reach for again: the central ones, plus the flags and variants it shows for "
+        "everyday tasks."
+    ),
+}
+
+_COMMAND_EXAMPLE = (
+    '  {"type": "command", "question": "(git) Show the last 3 commits, one line each", '
+    '"answer": "git log --oneline -3", "example": "<pre><code>--oneline  abbreviated hash '
+    'and subject\\n-3         only the last 3 commits</code></pre>Also valid: '
+    '<code>git log --oneline -n 3</code>"},\n'
+)
+
+
+def _command_cards_section(depth: int) -> str:
+    """Instructions for cards the reader answers by typing a command.
+
+    Anki compares the typing with the answer character by character, which
+    only works for a single line with one canonical spelling — so the rules
+    are mostly about making the answer exactly that, and pushing everything
+    else (flag breakdown, equivalent forms) into the example.
+    """
+    depth_instruction = COMMAND_DEPTH_INSTRUCTIONS[depth]
+    if not depth_instruction:
+        return ""
+    return f"""
+
+**Command cards — for the lines a practitioner types from memory.** Some of what a \
+programming book teaches is meant to be typed, not looked up: a shell or CLI invocation, a \
+one-line idiom, a short API call. For those the reader should practise producing the line \
+itself, so the card is answered by typing it. This is the one kind of card that asks for \
+syntax. {depth_instruction} Set "type": "command". The question states a concrete task and \
+names the tool; the answer is the exact line that does it.
+
+- **One line, exactly as typed**: plain text, with no HTML, no <code>, no bold, no prompt \
+sign such as $, and no explanation. The reader's typing is compared with the answer \
+character by character, so anything extra marks a correct answer wrong
+- **Concrete values, so there is one answer**: put real values in the question ("the last \
+3 commits", "port 8000") and never a placeholder such as <branch> or N in the answer
+- **The canonical spelling**: the form most practitioners would type — the usual flag \
+order, short flags where those are the norm. Put a breakdown of the flags and any \
+equivalent forms in "example", with <pre><code>...</code></pre> for code, so a reader \
+who typed a valid variant can see that it was valid
+- **Only lines worth having in your fingers**: skip one-off setup, commands tied to the \
+book's own sample project, and anything that does not fit on one line — a regular card \
+covers those. When the text teaches no commands, add none
+- **One card per command**: a regular card asking which command or option does the task \
+("How do you…", "Which option…") asks for the same thing — leave it out. A card asking \
+what an option does or why you would use it runs the other way, and stays
+
+{_COMMAND_EXAMPLE.rstrip(",\n")}"""
+
+
 _REVERSE_FORM_BODY = """Set "type": "term". The question describes everything \
 except the missing piece; the answer is that piece and nothing else.
 
@@ -297,6 +359,10 @@ _CODE_INDICATORS = re.compile(
     r"|\b(?:function\s+\w+\s*\(|const\s+\w+\s*=|=>\s*\{)"
     r"|(?:^|\n)\s*(?:#include|#define|#ifdef)"
     r"|(?:\{\s*\n.*\n\s*\})"
+    # A shell session or REPL: books on git, Docker or the command line show
+    # few braces but many prompts. A lowercase command after "$ " keeps a price
+    # on a wrapped PDF line ("$ 20") from counting.
+    r"|(?:^|\n)[ \t]*(?:\$ [a-z]|>>> )"
     r")",
     re.MULTILINE,
 )
@@ -417,6 +483,12 @@ def build_prompt(
     term_section = _term_cards_section(
         depth, language, quote_source=not is_transcript,
     )
+    command_section = _command_cards_section(depth) if is_programming else ""
+    command_example = _COMMAND_EXAMPLE if command_section else ""
+    if command_section:
+        code_format_note += (
+            " The one exception is a command card's answer: the plain line, as typed."
+        )
     cloze_example = ""
     if PROPERTY_DEPTH_INSTRUCTIONS[depth] and not is_transcript:
         cloze_example = (
@@ -455,15 +527,15 @@ Guidelines:
   Passes: "With synchronous replication the leader <b>waits for the follower to confirm</b> before reporting success; with asynchronous replication it <b>sends the change without waiting</b>."
   Fails:  "With <b>synchronous</b> replication the leader waits for the follower to confirm; with asynchronous replication it sends the change without waiting." (both names came from the question, and only one side of the contrast is marked)
 - **No italics, ever**: do not use <em>, <i>, or any italic formatting. Where the source text below carries <em> or <strong>, that is the author's own emphasis, preserved so you can see which words they stressed — it is information for you, not markup to copy. Strip it from everything you write, a quoted cloze sentence included, or the author's emphasis ends up sitting on your deletion{programming_rules}{redundancy_rule}{example_rule}{image_rule}
-{term_section}
+{term_section}{command_section}
 
-{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example", "type" and "context"{' and "image"' if has_book_images else ''} fields. Both kinds of card go in the SAME array; where a term card happens to relate to one of the cards above, place it directly after that card. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
+{_format_figures_section(book_image_captions)}Output ONLY a JSON array of objects with "question", "answer", and optionally "example", "type" and "context"{' and "image"' if has_book_images else ''} fields. Every kind of card goes in the SAME array; where a term card happens to relate to one of the cards above, place it directly after that card. No markdown, no explanation, no wrapper — just the raw JSON array.{code_format_note}
 
 Example format:
 [
   {{"question": "What is X?", "answer": "X is...", "example": ""{', "image": ""' if has_book_images else ''}}},
   {{"question": "Why does Y happen?", "answer": "Because...", "example": "For instance, when Z occurs..."{', "image": "[BOOK-IMG-1] Description of the figure"' if has_book_images else ''}}},
-{cloze_example}  {{"type": "term", "question": "What is the term for <description of the concept>?", "answer": "The term"}}
+{cloze_example}{command_example}  {{"type": "term", "question": "What is the term for <description of the concept>?", "answer": "The term"}}
 ]
 
 {text_label}:

@@ -1,3 +1,4 @@
+import html
 import json
 import os
 import sqlite3
@@ -6,10 +7,11 @@ import zipfile
 
 import pytest
 
-from book2anki.models import ACTIVE_TAG, PASSIVE_TAG, Card, is_cloze
+from book2anki.models import ACTIVE_TAG, COMMAND_TAG, PASSIVE_TAG, Card, is_cloze, is_command
 from book2anki.packager import (
     CARD_MODEL,
     CLOZE_MODEL,
+    COMMAND_MODEL,
     VOCAB_MODEL,
     VOCAB_PRODUCTION_MODEL,
     _gap_context,
@@ -327,6 +329,64 @@ def test_cloze_note_type_matches_basic_field_layout():
     """Same fields in the same order, so _read_cards_from_apkg needs no branch."""
     assert (
         [f["name"] for f in CLOZE_MODEL.fields]
+        == [f["name"] for f in CARD_MODEL.fields]
+    )
+
+
+def _command_card(answer: str = "git log --oneline -3") -> Card:
+    return Card(question="(git) Show the last 3 commits, one line each", answer=answer,
+                chapter_title="Ch", book_title="Book", tags=[COMMAND_TAG])
+
+
+def test_command_cards_use_the_command_note_type():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "commands.apkg")
+        package_cards([*_mixed_cards(), _command_card()], "Book", out)
+
+        assert _note_types(out) == [
+            ("book2anki Basic", 0),
+            ("book2anki Cloze", 1),
+            ("book2anki Command", 0),
+        ]
+
+
+def test_command_card_asks_for_the_answer_to_be_typed():
+    template = COMMAND_MODEL.templates[0]
+    assert "{{type:Answer}}" in template["qfmt"]
+    assert "{{type:Answer}}" in template["afmt"]
+    # FrontSide would repeat the input box on the back.
+    assert "{{FrontSide}}" not in template["afmt"]
+
+
+def test_a_command_is_stored_as_text_even_where_it_looks_like_a_tag():
+    """Anki decodes entities before comparing, so the typed line must match."""
+    cards = [_command_card('echo "<b>hi</b>" > out.txt && cat out.txt')]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "commands.apkg")
+        package_cards(cards, "Book", out)
+
+        stored = _read_cards_from_apkg(out)[0].answer
+        assert "<b>" not in stored
+        assert html.unescape(stored) == 'echo "<b>hi</b>" > out.txt && cat out.txt'
+
+
+def test_command_cards_round_trip_through_resume():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        chapters_dir = os.path.join(tmpdir, "chapters")
+        package_single_chapter([_command_card("a && b")], "Book", 0, chapters_dir)
+
+        resumed = load_existing_chapters(chapters_dir)[0]
+        assert is_command(resumed[0])
+
+        out = os.path.join(tmpdir, "again.apkg")
+        package_cards(resumed, "Book", out)
+        assert _note_types(out) == [("book2anki Command", 0)]
+        assert html.unescape(_read_cards_from_apkg(out)[0].answer) == "a && b"
+
+
+def test_command_note_type_matches_basic_field_layout():
+    assert (
+        [f["name"] for f in COMMAND_MODEL.fields]
         == [f["name"] for f in CARD_MODEL.fields]
     )
 

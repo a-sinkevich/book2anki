@@ -79,7 +79,7 @@ URLs need quotes so the shell doesn't mangle them.
 
 ## Card types
 
-Every deck contains two kinds of card, generated together in one run.
+Every deck contains two kinds of card, generated together in one run; programming books get a third, [command cards](#command-cards).
 
 **Concept cards** ask about an idea: *"Why is Avro friendlier for dynamically generated schemas?"* → an explanation.
 
@@ -101,6 +101,12 @@ and a reverse question otherwise. The test a cloze must pass: a reader who under
 How many qualify scales with `--depth`: at 0, only the one idea the text is built around; at 2, the terminology you would be expected to recognise in conversation about the book.
 
 With `--lang`, a cloze sentence stays in the **source** language while the gloss and context line are written in yours — the hidden answer is source-language wording, so translating the sentence would destroy the card. Cloze cards use their own note type, so `note:"book2anki Cloze"` selects them as a group in the Anki browser.
+
+### Command cards
+
+Programming books also get cards you answer by **typing**, for the commands and one-liners worth knowing by heart: *"(git) Show the last 3 commits, one line each"* → you type `git log --oneline -3`, and Anki shows your line against the answer character by character. The question uses real values rather than placeholders, so there's one line to type. The answer is the spelling most people would use, and the back explains each flag and lists other valid forms, so a different but correct answer is easy to recognise. You still grade yourself.
+
+They're for lines you'd type again and again, not one-off setup or anything longer than a line (`--practice` covers real code). There are none at `--depth 0`; at 1 you get the commands a chapter is built around, and at 2 also the everyday flags and variants it shows. Command cards use the `book2anki Command` note type and carry the `kind::command` tag.
 
 ## Vocabulary mode
 

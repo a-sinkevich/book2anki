@@ -1,3 +1,4 @@
+import html
 import json
 import re
 import time
@@ -5,7 +6,7 @@ from abc import ABC, abstractmethod
 from difflib import SequenceMatcher
 from typing import Any, Callable, TypeVar
 
-from book2anki.models import ACTIVE_TAG, CLOZE_RE, PASSIVE_TAG, Card, Chapter
+from book2anki.models import ACTIVE_TAG, CLOZE_RE, COMMAND_TAG, PASSIVE_TAG, Card, Chapter
 from book2anki.prompts import (
     build_prompt, build_prompt_request, build_vocab_prompt, build_practice_prompt,
 )
@@ -465,14 +466,20 @@ def _generate_with_retries(
                 # cannot support; the prompt says so, and a stray one has no
                 # sane rendering, so drop it rather than ship a broken card.
                 continue
+            answer: str = item["answer"]
+            tags: list[str] = []
+            if str(item.get("type", "")).strip().lower() == "command" \
+                    and not CLOZE_RE.search(item["question"]):
+                answer, tags = _command_answer(answer)
             cards.append(Card(
                 question=_question_field(item),
-                answer=item["answer"],
+                answer=answer,
                 chapter_title=chapter_title,
                 book_title=book_title,
                 source_url=source_url,
                 example=item.get("example", ""),
                 image=item.get("image", ""),
+                tags=tags,
             ))
         return cards
 
@@ -500,6 +507,26 @@ def _question_field(item: dict[str, Any]) -> str:
     if context:
         question = f'<div class="cloze-context">{context}</div>{question}'
     return question
+
+
+# Markup a model wraps around a command out of habit. Only these are stripped:
+# a generic tag pattern would eat the "< in.txt >" of a shell redirection.
+_COMMAND_MARKUP_RE = re.compile(r"</?(?:code|pre|b|strong|em|i|kbd|tt|span)\b[^>]*>")
+
+
+def _command_answer(answer: str) -> tuple[str, list[str]]:
+    """The plain line a command card's typed answer is compared against.
+
+    Anki compares the reader's typing with the field's text, so any markup or
+    prompt sign left in would mark a correct answer wrong. A command that
+    turns out to span lines is no command card: the reader can't type it into
+    a one-line box, so it becomes a regular card showing the code.
+    """
+    plain = html.unescape(_COMMAND_MARKUP_RE.sub("", answer)).strip()
+    plain = re.sub(r"^\$\s+", "", plain)
+    if "\n" in plain or re.search(r"<br\s*/?>", plain):
+        return f"<pre><code>{html.escape(plain)}</code></pre>", []
+    return plain, [COMMAND_TAG]
 
 
 def _cloze_terms(question: str) -> set[str]:

@@ -8,7 +8,7 @@ import zipfile
 
 import genanki
 
-from book2anki.models import Card, is_cloze, is_passive
+from book2anki.models import Card, is_cloze, is_command, is_passive
 
 _SAFE_TAGS = {"pre", "code", "/pre", "/code", "b", "/b", "br", "br/",
               "ul", "/ul", "ol", "/ol", "li", "/li", "p", "/p",
@@ -195,16 +195,75 @@ CLOZE_MODEL = genanki.Model(
 )
 
 
+_COMMAND_CSS = """\
+#typeans {
+    font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+    font-size: 16px;
+}
+input#typeans {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 14px;
+    padding: 6px 10px;
+}
+/* Anki's comparison of the typed line with the answer, drawn as our code block. */
+code#typeans {
+    display: block;
+    background-color: rgba(128, 128, 128, 0.12);
+    border: 1px solid rgba(128, 128, 128, 0.25);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin: 8px 0;
+    white-space: pre-wrap;
+}
+"""
+
+# Command cards: the reader types the line, and {{type:Answer}} shows their
+# typing against the answer on the back. The back repeats {{Question}} rather
+# than {{FrontSide}}, which would bring the input box along. Fields mirror
+# CARD_MODEL's, like the cloze type's, so resume reads them back unchanged.
+COMMAND_MODEL = genanki.Model(
+    model_id=1607392328,
+    name="book2anki Command",
+    fields=[
+        {"name": "Question"},
+        {"name": "Answer"},
+        {"name": "Example"},
+        {"name": "Image"},
+        {"name": "Chapter"},
+        {"name": "Book"},
+    ],
+    templates=[
+        {
+            "name": "Card 1",
+            "qfmt": '<div class="question">{{Question}}</div>{{type:Answer}}',
+            "afmt": (
+                '<div class="question">{{Question}}</div><hr id="answer">{{type:Answer}}'
+                '{{#Example}}<div class="example">{{Example}}</div>{{/Example}}'
+                '{{#Image}}<div class="image">{{Image}}</div>{{/Image}}'
+            ),
+        },
+    ],
+    css=CARD_CSS + _COMMAND_CSS,
+)
+
+
 def _note_model(card: Card, default: genanki.Model) -> genanki.Model:
-    """Cloze cards need Anki's cloze note type; everything else uses `default`."""
-    return CLOZE_MODEL if is_cloze(card) else default
+    """Cloze and command cards have note types of their own; the rest use `default`."""
+    if is_cloze(card):
+        return CLOZE_MODEL
+    if is_command(card):
+        return COMMAND_MODEL
+    return default
 
 
 def _escaped_body(card: Card) -> list[str]:
     """The four rendered fields shared by every question/answer note type."""
     return [
         _escape_field(card.question),
-        _escape_field(card.answer),
+        # A command is compared as typed, so even a tag-like "<b>" in it is text.
+        html.escape(html.unescape(card.answer)) if is_command(card)
+        else _escape_field(card.answer),
         _escape_field(card.example) if card.example else "",
         _escape_field(card.image) if card.image else "",
     ]
