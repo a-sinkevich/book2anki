@@ -75,6 +75,13 @@ code {
     font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
     font-size: 16px;
 }
+:not(pre) > code {
+    background-color: rgba(128, 128, 128, 0.12);
+    border: 1px solid rgba(128, 128, 128, 0.25);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 0.85em;
+}
 .example {
     margin-top: 12px;
     padding-top: 8px;
