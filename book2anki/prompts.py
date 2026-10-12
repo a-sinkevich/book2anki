@@ -113,6 +113,9 @@ def _command_cards_section(depth: int) -> str:
     depth_instruction = COMMAND_DEPTH_INSTRUCTIONS[depth]
     if not depth_instruction:
         return ""
+    # Outside the f-string: a backslash in an f-string expression is a syntax
+    # error before Python 3.12.
+    example = _COMMAND_EXAMPLE.rstrip(",\n")
     return f"""
 
 **Command cards — for the lines a practitioner types from memory.** Some of what a \
@@ -138,7 +141,7 @@ covers those. When the text teaches no commands, add none
 ("How do you…", "Which option…") asks for the same thing — leave it out. A card asking \
 what an option does or why you would use it runs the other way, and stays
 
-{_COMMAND_EXAMPLE.rstrip(",\n")}"""
+{example}"""
 
 
 _REVERSE_FORM_BODY = """Set "type": "term". The question describes everything \

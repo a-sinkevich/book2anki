@@ -1,7 +1,7 @@
 import email.message
+import importlib
 import urllib.error
 
-import httpx
 import openai
 import pytest
 
@@ -16,6 +16,10 @@ from book2anki.audio import (
     tts_instructions,
 )
 from book2anki.models import Card
+
+# The errors these tests raise carry the SDK's own request and response
+# objects, and openai 3 moved from httpx to its successor, httpx2.
+httpx = importlib.import_module("httpx2" if int(openai.__version__.split(".")[0]) >= 3 else "httpx")
 
 SUSURRUS = """\
 ==English==
