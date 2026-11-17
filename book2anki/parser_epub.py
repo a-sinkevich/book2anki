@@ -432,7 +432,7 @@ def _extract_image_caption(img_tag: Tag) -> str:
 
 
 def _extract_images_from_html(
-    html_content: bytes, item_name: str, image_map: dict[str, Any],
+    html_content: bytes | str, item_name: str, image_map: dict[str, Any],
 ) -> list[BookImage]:
     """Extract images from an HTML document with captions."""
     soup = BeautifulSoup(html_content, "html.parser")
@@ -584,7 +584,7 @@ def _extract_chapters(book: epub.EpubBook, toc_titles: dict[str, str], book_titl
     return chapters
 
 
-def _first_heading(html_content: bytes) -> str:
+def _first_heading(html_content: bytes | str) -> str:
     """The text of a file's first <h1>–<h3>, on one line."""
     heading = BeautifulSoup(html_content, "html.parser").find(["h1", "h2", "h3"])
     if heading is None:
@@ -593,7 +593,7 @@ def _first_heading(html_content: bytes) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _html_to_text(html_content: bytes) -> str:
+def _html_to_text(html_content: bytes | str) -> str:
     """Render chapter HTML as text, keeping sentences whole and emphasis marked."""
     return html_to_text(html_content)
 
