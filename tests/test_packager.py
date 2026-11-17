@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import zipfile
 
+import genanki
 import pytest
 
 from book2anki.models import (
@@ -521,6 +522,32 @@ def test_package_vocab_picks_direction_per_word(mode, speak_model):
         word: VOCAB_PRODUCTION_MODEL.model_id if speak else VOCAB_MODEL.model_id
         for word, speak in speak_model.items()
     }
+
+
+def _vocab_fields(path: str) -> tuple[str, list[str]]:
+    """The single note's guid and fields."""
+    with zipfile.ZipFile(path) as z, tempfile.TemporaryDirectory() as d:
+        z.extract("collection.anki2", d)
+        conn = sqlite3.connect(os.path.join(d, "collection.anki2"))
+        guid, flds = conn.execute("SELECT guid, flds FROM notes").fetchone()
+        conn.close()
+    return guid, flds.split("\x1f")
+
+
+def test_recognition_card_shows_the_register_under_the_translation():
+    """Hidden in the word until the card turned, it shifted the front."""
+    word = 'susurrus<div class="ipa">/sjuːˈsʌrəs/</div><div class="register">literary</div>'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = os.path.join(tmpdir, "vocab.apkg")
+        package_vocab([_vocab_card(word, [PASSIVE_TAG])], "Book C1", out)
+        guid, fields = _vocab_fields(out)
+
+    word_field, _, translation = fields[:3]
+    assert "register" not in word_field
+    assert word_field == 'susurrus<div class="ipa">/sjuːˈsʌrəs/</div>'
+    assert translation.endswith('<div class="register">literary</div>')
+    # Same guid as before the move, so re-importing updates the existing note.
+    assert guid == genanki.guid_for(word, "Book C1", "vocab")
 
 
 def test_vocab_audio_plays_from_the_word_field_without_changing_the_guid():

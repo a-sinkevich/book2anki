@@ -409,9 +409,10 @@ _VOCAB_CSS = """\
 }
 /* The register says why a word is only recognised, which is part of the
    answer: on the front it would be one more thing to read before recalling
-   the meaning, and "archaic" or "technical" narrows the meaning down. It rides
-   in the Word field, so the front can only hide it; only the answer side
-   has the <hr id="answer">. */
+   the meaning, and "archaic" or "technical" narrows the meaning down. New
+   recognition cards carry it under the translation; notes imported before
+   that still have it in the Word field, where the front can only hide it
+   (only the answer side has the <hr id="answer">). */
 .card:not(:has(#answer)) .register {
     display: none;
 }
@@ -774,6 +775,7 @@ def package_practice_chapter(
 
 
 _BOLD_RE = re.compile(r"<b>.*?</b>", re.IGNORECASE | re.DOTALL)
+_REGISTER_RE = re.compile(r'<div class="register">.*?</div>', re.DOTALL)
 
 
 def _gap_context(context: str) -> str:
@@ -864,6 +866,14 @@ def _vocab_recognition_note(
     word = _vocab_word_field(card)
     context = _escape_field(card.example) if card.example else ""
     translation = _escape_field(card.answer)
+    # The register arrives in the word, but it is part of the answer: shown on
+    # the front only once the card is turned, it would appear in the middle of
+    # the front and push the context down. Under the translation, the front
+    # stays as it was and the answer only adds below it.
+    register = _REGISTER_RE.search(word)
+    if register:
+        word = word[:register.start()] + word[register.end():]
+        translation += register.group(0)
     definition = _escape_field(card.image) if card.image else ""
     example = _escape_field(card.source_url) if card.source_url else ""
     return genanki.Note(
