@@ -680,6 +680,16 @@ class TestDeduplicateVocab:
         # The correctly-spelled headword (matching the book's word) is kept.
         assert vocab_word(result[0].question) == "to traipse"
 
+    def test_first_person_formula_merges_with_infinitive(self):
+        cards = [
+            _vcard("to daresay", "I <b>daresay</b> we shall manage."),
+            _vcard("I daresay", "<b>I daresay</b> he is right."),
+        ]
+        assert len(deduplicate_vocab(cards)) == 1
+
+    def test_first_person_formula_matches_existing_anki_word(self):
+        assert generator._vocab_base("I daresay") == generator._vocab_base("to daresay")
+
     def test_different_words_not_merged(self):
         cards = [
             _vcard("affect", "It did not <b>affect</b> the outcome."),

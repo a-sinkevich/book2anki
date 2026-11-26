@@ -980,7 +980,7 @@ def vocab_word(question: str) -> str:
 def _vocab_base(word: str) -> str:
     """Normalize a vocab word for dedup comparison.
 
-    Strips articles, 'to ' prefix, reflexive suffixes, and
+    Strips articles, 'to ' / 'I ' prefix, reflexive suffixes, and
     parenthetical notes like (n.), (der), (м/ж) etc.
     """
     w = word.lower().strip()
@@ -995,7 +995,9 @@ def _vocab_base(word: str) -> str:
         if w.startswith(article):
             w = w[len(article):]
             break
-    for prefix in ("to ", "sich "):
+    # "I daresay" and "to daresay" are one word: some verbs live almost only
+    # in a first-person formula, so the model writes them either way.
+    for prefix in ("to ", "sich ", "i "):
         if w.startswith(prefix):
             w = w[len(prefix):]
             break
